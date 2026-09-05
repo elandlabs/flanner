@@ -6,6 +6,25 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-09-05
+
+### Added
+- **Work arriving from a peer shows up without a reload.** The catalog has
+  several writers and they are separate processes: the web UI, `flanner peer
+  serve` taking a push, the MCP server acting for an agent, a `flanner sync`
+  in a terminal. None share a call stack with the page you are looking at, so
+  none could notify it, and a version from a teammate stayed invisible until
+  you happened to reload. The server now watches the catalog instead of
+  waiting to be told, and reports what moved over server-sent events.
+  Counting versions is part of that signature, because a version arriving
+  from a peer deliberately does not move the current-version pointer -- the
+  rule that stops a teammate changing what you have open -- and watching the
+  pointer alone would have been blind to exactly the event this reports.
+  A plan page offers a link rather than swapping itself, since it may be
+  half-read; the dashboard, projects, project detail, plans list, plan
+  history and mesh pages re-render; the editor is deliberately excluded and
+  never re-renders under somebody typing.
+
 ### Changed
 - **The local web UI is 27-120x faster to first byte.** Every page carried a
   freshness walk: git subprocesses for every plan in every project, computed
