@@ -4,6 +4,8 @@ Web interface for Flanner
 Provides a browser-based UI for viewing and managing plan files.
 """
 
+import functools
+import json
 import logging
 import os
 import secrets
@@ -28,6 +30,7 @@ from fastapi.responses import (
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.concurrency import run_in_threadpool
+from starlette.responses import StreamingResponse
 
 from . import __version__, ipc, services
 from .database import (
@@ -1376,17 +1379,97 @@ async def plan_history(request: Request, plan_file_id: str) -> HTMLResponse:
 # =============================================================================
 
 
-@app.get("/freshness", response_class=HTMLResponse)
-async def freshness_page(request: Request) -> HTMLResponse:
-    """Which plans have stopped being true, and the evidence for saying so."""
+def _plans_to_judge(session: Any) -> list[tuple[Any, str | None]]:
+    """Every visible plan, paired with its repository's current commit."""
+    out: list[tuple[Any, str | None]] = []
+    for project in db_list_projects(session):
+        head = freshness_head(project.project_root) if project.project_root else None
+        for plan_file in _visible_plans(session, project.id):
+            out.append((plan_file, head))
+    return out
+
+
+@app.get("/freshness/stream")
+async def freshness_stream(request: Request) -> StreamingResponse:
+    """The drift table, a row at a time, as each plan is judged.
+
+    Judging one plan means several git processes, and judging all of them
+    took about seven seconds against a real store with a cold cache. That
+    was seven seconds of blank page. The work is the same; what changes is
+    that the first answer arrives in a few hundred milliseconds and the rest
+    land as they come, with a count of what is left.
+
+    Rows are rendered from the same partial the page uses, and sent as
+    html. Building them in the script would be a second copy of the markup.
+
+    Newline-delimited json: one object per line, so a reader can act on
+    each without waiting for the end.
+    """
     ensure_db()
     session = get_session()
-    attention = await run_in_threadpool(_needs_attention, session, request)
+    rank = {"stale": 0, "suspect": 1, "aging": 2}
+    row_template = templates.get_template("_freshness_row.html")
 
+    async def lines() -> Any:
+        items = await run_in_threadpool(_plans_to_judge, session)
+        yield json.dumps({"total": len(items)}) + "\n"
+
+        tally = {"fresh": 0, "aging": 0, "suspect": 0, "stale": 0}
+        for plan_file, head in items:
+            # Off the event loop: this shells out to git, and a slow
+            # repository must not stall every other request in the process.
+            record = await run_in_threadpool(
+                functools.partial(_plan_freshness, session, plan_file, head=head)
+            )
+            if record is None:
+                yield json.dumps({"judged": 1}) + "\n"
+                continue
+            status = record["status"]
+            tally[status] = tally.get(status, 0) + 1
+            if status in rank:
+                record["drift_rank"] = len(rank) - rank[status]
+                yield (
+                    json.dumps(
+                        {
+                            "judged": 1,
+                            "drift": record["drift_rank"],
+                            "html": row_template.render(row=record),
+                        }
+                    )
+                    + "\n"
+                )
+            else:
+                yield json.dumps({"judged": 1}) + "\n"
+
+        yield json.dumps({"done": True, "tally": tally}) + "\n"
+
+    return StreamingResponse(
+        lines(),
+        media_type="application/x-ndjson",
+        # Nothing may sit on this and hand it over in one piece; the whole
+        # point is that the first row arrives before the last is computed.
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.get("/freshness", response_class=HTMLResponse)
+async def freshness_page(request: Request, full: int = 0) -> HTMLResponse:
+    """Which plans have stopped being true, and the evidence for saying so.
+
+    Renders a shell and lets the stream fill it, unless `?full=1` — which
+    computes everything first and is what the noscript link points at.
+    """
+    ensure_db()
+    session = get_session()
+    attention: list[dict[str, Any]] = []
     tally = {"fresh": 0, "aging": 0, "suspect": 0, "stale": 0}
-    for project in db_list_projects(session):
-        for plan_file in _visible_plans(session, project.id):
-            record = _plan_freshness(session, plan_file)
+
+    if full:
+        attention = await run_in_threadpool(_needs_attention, session, request)
+        for plan_file, head in await run_in_threadpool(_plans_to_judge, session):
+            record = await run_in_threadpool(
+                functools.partial(_plan_freshness, session, plan_file, head=head)
+            )
             if record:
                 tally[record["status"]] = tally.get(record["status"], 0) + 1
 
@@ -1394,6 +1477,7 @@ async def freshness_page(request: Request) -> HTMLResponse:
         request,
         "freshness.html",
         {
+            "streaming": not full,
             # `_nav` rather than three hand-picked counts: this page was
             # supplying its own subset, so the peer count and the signed-in
             # flag fell back to their defaults and the sidebar quietly lost

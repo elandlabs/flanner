@@ -1072,3 +1072,113 @@ onPage(function () {
     document.addEventListener('DOMContentLoaded', fillMix);
     document.addEventListener('flanner:page', fillMix);
 })();
+
+
+// The drift table, filled in as each plan is judged.
+//
+// Judging one plan is several git subprocesses; judging all of them took
+// about seven seconds against a real store with a cold cache, and that was
+// seven seconds of blank page. The work is unchanged — what changes is that
+// the first answer shows up in a few hundred milliseconds and the rest land
+// as they come, with a count of what is left.
+//
+// Rows arrive as rendered html from the same partial the page uses. Building
+// them here would be a second copy of that markup, free to drift from it.
+(function () {
+    function insertByDrift(list, row) {
+        // Worst first, which is the order the page promises. Inserting in
+        // place beats appending and re-sorting: the table never reshuffles
+        // under someone who has started reading it.
+        const drift = Number(row.getAttribute('data-drift') || 0);
+        const existing = Array.from(list.children);
+        const after = existing.find(function (el) {
+            return Number(el.getAttribute('data-drift') || 0) < drift;
+        });
+        if (after) list.insertBefore(row, after);
+        else list.appendChild(row);
+    }
+
+    function streamFreshness() {
+        const card = document.querySelector('[data-freshness-stream]');
+        if (!card || card.dataset.streamed) return;
+        card.dataset.streamed = '1';
+
+        const list = card.querySelector('[data-list]');
+        const progress = card.querySelector('[data-scan-progress]');
+        const count = card.querySelector('[data-drift-count]');
+        const clean = card.querySelector('[data-scan-clean]');
+        const tallies = {};
+        document.querySelectorAll('[data-tally]').forEach(function (el) {
+            tallies[el.getAttribute('data-tally')] = el;
+            el.textContent = '0';
+        });
+
+        let total = 0;
+        let judged = 0;
+        let shown = 0;
+        if (progress) {
+            progress.hidden = false;
+            progress.textContent = 'checking…';
+            progress.setAttribute('aria-live', 'polite');
+        }
+
+        function handle(line) {
+            if (!line) return;
+            let msg;
+            try { msg = JSON.parse(line); } catch (e) { return; }
+
+            if (msg.total !== undefined) { total = msg.total; }
+            if (msg.judged) { judged += msg.judged; }
+            if (msg.html && list) {
+                const holder = document.createElement('div');
+                holder.innerHTML = msg.html.trim();
+                const row = holder.firstElementChild;
+                if (row) { insertByDrift(list, row); shown += 1; }
+                if (count) count.textContent = shown;
+            }
+            if (progress && !msg.done) {
+                progress.textContent = total
+                    ? 'checked ' + judged + ' of ' + total + ' plans'
+                    : 'checking…';
+            }
+            if (msg.done) {
+                if (progress) progress.hidden = true;
+                if (msg.tally) {
+                    Object.keys(msg.tally).forEach(function (k) {
+                        if (tallies[k]) tallies[k].textContent = msg.tally[k];
+                    });
+                }
+                if (clean) clean.hidden = shown !== 0;
+                // Tell the list machinery the rows it filters over changed.
+                document.dispatchEvent(new CustomEvent('flanner:list-changed'));
+            }
+        }
+
+        fetch('/freshness/stream', { headers: { 'Accept': 'application/x-ndjson' } })
+            .then(function (response) {
+                if (!response.ok || !response.body) throw new Error('no stream');
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+                return (function pump() {
+                    return reader.read().then(function (chunk) {
+                        if (chunk.done) { handle(buffer.trim()); return; }
+                        buffer += decoder.decode(chunk.value, { stream: true });
+                        const lines = buffer.split("\n");
+                        buffer = lines.pop() || '';
+                        lines.forEach(function (line) { handle(line.trim()); });
+                        return pump();
+                    });
+                })();
+            })
+            .catch(function () {
+                if (progress) {
+                    progress.hidden = false;
+                    progress.textContent = 'could not check freshness — reload to retry';
+                }
+            });
+    }
+
+    document.addEventListener('DOMContentLoaded', streamFreshness);
+    document.addEventListener('flanner:page', streamFreshness);
+})();

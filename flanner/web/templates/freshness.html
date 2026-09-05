@@ -25,54 +25,42 @@
 <div class="pane">
 
   <div class="stat-grid">
-    <div class="stat"><div class="v tnum"><span class="dot d-fresh"></span>{{ tally.fresh }}</div>
+    <div class="stat"><div class="v tnum"><span class="dot d-fresh"></span><span data-tally="fresh">{{ tally.fresh }}</span></div>
       <div class="k">Fresh</div></div>
-    <div class="stat"><div class="v tnum"><span class="dot d-aging"></span>{{ tally.aging }}</div>
+    <div class="stat"><div class="v tnum"><span class="dot d-aging"></span><span data-tally="aging">{{ tally.aging }}</span></div>
       <div class="k">Aging</div></div>
-    <div class="stat"><div class="v tnum"><span class="dot d-suspect"></span>{{ tally.suspect }}</div>
+    <div class="stat"><div class="v tnum"><span class="dot d-suspect"></span><span data-tally="suspect">{{ tally.suspect }}</span></div>
       <div class="k">Suspect</div></div>
-    <div class="stat"><div class="v tnum"><span class="dot d-stale"></span>{{ tally.stale }}</div>
+    <div class="stat"><div class="v tnum"><span class="dot d-stale"></span><span data-tally="stale">{{ tally.stale }}</span></div>
       <div class="k">Stale</div></div>
   </div>
 
-  {% if attention %}
-  <div class="card" data-listgroup>
+  {% if attention or streaming %}
+  <div class="card" data-listgroup{% if streaming %} data-freshness-stream{% endif %}>
     <div class="card-head">
       Needs attention
-      <span class="pill pill-suspect tnum">{{ attention | length }}</span>
+      <span class="pill pill-suspect tnum" data-drift-count>{{ attention | length }}</span>
       <span class="note">ordered by evidence, not by date</span>
+      {# Judging one plan is several git processes. The page arrives first
+         and this says how far along the rest is, rather than leaving a
+         blank table that might be finished or might be broken. #}
+      <span class="note" data-scan-progress hidden></span>
     </div>
     <div class="tablewrap">
       <div class="grid-head cols-freshness">
         <span>Plan</span><span>Drift</span><span>Evidence</span><span>Project</span><span></span>
       </div>
       <div data-list>
-      {% for row in attention %}
-      <div class="grid-row cols-freshness" data-list-item
-           data-name="{{ row.plan_file.name }}"
-           data-project="{{ row.project.name if row.project else '' }}"
-           data-drift="{{ row.drift_rank }}">
-        <span>
-          <a class="name" href="/plans/{{ row.plan_file.id }}">{{ row.plan_file.name }}.md</a>
-          <span class="path">v{{ row.version.version }}</span>
-        </span>
-        <span style="display:inline-flex; align-items:center; gap:8px; justify-self:start">
-          <span class="drift" data-level="{{ row.status }}" aria-hidden="true">
-            <i></i><i></i><i></i><i></i></span>
-          <span class="pill pill-{{ row.status }}">{{ row.status }}</span>
-        </span>
-        <span class="evidence">
-          {% for reason in row.reasons %}{{ reason }}{% if not loop.last %} · {% endif %}{% endfor %}
-        </span>
-        <span class="when">{{ row.project.name if row.project else '—' }}</span>
-        <span style="display:flex; gap:6px; justify-self:end">
-          <a class="btn btn-sm btn-accent" href="/plans/{{ row.plan_file.id }}/edit" data-no-boost>Revise</a>
-          <a class="btn btn-sm" href="/plans/{{ row.plan_file.id }}">Review</a>
-        </span>
-      </div>
-      {% endfor %}
+      {% for row in attention %}{% include "_freshness_row.html" %}{% endfor %}
       </div>
       <div class="empty-filter" data-list-empty hidden>Nothing matches that filter.</div>
+      {% if streaming %}
+      <div class="empty-filter" data-scan-clean hidden>Nothing has drifted. Every plan
+        still lines up with the code it describes.</div>
+      <noscript><div class="empty-filter">This table is filled in as each plan is
+        checked, which needs JavaScript.
+        <a href="/freshness?full=1">Load it all at once instead</a>.</div></noscript>
+      {% endif %}
     </div>
   </div>
   {% else %}

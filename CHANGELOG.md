@@ -15,6 +15,11 @@ versioning follows [SemVer](https://semver.org/).
   rather than twice, and the two views that genuinely need the walk — the
   sidebar badge and the projects freshness column — fetch it after the page
   is up instead of blocking it.
+- **The freshness page fills in as each plan is judged**, rather than after
+  all of them are. The scan is the same work; what changes is that the page
+  arrives at once and the first drifted plan is readable in about a tenth of
+  a second instead of nine seconds. A count says how far along it is, and
+  `?full=1` still renders everything server-side for the noscript case.
 - `git grep` is asked once per plan rather than once per symbol, and `git log
   --all -S` — the most expensive call this module makes, ~370ms each — is
   memoized on the repository's HEAD.

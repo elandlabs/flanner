@@ -1,0 +1,27 @@
+{# One row of the drift table.
+   Extracted so the page and the stream cannot render a row differently:
+   the server sends this same partial down the stream, and the script only
+   ever appends html it was given. A row built in JavaScript instead would
+   be a second copy of this markup, drifting from the first. #}
+<div class="grid-row cols-freshness" data-list-item
+     data-name="{{ row.plan_file.name }}"
+     data-project="{{ row.project.name if row.project else '' }}"
+     data-drift="{{ row.drift_rank }}">
+  <span>
+    <a class="name" href="/plans/{{ row.plan_file.id }}">{{ row.plan_file.name }}.md</a>
+    <span class="path">v{{ row.version.version }}</span>
+  </span>
+  <span style="display:inline-flex; align-items:center; gap:8px; justify-self:start">
+    <span class="drift" data-level="{{ row.status }}" aria-hidden="true">
+      <i></i><i></i><i></i><i></i></span>
+    <span class="pill pill-{{ row.status }}">{{ row.status }}</span>
+  </span>
+  <span class="evidence">
+    {% for reason in row.reasons %}{{ reason }}{% if not loop.last %} · {% endif %}{% endfor %}
+  </span>
+  <span class="when">{{ row.project.name if row.project else '—' }}</span>
+  <span style="display:flex; gap:6px; justify-self:end">
+    <a class="btn btn-sm btn-accent" href="/plans/{{ row.plan_file.id }}/edit" data-no-boost>Revise</a>
+    <a class="btn btn-sm" href="/plans/{{ row.plan_file.id }}">Review</a>
+  </span>
+</div>
