@@ -77,6 +77,24 @@ def claude_config(tmp_path, monkeypatch):
     return path
 
 
+@pytest.fixture
+def no_claude_cli(monkeypatch):
+    """Pretend the Claude Code binary is absent.
+
+    Registering there means running somebody else's executable, which a test
+    must not do: it is slow, it is not installed everywhere, and on a machine
+    where it is, it would write real configuration. The path where it is
+    missing is the one worth asserting anyway, since it is what a new user
+    without Claude Code hits.
+    """
+    import shutil
+
+    real = shutil.which
+    monkeypatch.setattr(
+        shutil, "which", lambda name, *a, **k: None if name == "claude" else real(name, *a, **k)
+    )
+
+
 # --- guard: commands that require an initialized database exit 1 ---
 
 
@@ -176,10 +194,38 @@ def test_init_no_git_repo_skips_project(runner, outside_any_repo, monkeypatch):
     assert "Detected git repository" not in result.output
 
 
-def test_init_registers_with_claude(runner, git_repo, claude_config):
+def test_init_registers_with_claude(runner, git_repo, claude_config, no_claude_cli):
+    """`init` registers the agents itself; there is no second command to run.
+
+    This used to be `flanner setup`, and a machine that never ran it had a
+    store no agent could reach. The local MCP server is how an agent talks to
+    flanner at all, so the command that creates the store now wires it up.
+    """
     result = runner.invoke(cli, ["init", "--project-root", str(git_repo)], input="regproj\n")
+
     assert result.exit_code == 0, result.output
-    assert "Registering MCP server" in result.output
+    assert "flanner" in json.loads(claude_config.read_text())["mcpServers"]
+    assert "Global nudge" in result.output, "the global adoption nudge was not written"
+    assert (Path.home() / ".claude" / "CLAUDE.md").exists()
+
+
+def test_init_can_be_told_to_leave_every_agent_alone(runner, git_repo, claude_config):
+    """`--skip-claude` covers all of it, not only Claude Desktop."""
+    result = runner.invoke(
+        cli, ["init", "--skip-claude", "--project-root", str(git_repo)], input="quietproj\n"
+    )
+
+    assert result.exit_code == 0, result.output
+    assert not claude_config.exists()
+    assert "Global nudge" not in result.output
+    assert not (Path.home() / ".claude" / "CLAUDE.md").exists()
+
+
+def test_setup_repairs_the_registration_without_touching_the_store(runner, claude_config):
+    """What `setup` is for now: running the same wiring again on its own."""
+    result = runner.invoke(cli, ["setup"])
+
+    assert result.exit_code == 0, result.output
     assert "flanner" in json.loads(claude_config.read_text())["mcpServers"]
 
 

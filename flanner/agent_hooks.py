@@ -322,7 +322,7 @@ def wire_agent_integration(root: str, project: ProjectModel) -> Wiring:
     return Wiring(installed=done, skipped=skipped)
 
 
-# A global nudge written into ~/.claude/CLAUDE.md by `flanner setup`. Because a
+# A global nudge written into ~/.claude/CLAUDE.md by `flanner init`. Because a
 # brand-new repo has no flanner files, the instruction to adopt it has to live
 # at user scope. It is deliberately narrow: only offer adoption on plan-doc
 # intent in an unmanaged repo, never for READMEs or casual notes.

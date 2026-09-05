@@ -56,7 +56,9 @@ flanner web --open-browser     # http://localhost:8080
 
 `flanner init` is safe to re-run. It detects your git root, creates `.plans/`, updates `.gitignore`, and installs the agent integration.
 
-Three agents, three different files. `init` writes a project-scoped `.mcp.json` that **Claude Code** reads, registers the server in **Claude Desktop**'s config, and adds managed blocks to `CLAUDE.md` and `AGENTS.md`. **Codex** reads `AGENTS.md` but registers MCP servers in `~/.codex/config.toml`, which flanner does not edit — `flanner setup` prints the two lines to paste. `flanner status` shows a row per agent, each checked where that agent actually looks.
+Three agents, three different files, and `init` handles all of it — there is no second command to remember. It writes a project-scoped `.mcp.json` that **Claude Code** reads, registers the server at user scope and in **Claude Desktop**'s config, and adds managed blocks to `CLAUDE.md` and `AGENTS.md`. **Codex** reads `AGENTS.md` but registers MCP servers in `~/.codex/config.toml`, which flanner does not edit — `init` prints the two lines to paste. `flanner status` shows a row per agent, each checked where that agent actually looks, and `flanner setup` re-runs the registration on its own if one of them needs repairing later.
+
+`--skip-claude` opts out of all of it, if you would rather wire the agents up yourself.
 
 ## CLI commands
 

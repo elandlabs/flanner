@@ -11,13 +11,31 @@ from flanner.git_integration import find_git_root
 
 @pytest.fixture(autouse=True)
 def _isolated_flanner_home(tmp_path, monkeypatch):
-    """Point FLANNER_HOME at a temp dir for every test.
+    """Point FLANNER_HOME, and the home directory itself, at a temp dir.
 
-    Prevents tests from seeing the developer's real ~/.flanner — in
-    particular a live daemon.json, which would make MCP write tools forward
-    to a running `flanner web` instead of executing in-process.
+    FLANNER_HOME prevents tests from seeing the developer's real ~/.flanner
+    — in particular a live daemon.json, which would make MCP write tools
+    forward to a running `flanner web` instead of executing in-process.
+
+    The home directory is isolated for a blunter reason: `flanner init`
+    registers the MCP server where each agent looks for it, and two of those
+    places are ~/.claude.md and ~/.claude.json. Without this, running the
+    suite would edit the developer's own editor configuration. `Path.home()`
+    reads these, and which one it reads differs by platform, so all four are
+    set rather than guessing.
     """
     monkeypatch.setenv("FLANNER_HOME", str(tmp_path / "flanner-home"))
+
+    # Deliberately not created. Tests assert on what is inside their temp
+    # directory, and a directory conjured up by a fixture nothing asked for
+    # shows up in those listings as an unexplained extra. Whatever writes
+    # here makes it, the way it would on a real machine. The name avoids
+    # "home", which several tests already use for FLANNER_HOME.
+    fake_home = tmp_path / "user-home"
+    monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.setenv("USERPROFILE", str(fake_home))
+    monkeypatch.setenv("HOMEDRIVE", fake_home.drive or "")
+    monkeypatch.setenv("HOMEPATH", str(fake_home)[len(fake_home.drive) :])
 
 
 @pytest.fixture

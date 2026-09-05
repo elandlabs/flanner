@@ -81,6 +81,33 @@ def test_enrolling_still_says_who_you_are(monkeypatch):
     assert cache.load() is not None
 
 
+def test_enrolling_leaves_a_machine_that_can_run_what_it_was_just_told_to(monkeypatch, tmp_path):
+    """`login` and `accept` enrol a device identically, so they must leave it
+    in the same state. Only `accept` created the store, so whether the very
+    next instruction worked depended on which command you had been sent to.
+    """
+    _enrol(monkeypatch, workspaces=(("ws_core", MAINTAINER),))
+
+    CliRunner().invoke(cli, ["login", "code", "--endpoint", "https://x.test"])
+
+    assert (tmp_path / "home" / "data.db").exists(), "login enrolled but made no store"
+
+
+def test_the_command_login_recommends_is_not_refused_for_want_of_a_store(monkeypatch):
+    """The failure this fixes, asserted where a user met it: `join` printed
+    by `login`, then refused because nothing had made a database."""
+    _enrol(monkeypatch, workspaces=(("ws_core", MAINTAINER),))
+    runner = CliRunner()
+
+    assert (
+        "flanner init"
+        in runner.invoke(cli, ["login", "code", "--endpoint", "https://x.test"]).output
+    )
+    refusal = runner.invoke(cli, ["join", "ws_core"]).output
+
+    assert "no flanner store yet" not in refusal, refusal
+
+
 def test_an_account_with_no_workspace_is_told_where_one_comes_from(monkeypatch):
     """The state a first admin is in, and the one that used to end in silence.
 

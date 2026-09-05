@@ -217,26 +217,113 @@ def _print_breakdown() -> None:
         console.print(line, style="dim")
 
 
-def _register_with_claude_desktop() -> None:
-    """Add the MCP server to Claude Desktop's config, and say how it went.
-
-    Failure is reported, never raised. Registration is a convenience on top
-    of a store that has already been created successfully, and taking `init`
-    down because one editor's config file could not be written would undo
-    work that did succeed.
-    """
+def _register_claude_desktop() -> None:
+    """Claude Desktop reads one global config file. Put the server in it."""
     from .claude_integration import auto_register_on_init
 
-    console.print("\n[MCP] Registering MCP server with Claude Desktop...", style="cyan")
-    success, message = auto_register_on_init()
-    if success:
-        console.print(f"OK {message}", style="green")
+    ok, message = auto_register_on_init()
+    console.print(
+        f"{'OK' if ok else 'WARN'} Claude Desktop: {message}", style="green" if ok else "yellow"
+    )
+    if not ok:
+        console.print("  Register it later with:  flanner register", style="white")
+
+
+def _register_claude_code() -> None:
+    """Register at user scope, through Claude Code's own CLI.
+
+    Its config is not ours to write: the one time this package edited an
+    agent's config by hand it clobbered it. Skipped when the server is
+    already there, so adopting a second repository does not pay for a
+    subprocess to be told nothing changed.
+    """
+    import json
+    import shutil
+    import subprocess
+
+    from .claude_integration import claude_code_user_config_path
+
+    manual = "  Add it manually:  claude mcp add -s user flanner -- flanner-mcp"
+    try:
+        user = json.loads(claude_code_user_config_path().read_text(encoding="utf-8"))
+        if "flanner" in (user.get("mcpServers") or {}):
+            console.print("OK Claude Code: already registered at user scope", style="green")
+            return
+    except (OSError, ValueError):
+        pass
+
+    claude_bin = shutil.which("claude")
+    if not claude_bin:
         console.print(
-            "  You may need to restart Claude Code for changes to take effect", style="yellow"
+            "- Claude Code CLI not found. To use flanner there globally:", style="yellow"
         )
+        console.print(manual, style="white")
         return
-    console.print(f"WARN {message}", style="yellow")
-    console.print("  You can manually register later with: flanner register", style="white")
+
+    try:
+        proc = subprocess.run(  # noqa: S603 (fixed argv, no shell, no untrusted input)
+            [claude_bin, "mcp", "add", "-s", "user", "flanner", "--", "flanner-mcp"],
+            capture_output=True,
+            text=True,
+            # Every other subprocess call in the package is bounded; this one
+            # was not. `claude` is somebody else's binary, and if it blocks on
+            # a prompt or a network call it takes `flanner init` down with it,
+            # during the one command a new user runs first.
+            timeout=30,
+        )
+    except (subprocess.TimeoutExpired, OSError) as e:
+        detail = "timed out after 30s" if isinstance(e, subprocess.TimeoutExpired) else str(e)
+        console.print(f"WARN Claude Code: {detail}", style="yellow")
+        console.print(manual, style="white")
+        return
+
+    if proc.returncode == 0:
+        console.print("OK Claude Code: registered flanner-mcp at user scope", style="green")
+        return
+    tail = (proc.stderr or proc.stdout).strip().splitlines()[-1:] or [""]
+    console.print(f"WARN Claude Code: {tail[0]}", style="yellow")
+    console.print(manual, style="white")
+
+
+def _register_codex() -> None:
+    """Report only. Codex's registration is TOML this deliberately does not edit."""
+    from .claude_integration import CODEX_SNIPPET, codex_config_path, codex_registration
+
+    if codex_registration():
+        console.print("OK Codex: registered", style="green")
+        return
+    console.print(f"- Codex: not registered. Add to {codex_config_path()}:", style="yellow")
+    for line in CODEX_SNIPPET.splitlines():
+        # markup=False: Rich reads "[mcp_servers.flanner]" as a style tag and
+        # prints nothing for it, which is the one line that matters.
+        console.print(f"    {line}", style="white", markup=False)
+
+
+def _register_agents_globally() -> None:
+    """Make flanner reachable from every project, on this machine.
+
+    Run by `init` as well as by `setup`. The local MCP server is not a
+    trimming somebody opts into later: it is how an agent reaches flanner at
+    all, so the command that creates the store is the right place to wire it
+    up. Every step is idempotent and reports rather than raises, because this
+    sits on top of a store that has already been created and failing here
+    must not undo that.
+
+    Only the global registrations live here. Per-repository wiring is
+    `_setup_agent_integration`, which runs once for each repository adopted.
+    """
+    from .agent_hooks import upsert_global_nudge
+
+    console.print("\n[Agents] Making flanner reachable from every project...", style="cyan")
+    _register_claude_desktop()
+    _register_claude_code()
+    _register_codex()
+
+    changed = upsert_global_nudge()
+    where = Path.home() / ".claude" / "CLAUDE.md"
+    console.print(
+        f"OK Global nudge {'added to' if changed else 'already in'} {where}", style="green"
+    )
 
 
 def _adopt_repository(project_root: str, plan_dir: str, force_new_project: bool) -> None:
@@ -305,14 +392,21 @@ def _adopt_repository(project_root: str, plan_dir: str, force_new_project: bool)
 @cli.command()
 @click.option("--project-root", default=None, help="Project root path")
 @click.option("--plan-dir", default=".plans", help="Plan directory name")
-@click.option("--skip-claude", is_flag=True, help="Skip Claude Code integration")
+@click.option("--skip-claude", is_flag=True, help="Skip registering with Claude, Codex and agents")
 @click.option(
     "--force-new-project", is_flag=True, help="Force create new project even if one exists"
 )
 def init(
     project_root: str | None, plan_dir: str, skip_claude: bool, force_new_project: bool
 ) -> None:
-    """Initialize Flanner"""
+    """Initialize Flanner
+
+    Creates this machine's store, registers the MCP server everywhere an
+    agent looks for it, and adopts the repository you run it in. The
+    registration used to be a separate `flanner setup`; it is not optional
+    enough to be its own step, since without it no agent can reach flanner.
+    `setup` still exists for repairing it on its own.
+    """
     mcp_dir = get_mcp_dir()
 
     # Initialize storage
@@ -325,10 +419,11 @@ def init(
     console.print(f"OK Initialized Flanner at {mcp_dir}", style="green")
     console.print(f"OK Database created at {db_path}", style="green")
 
-    # Register with Claude Desktop (unless skipped). Claude Code (the CLI) is
-    # handled separately via .mcp.json in _setup_agent_integration below.
+    # The global half: Claude Desktop, Claude Code at user scope, Codex and
+    # the adoption nudge. The per-repository half is _setup_agent_integration
+    # below, which writes .mcp.json and the guard-write hook.
     if not skip_claude:
-        _register_with_claude_desktop()
+        _register_agents_globally()
 
     if project_root or (project_root := find_git_root(os.getcwd())):
         console.print(f"\nOK Detected git repository at: {project_root}", style="green")
@@ -1024,84 +1119,14 @@ def web(port: int, host: str, open_browser: bool) -> None:
 
 @cli.command()
 def setup() -> None:
-    """Make flanner available in every project (global, one-time).
+    """Re-run the global agent registration on its own.
 
-    Registers the MCP server for Claude Desktop and Claude Code (user scope),
-    and adds a short nudge to ~/.claude/CLAUDE.md so Claude offers to adopt a
-    repo (initialize_project_tool / flanner init) when you write a plan doc in a
-    project that is not yet flanner-managed.
+    `flanner init` already does this, so a new machine needs no separate
+    step. This is for repairing it: an editor installed later, a config
+    file restored from a backup, or a registration that failed the first
+    time and was left with a warning.
     """
-    console.print("\n[Setup] Making flanner available across all projects...\n", style="cyan bold")
-
-    # 1. Claude Desktop (single global config).
-    from .claude_integration import auto_register_on_init
-
-    ok, message = auto_register_on_init()
-    console.print(
-        f"{'OK' if ok else 'WARN'} Claude Desktop: {message}", style="green" if ok else "yellow"
-    )
-
-    # 2. Claude Code, user scope (via its own CLI so its config is written safely).
-    import shutil
-    import subprocess
-
-    claude_bin = shutil.which("claude")
-    if claude_bin:
-        try:
-            proc = subprocess.run(  # noqa: S603 (fixed argv, no shell, no untrusted input)
-                [claude_bin, "mcp", "add", "-s", "user", "flanner", "--", "flanner-mcp"],
-                capture_output=True,
-                text=True,
-                # Every other subprocess call in the package is bounded; this
-                # one was not. `claude` is somebody else's binary, and if it
-                # blocks on a prompt or a network call it takes `flanner init`
-                # down with it — during the one command a new user runs first.
-                timeout=30,
-            )
-        except subprocess.TimeoutExpired:
-            console.print("WARN Claude Code: registration timed out after 30s", style="yellow")
-            console.print(
-                "  Add it manually:  claude mcp add -s user flanner -- flanner-mcp", style="white"
-            )
-            return
-        if proc.returncode == 0:
-            console.print("OK Claude Code: registered flanner-mcp at user scope", style="green")
-        else:
-            detail = (proc.stderr or proc.stdout).strip().splitlines()[-1:] or [""]
-            console.print(f"WARN Claude Code: {detail[0]}", style="yellow")
-            console.print(
-                "  Add it manually:  claude mcp add -s user flanner -- flanner-mcp", style="white"
-            )
-    else:
-        console.print(
-            "- Claude Code CLI not found. To use flanner there globally, run:", style="yellow"
-        )
-        console.print("    claude mcp add -s user flanner -- flanner-mcp", style="white")
-
-    # 3. Codex. It reads the AGENTS.md block `init` writes, but its MCP
-    # registration is a TOML file this does not edit: Python 3.10 has no
-    # TOML writer, and rewriting somebody's editor config by hand is how
-    # the .mcp.json clobbering happened. Print the exact lines instead.
-    from .claude_integration import CODEX_SNIPPET, codex_config_path, codex_registration
-
-    if codex_registration():
-        console.print("OK Codex: registered", style="green")
-    else:
-        console.print(f"- Codex: not registered. Add to {codex_config_path()}:", style="yellow")
-        for line in CODEX_SNIPPET.splitlines():
-            # markup=False: Rich reads "[mcp_servers.flanner]" as a style tag
-            # and prints nothing for it, which is the one line that matters.
-            console.print(f"    {line}", style="white", markup=False)
-
-    # 4. Global adoption nudge.
-    from .agent_hooks import upsert_global_nudge
-
-    changed = upsert_global_nudge()
-    where = str(Path.home() / ".claude" / "CLAUDE.md")
-    console.print(
-        f"OK Global nudge {'added to' if changed else 'already in'} {where}", style="green"
-    )
-
+    _register_agents_globally()
     console.print(
         "\nRestart Claude Desktop and start a fresh Claude Code session to pick up the changes.",
         style="cyan",
@@ -3074,6 +3099,14 @@ def login(code: str, endpoint: str | None, label: str | None) -> None:
     except account.SessionError as e:
         _session_failed(e)
 
+    # Same reason `accept` does it: this is the moment the machine commits to
+    # being used with a team, and the next thing printed is `flanner join`,
+    # which refuses when nothing has made a database yet. The two commands
+    # enrol a device identically, so leaving only one of them to create the
+    # store made the same instruction work or fail depending on which one you
+    # had been sent to.
+    _ensure_store()
+
     console.print(f"OK Enrolled as {current.user_id} ({current.device_id})", style="green")
     _what_next(current)
     _print_entitlement(current)
@@ -4040,9 +4073,15 @@ def mesh_status() -> None:
     )
 
 
-@mesh.command("join")
-def mesh_join() -> None:
-    """Join the private network, using a credential from the control plane"""
+@mesh.command("connect")
+def mesh_connect() -> None:
+    """Connect to the team's private network, if it has one
+
+    Named apart from `flanner join` on purpose: that one binds a repository
+    to a workspace, which is what makes review count and what peer sync is
+    scoped by. This one puts the machine on a VPN and touches nothing
+    flanner owns. Most teams need the first and never need this.
+    """
     from . import account
     from .exceptions import MeshError
     from .mesh import Enrollment
@@ -4073,7 +4112,7 @@ def mesh_join() -> None:
         console.print(f"ERROR {e}", style="red")
         raise SystemExit(1) from None
 
-    console.print("OK Joined the team's private network", style="green")
+    console.print("OK Connected to the team's private network", style="green")
 
 
 @mesh.command("leave")

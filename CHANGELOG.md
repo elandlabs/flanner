@@ -8,6 +8,26 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [0.11.0] - 2026-09-05
 
+### Changed
+- **`flanner init` registers the agents itself.** This was a separate
+  `flanner setup`, and a machine that never ran it had a store no agent
+  could reach. The local MCP server is not a trimming you opt into later:
+  it is how an agent talks to flanner at all, so the command that creates
+  the store now wires it up. `setup` still exists for repairing the
+  registration on its own, and `--skip-claude` now opts out of all of it
+  rather than only the Claude Desktop half.
+- **`flanner mesh join` is now `flanner mesh connect`.** It shared a word
+  with `flanner join` and nothing else. That one binds a repository to a
+  workspace, which is what makes review count and what peer sync is scoped
+  by. This one puts the machine on a VPN and touches nothing flanner owns.
+  Most teams need the first and never need the second.
+
+### Fixed
+- `flanner login` creates this machine's store, as `flanner accept` already
+  did. The two enrol a device identically, so leaving only one of them to
+  create the store made the very next instruction either work or refuse,
+  depending on which command you had been sent to.
+
 ### Added
 - **Work arriving from a peer shows up without a reload.** The catalog has
   several writers and they are separate processes: the web UI, `flanner peer
