@@ -1098,10 +1098,20 @@ onPage(function () {
         else list.appendChild(row);
     }
 
+    let inFlight = null;
+
     function streamFreshness() {
+        // Navigation is boosted, so leaving this page replaces the DOM under
+        // a scan that is still running. Without this the fetch stays open and
+        // the server keeps judging plans for another few seconds, writing
+        // rows into a node nobody can see.
+        if (inFlight) { inFlight.abort(); inFlight = null; }
+
         const card = document.querySelector('[data-freshness-stream]');
         if (!card || card.dataset.streamed) return;
         card.dataset.streamed = '1';
+        const controller = new AbortController();
+        inFlight = controller;
 
         const list = card.querySelector('[data-list]');
         const progress = card.querySelector('[data-scan-progress]');
@@ -1154,7 +1164,10 @@ onPage(function () {
             }
         }
 
-        fetch('/freshness/stream', { headers: { 'Accept': 'application/x-ndjson' } })
+        fetch('/freshness/stream', {
+            headers: { 'Accept': 'application/x-ndjson' },
+            signal: controller.signal,
+        })
             .then(function (response) {
                 if (!response.ok || !response.body) throw new Error('no stream');
                 const reader = response.body.getReader();
@@ -1171,11 +1184,16 @@ onPage(function () {
                     });
                 })();
             })
-            .catch(function () {
+            .catch(function (err) {
+                // Leaving the page is not a failure to report.
+                if (err && err.name === 'AbortError') return;
                 if (progress) {
                     progress.hidden = false;
                     progress.textContent = 'could not check freshness — reload to retry';
                 }
+            })
+            .finally(function () {
+                if (inFlight === controller) inFlight = null;
             });
     }
 
