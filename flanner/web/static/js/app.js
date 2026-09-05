@@ -710,6 +710,10 @@ onPage(function () {
         if (main) main.focus({ preventScroll: true });
     }
 
+    // Live updates re-render the current page through this same path. A
+    // second "swap the page in place" would be a second set of bugs.
+    window.flannerVisit = visit;
+
     document.addEventListener('click', function (e) {
         const a = e.target.closest('a[href]');
         if (!boostable(a, e)) return;
@@ -1199,4 +1203,99 @@ onPage(function () {
 
     document.addEventListener('DOMContentLoaded', streamFreshness);
     document.addEventListener('flanner:page', streamFreshness);
+})();
+
+
+// Live updates: what a peer, an agent or another terminal just changed.
+//
+// The catalog has several writers and they are separate processes, so this
+// page cannot be notified in-process. The server watches the catalog and
+// says which plans moved; this decides what that means for the page you are
+// looking at.
+//
+// Server-sent events rather than the ndjson the freshness scan uses: this
+// stream is open-ended, so reconnecting after a sleep or a dropped
+// connection is the browser's job rather than something to hand-roll.
+(function () {
+    if (!window.EventSource) return;
+
+    let source = null;
+    let opened = false;
+
+    function planBanner(planId, version) {
+        const host = document.querySelector('[data-live-plan="' + planId + '"]');
+        if (!host) return;
+        let banner = host.querySelector('[data-live-banner]');
+        if (!banner) {
+            banner = document.createElement('div');
+            banner.setAttribute('data-live-banner', '');
+            banner.className = 'notice info';
+            host.prepend(banner);
+        }
+        // A link, not an automatic swap. This page may be half-read, and the
+        // editor certainly must not have the document changed underneath
+        // somebody typing into it.
+        banner.innerHTML =
+            'Version ' + version + ' of this plan arrived. ' +
+            '<a href="' + location.pathname + '">Open it</a>.';
+    }
+
+    // `touched` is the list of plans that moved, or null for "something may
+    // have moved and this connection cannot say what" — which is the state
+    // after a reconnect, since the gap is unobserved by definition.
+    function refresh(touched) {
+        // A plan page cares about one plan, and about nothing else that moved.
+        const watching = document.querySelector('[data-live-plan]');
+        if (watching) {
+            const id = watching.getAttribute('data-live-plan');
+            if (touched && touched.indexOf(id) === -1) return;
+            fetch('/plans/' + id + '/revision', { headers: { Accept: 'application/json' } })
+                .then(function (r) { return r.ok ? r.json() : null; })
+                .then(function (data) {
+                    if (!data) return;
+                    const shown = Number(watching.getAttribute('data-live-version') || 0);
+                    if (Number(data.version) !== shown) planBanner(id, data.version);
+                })
+                .catch(function () {});
+            return;
+        }
+
+        // A list page can simply be re-rendered: nothing on it is being
+        // edited, and the boosted navigator already knows how to swap a page
+        // without losing the shell.
+        const list = document.querySelector('[data-live-list]');
+        if (list && window.flannerVisit) window.flannerVisit(location.href, false);
+    }
+
+    function onCatalog(event) {
+        let msg;
+        try { msg = JSON.parse(event.data); } catch (e) { return; }
+        const touched = [].concat(msg.added || [], msg.changed || [], msg.removed || []);
+        if (touched.length) refresh(touched);
+    }
+
+    function onReady() {
+        // The server ends a connection rather than holding one open forever,
+        // and a laptop lid closing ends one too. Either way the browser
+        // opens another, and whatever changed in between was seen by no
+        // connection at all — so the first thing a second connection does is
+        // assume it missed something.
+        if (opened) refresh(null);
+        opened = true;
+    }
+
+    function connect() {
+        if (source) return;
+        source = new EventSource('/events');
+        source.addEventListener('ready', onReady);
+        source.addEventListener('catalog', onCatalog);
+        source.addEventListener('error', function () {
+            // EventSource reconnects on its own, which is the reason to use
+            // it here. Nothing to do but let it.
+        });
+    }
+
+    document.addEventListener('DOMContentLoaded', connect);
+    // Deliberately not re-opened per navigation: the connection belongs to
+    // the tab, not to the page currently in it.
 })();

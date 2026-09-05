@@ -4,11 +4,13 @@ Web interface for Flanner
 Provides a browser-based UI for viewing and managing plan files.
 """
 
+import asyncio
 import functools
 import json
 import logging
 import os
 import secrets
+import time
 from collections import OrderedDict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -29,6 +31,7 @@ from fastapi.responses import (
 )
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from sqlalchemy import func
 from starlette.concurrency import run_in_threadpool
 from starlette.responses import StreamingResponse
 
@@ -1387,6 +1390,120 @@ def _plans_to_judge(session: Any) -> list[tuple[Any, str | None]]:
         for plan_file in _visible_plans(session, project.id):
             out.append((plan_file, head))
     return out
+
+
+# --- what changed, and telling the page about it ----------------------------
+#
+# The catalog has several writers and they are separate processes: this UI,
+# `flanner peer serve` taking a push from a teammate, the MCP server acting
+# for an agent, a `flanner sync` in a terminal. None of them are in this
+# process's call stack, so nothing here can be notified in-process.
+#
+# So the question asked is "did anything change?" rather than "did somebody
+# remember to tell me?". Two indexed queries, once a second, shared by every
+# open tab. It cannot miss a writer, including one added later.
+
+#: How often the catalog is checked. Fast enough to feel immediate, slow
+#: enough that an idle browser tab costs almost nothing.
+LIVE_POLL_SECONDS = 1.0
+
+#: How long one connection lasts before the browser is asked to make another.
+#:
+#: A stream with no end relies entirely on noticing the client has gone, and
+#: a client that vanishes without closing cleanly would otherwise leave this
+#: polling the database forever. Ending on purpose costs a reconnect the
+#: browser performs by itself, which is the property SSE was chosen for.
+LIVE_STREAM_MAX_SECONDS = 300.0
+
+
+def _catalog_snapshot(session: Any) -> dict[str, str]:
+    """A signature per plan: enough to tell what changed, and nothing else.
+
+    `updated_at` moves when a plan is revised here, `current_version` when a
+    baseline is accepted, and the version count when one merely *arrives*
+    from a peer — which deliberately does not move the pointer, and so would
+    be invisible to the other two.
+    """
+    from .database import PlanFileModel, VersionModel
+
+    counts = dict(
+        session.query(VersionModel.plan_file_id, func.count(VersionModel.id))
+        .group_by(VersionModel.plan_file_id)
+        .all()
+    )
+    rows = session.query(
+        PlanFileModel.id, PlanFileModel.updated_at, PlanFileModel.current_version
+    ).all()
+    return {
+        str(pid): f"{updated}|{current}|{counts.get(pid, 0)}" for pid, updated, current in rows
+    }
+
+
+@app.get("/events")
+async def events(request: Request) -> StreamingResponse:
+    """Server-sent events: which plans changed, as they change.
+
+    Server-sent rather than the newline-delimited json the freshness scan
+    uses, because this stream is open-ended. It lives as long as the tab, and
+    reconnecting after a sleep or a dropped connection is the browser's job
+    rather than something to hand-roll — which is exactly the property that
+    made SSE the wrong fit for a scan that ends.
+    """
+    ensure_db()
+    session = get_session()
+
+    async def stream() -> Any:
+        seen = await run_in_threadpool(_catalog_snapshot, session)
+        # Named so a reconnecting browser is told the stream is alive before
+        # anything has changed, rather than sitting on a silent socket.
+        yield "event: ready\ndata: {}\n\n"
+
+        deadline = time.monotonic() + LIVE_STREAM_MAX_SECONDS
+        while time.monotonic() < deadline:
+            if await request.is_disconnected():
+                return
+            await asyncio.sleep(LIVE_POLL_SECONDS)
+            try:
+                now = await run_in_threadpool(_catalog_snapshot, session)
+            except Exception:  # noqa: BLE001 - a dropped poll is not a dead stream
+                logger.exception("could not read the catalog for live updates")
+                continue
+
+            added = sorted(set(now) - set(seen))
+            removed = sorted(set(seen) - set(now))
+            changed = sorted(k for k in now.keys() & seen.keys() if now[k] != seen[k])
+            if added or removed or changed:
+                seen = now
+                payload = json.dumps({"added": added, "removed": removed, "changed": changed})
+                yield f"event: catalog\ndata: {payload}\n\n"
+            else:
+                # A comment frame. Keeps the connection warm and lets the
+                # server notice a browser that went away without saying so.
+                yield ": keep-alive\n\n"
+
+    return StreamingResponse(
+        stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-store",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@app.get("/plans/{plan_id}/revision")
+async def plan_revision(plan_id: str) -> dict[str, Any]:
+    """The version a plan is on now, for a page deciding whether it is stale."""
+    ensure_db()
+    session = get_session()
+    try:
+        plan_file = get_plan_file(session, UUID(plan_id))
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=404, detail="No such plan") from None
+    if plan_file is None:
+        raise HTTPException(status_code=404, detail="No such plan")
+    return {"version": plan_file.current_version, "name": plan_file.name}
 
 
 @app.get("/freshness/stream")

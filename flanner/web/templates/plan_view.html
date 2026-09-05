@@ -60,6 +60,10 @@
 {% endblock %}
 
 {% block content %}
+{# Live updates watch this one plan. The version it was rendered at is what
+   decides whether an arrival is news: a peer's version does not move the
+   pointer, so the number here is what the banner compares against. #}
+<div data-live-plan="{{ plan_file.id }}" data-live-version="{{ plan_file.current_version }}"></div>
 <div class="plan-layout">
 
   <div class="plan-main">
