@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
@@ -137,6 +138,30 @@ def test_accepting_a_baseline_is_a_change(store):
     assert _snapshot(session)[str(plan_file.id)] != before[str(plan_file.id)]
 
 
+def test_gaining_a_peer_is_a_change_though_no_plan_moved(store):
+    """The mesh page reads the peer keyring, and the keyring is not in the
+    database — it is in the cached session, written by `flanner login` and by
+    a key exchange. Watching only plans would leave that page stale."""
+    client, session, project = store
+    from flanner import session as session_cache
+
+    before = _snapshot(session)
+    path = session_cache.session_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text('{"device_keys": {"abc": "key"}}', encoding="utf-8")
+
+    assert _snapshot(session)["mesh"] != before["mesh"]
+
+
+def test_the_mesh_entry_is_not_mistaken_for_a_plan(store):
+    """It shares the dict with plan ids, so it must not look like one."""
+    client, session, project = store
+
+    assert "mesh" in _snapshot(session)
+    with pytest.raises(ValueError):
+        UUID("mesh")
+
+
 def test_reading_the_catalog_twice_reports_nothing(store):
     """A poll that always looks changed would refresh the page every second."""
     client, session, project = store
@@ -200,6 +225,34 @@ def test_a_revision_for_a_plan_that_does_not_exist_is_a_404(store):
     client, _, _ = store
     assert client.get("/plans/not-a-uuid/revision").status_code == 404
     assert client.get("/plans/00000000-0000-0000-0000-000000000000/revision").status_code == 404
+
+
+def test_a_plans_history_watches_that_plan_and_nothing_else(store):
+    """Every other plan in the store moving is not news on this page, and
+    re-rendering it each time one did would be a page that will not sit
+    still."""
+    client, session, project = store
+    from flanner.plan_ops import create_plan
+
+    plan_file, _ = create_plan(
+        session, project=project, name="arch", content="# one\n", created_by="me"
+    )
+    session.commit()
+
+    page = client.get(f"/plans/{plan_file.id}/history")
+    assert f'data-live-list="{plan_file.id}"' in page.text
+
+
+def test_the_pages_that_show_what_arrived_are_all_marked(store):
+    """Every page whose content a peer can change without you touching it."""
+    client, session, project = store
+    from flanner.plan_ops import create_plan
+
+    create_plan(session, project=project, name="arch", content="# one\n", created_by="me")
+    session.commit()
+
+    for path in ("/", "/projects", "/plans", "/mesh"):
+        assert "data-live-list" in client.get(path).text, path
 
 
 def test_list_pages_are_marked_refreshable_and_the_editor_is_not(store):

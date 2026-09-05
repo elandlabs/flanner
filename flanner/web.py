@@ -1423,8 +1423,22 @@ def _catalog_snapshot(session: Any) -> dict[str, str]:
     baseline is accepted, and the version count when one merely *arrives*
     from a peer — which deliberately does not move the pointer, and so would
     be invisible to the other two.
+
+    One entry is not a plan: "mesh" covers the cached session, so gaining a
+    peer registers as a change even though no plan moved.
     """
+    from . import session as session_cache
     from .database import PlanFileModel, VersionModel
+
+    # Who this device can sync with is not in the database: the peer keyring
+    # lives in the cached session, written by `flanner login` and by a key
+    # exchange. The mesh page reads it, so a change to it has to count as a
+    # change to something.
+    try:
+        stat = session_cache.session_path().stat()
+        mesh = f"{stat.st_mtime_ns}|{stat.st_size}"
+    except OSError:
+        mesh = "none"
 
     counts = dict(
         session.query(VersionModel.plan_file_id, func.count(VersionModel.id))
@@ -1434,9 +1448,11 @@ def _catalog_snapshot(session: Any) -> dict[str, str]:
     rows = session.query(
         PlanFileModel.id, PlanFileModel.updated_at, PlanFileModel.current_version
     ).all()
-    return {
+    signatures = {
         str(pid): f"{updated}|{current}|{counts.get(pid, 0)}" for pid, updated, current in rows
     }
+    signatures["mesh"] = mesh
+    return signatures
 
 
 @app.get("/events")

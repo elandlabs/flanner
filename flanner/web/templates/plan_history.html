@@ -19,6 +19,7 @@
 {% endblock %}
 
 {% block content %}
+<div data-live-list="{{ plan_file.id }}" hidden></div>
 <div class="pane">
   <div class="card">
     <div class="card-head">Every version <span class="note">{{ versions | length }}</span></div>

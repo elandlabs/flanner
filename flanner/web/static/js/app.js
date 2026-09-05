@@ -1263,8 +1263,16 @@ onPage(function () {
         // A list page can simply be re-rendered: nothing on it is being
         // edited, and the boosted navigator already knows how to swap a page
         // without losing the shell.
+        //
+        // A value on the marker narrows it to one thing worth watching --
+        // a plan's history cares about that plan and nothing else. No value
+        // means any change is worth re-reading, which is right for a list of
+        // everything.
         const list = document.querySelector('[data-live-list]');
-        if (list && window.flannerVisit) window.flannerVisit(location.href, false);
+        if (!list || !window.flannerVisit) return;
+        const only = list.getAttribute('data-live-list');
+        if (only && touched && touched.indexOf(only) === -1) return;
+        window.flannerVisit(location.href, false);
     }
 
     function onCatalog(event) {
