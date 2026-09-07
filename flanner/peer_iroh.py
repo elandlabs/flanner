@@ -239,12 +239,36 @@ def _configured_relay() -> tuple[str, str]:
 
 
 async def _bind() -> Any:
+    """Bring this device's endpoint up.
+
+    The n0 preset is three things at once, and the second is the one worth
+    stating out loud. Its own description is "relays + discovery + crypto
+    provider".
+
+    *Discovery* is how a peer holding nothing but a device id finds a route
+    to this machine. There is no address to exchange and none to configure
+    because this endpoint publishes its own — its local candidate addresses
+    and its home relay, signed under the same key the device id is a hash
+    of — and a dialler resolves the id against that. Which is to say: taking
+    the preset means addresses for this machine are published to
+    infrastructure n0 runs. Not plan contents, which never leave the
+    encrypted connection between two endpoints, and not anything a stranger
+    could act on, since reaching this endpoint still proves nothing and
+    grants nothing. But it is a default with a privacy consequence, and it
+    arrives inside a call that does not look like it has one.
+
+    ``relay_mode`` below then replaces the relay half with the defaults plus
+    the organization's own, if it has one. Discovery is deliberately left as
+    the preset set it: an organization running its own relay has somewhere
+    of its own to fall back to, and still resolves ids through n0.
+    """
     iroh = _iroh()
     url, token = _configured_relay()
     builder = iroh.EndpointBuilder()
     builder.apply_n0()
     builder.secret_key(_secret_bytes())
     builder.alpns([ALPN])
+    # After the preset, not before: this is the half being overridden.
     builder.relay_mode(relay_mode(url, token))
     return await builder.bind()
 
