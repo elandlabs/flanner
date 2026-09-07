@@ -299,7 +299,36 @@ def _register_codex() -> None:
         console.print(f"    {line}", style="white", markup=False)
 
 
-def _register_agents_globally() -> None:
+#: The agents that can be registered, named as `flanner status` names them.
+#: One list, so the flag, the status table and the registration cannot come
+#: to disagree about what an agent is called.
+CLAUDE_DESKTOP = "claude-desktop"
+CLAUDE_CODE = "claude-code"
+CODEX = "codex"
+AGENTS = (CLAUDE_DESKTOP, CLAUDE_CODE, CODEX)
+
+
+def _agents_to_register(chosen: tuple[str, ...], skip_claude: bool) -> tuple[str, ...]:
+    """Turn what was asked for into the list to actually register.
+
+    A repeatable option rather than one flag per agent, because a flag per
+    agent cannot say whether `--setup-codex` means "Codex only" or "Codex as
+    well as the default". Naming any agent means those agents and no others.
+    """
+    if skip_claude and not chosen:
+        return ()
+    if not chosen:
+        return AGENTS
+    if "none" in chosen:
+        return ()
+    if "all" in chosen:
+        return AGENTS
+    # Filtered through AGENTS rather than returned as given, so the order is
+    # the order they are reported in however the flags were typed.
+    return tuple(agent for agent in AGENTS if agent in chosen)
+
+
+def _register_agents_globally(agents: tuple[str, ...] = AGENTS) -> None:
     """Make flanner reachable from every project, on this machine.
 
     Run by `init` as well as by `setup`. The local MCP server is not a
@@ -314,15 +343,47 @@ def _register_agents_globally() -> None:
     """
     from .agent_hooks import upsert_global_nudge
 
-    console.print("\n[Agents] Making flanner reachable from every project...", style="cyan")
-    _register_claude_desktop()
-    _register_claude_code()
-    _register_codex()
+    if not agents:
+        return
 
+    console.print("\n[Agents] Making flanner reachable from every project...", style="cyan")
+    if CLAUDE_DESKTOP in agents:
+        _register_claude_desktop()
+    if CLAUDE_CODE in agents:
+        _register_claude_code()
+    if CODEX in agents:
+        _register_codex()
+
+    # The nudge is a block in Claude's own instruction file, so it follows
+    # Claude rather than being written for somebody who asked only for Codex.
+    if CLAUDE_DESKTOP not in agents and CLAUDE_CODE not in agents:
+        return
     changed = upsert_global_nudge()
     where = Path.home() / ".claude" / "CLAUDE.md"
     console.print(
         f"OK Global nudge {'added to' if changed else 'already in'} {where}", style="green"
+    )
+
+
+def _import_existing_plans(project_root: str) -> None:
+    """Import the plan files already sitting in the repository.
+
+    The same scan `flanner sync` runs. Adopting a repository that already
+    holds plan files and then listing none of them is the first thing
+    somebody cloning a colleague's repo would see, and it reads as flanner
+    having lost them.
+    """
+    from .database import get_project_by_root
+
+    session = get_session()
+    project = get_project_by_root(session, project_root)
+    if project is None:
+        return
+
+    totals = {"scanned": 0, "imported": 0, "skipped": 0, "error": 0}
+    _sync_project(session, project, False, totals)
+    console.print(
+        f"OK Imported {totals['imported']} of {totals['scanned']} plan file(s)", style="green"
     )
 
 
@@ -392,12 +453,27 @@ def _adopt_repository(project_root: str, plan_dir: str, force_new_project: bool)
 @cli.command()
 @click.option("--project-root", default=None, help="Project root path")
 @click.option("--plan-dir", default=".plans", help="Plan directory name")
-@click.option("--skip-claude", is_flag=True, help="Skip registering with Claude, Codex and agents")
+@click.option(
+    "--setup",
+    "setup_agents",
+    multiple=True,
+    type=click.Choice(("all", "none", *AGENTS)),
+    help="Which agents to register with. Repeatable. Default: all",
+)
+@click.option(
+    "--skip-claude", is_flag=True, help="Register with no agent at all (same as --setup none)"
+)
+@click.option("--sync", is_flag=True, help="Import plan files already in the repository")
 @click.option(
     "--force-new-project", is_flag=True, help="Force create new project even if one exists"
 )
 def init(
-    project_root: str | None, plan_dir: str, skip_claude: bool, force_new_project: bool
+    project_root: str | None,
+    plan_dir: str,
+    setup_agents: tuple[str, ...],
+    skip_claude: bool,
+    sync: bool,
+    force_new_project: bool,
 ) -> None:
     """Initialize Flanner
 
@@ -406,6 +482,11 @@ def init(
     registration used to be a separate `flanner setup`; it is not optional
     enough to be its own step, since without it no agent can reach flanner.
     `setup` still exists for repairing it on its own.
+
+    `--setup` narrows which agents that means, and is repeatable, so
+    `--setup codex` registers Codex and nothing else. `--sync` also imports
+    the plan files already in the repository, which is what you want when
+    adopting one somebody else set up.
     """
     mcp_dir = get_mcp_dir()
 
@@ -422,13 +503,14 @@ def init(
     # The global half: Claude Desktop, Claude Code at user scope, Codex and
     # the adoption nudge. The per-repository half is _setup_agent_integration
     # below, which writes .mcp.json and the guard-write hook.
-    if not skip_claude:
-        _register_agents_globally()
+    _register_agents_globally(_agents_to_register(setup_agents, skip_claude))
 
     if project_root or (project_root := find_git_root(os.getcwd())):
         console.print(f"\nOK Detected git repository at: {project_root}", style="green")
         _adopt_repository(project_root, plan_dir, force_new_project)
         _setup_agent_integration(project_root)
+        if sync:
+            _import_existing_plans(project_root)
 
 
 def _setup_agent_integration(project_root: str) -> None:

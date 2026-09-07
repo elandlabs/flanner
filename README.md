@@ -58,7 +58,9 @@ flanner web --open-browser     # http://localhost:8080
 
 Three agents, three different files, and `init` handles all of it — there is no second command to remember. It writes a project-scoped `.mcp.json` that **Claude Code** reads, registers the server at user scope and in **Claude Desktop**'s config, and adds managed blocks to `CLAUDE.md` and `AGENTS.md`. **Codex** reads `AGENTS.md` but registers MCP servers in `~/.codex/config.toml`, which flanner does not edit — `init` prints the two lines to paste. `flanner status` shows a row per agent, each checked where that agent actually looks, and `flanner setup` re-runs the registration on its own if one of them needs repairing later.
 
-`--skip-claude` opts out of all of it, if you would rather wire the agents up yourself.
+`--setup` picks which of them you want, and repeats: `flanner init --setup codex` registers Codex and nothing else. `--skip-claude` opts out of all of it.
+
+Adopting a repository somebody else set up? `flanner init --sync` also imports the plan files already committed in it, so `flanner list` shows them straight away.
 
 ## CLI commands
 

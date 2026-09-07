@@ -16,6 +16,16 @@ versioning follows [SemVer](https://semver.org/).
   the store now wires it up. `setup` still exists for repairing the
   registration on its own, and `--skip-claude` now opts out of all of it
   rather than only the Claude Desktop half.
+- **`flanner init --setup` picks which agents that means**, and repeats:
+  `--setup codex` registers Codex and nothing else. One option rather than
+  a flag per agent, because a flag per agent cannot say whether naming one
+  means that agent instead of the default or as well as it. The choices are
+  the same three rows `flanner status` reports.
+- **`flanner init --sync` imports the plan files already in the repository.**
+  Adopting a repository somebody else set up and then listing none of its
+  plans reads as flanner having lost them. The import keys on each plan's
+  own id and attaches it to the local project, so a clone carrying another
+  machine's ids works.
 - **`flanner mesh join` is now `flanner mesh connect`.** It shared a word
   with `flanner join` and nothing else. That one binds a repository to a
   workspace, which is what makes review count and what peer sync is scoped
