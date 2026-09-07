@@ -39,6 +39,13 @@ versioning follows [SemVer](https://semver.org/).
   depending on which command you had been sent to.
 
 ### Added
+- **`flanner peer start` and `flanner peer stop`**, so serving does not mean
+  keeping a terminal open. Serving had quietly become one person's job, and
+  nothing in the protocol says it should be: any device holding a role in the
+  workspace may answer, and several may answer at once. The only real
+  constraint was uptime. `flanner peer status` now also says whether this
+  device is actually serving, because being reachable and answering are
+  different things and it reported only the first.
 - **Work arriving from a peer shows up without a reload.** The catalog has
   several writers and they are separate processes: the web UI, `flanner peer
   serve` taking a push, the MCP server acting for an agent, a `flanner sync`

@@ -98,6 +98,28 @@ def get_pid_file() -> Path:
     return get_mcp_dir() / "server.pid"
 
 
+#: The line `peer serve` prints once its endpoint is genuinely up. Read by
+#: `peer start` to tell "running" from "started and then failed".
+PEER_READY = "Serving plans to authorised peers"
+
+
+def peer_default_port() -> int:
+    """The port `peer serve --http` listens on, without importing it early."""
+    from . import peer as peer_transport
+
+    return int(peer_transport.DEFAULT_PORT)
+
+
+def get_peer_pid_file() -> Path:
+    """Where `flanner peer start` records the serving process.
+
+    Its own file, not the MCP server's. The two are different processes with
+    different lifetimes, and sharing a pid file would have `flanner stop`
+    kill somebody's peer server.
+    """
+    return get_mcp_dir() / "peer.pid"
+
+
 class Sectioned(click.Group):
     """A help screen grouped by what a command is for.
 
@@ -629,6 +651,54 @@ def _accepting(port: int, *, timeout: float, child: Any = None) -> bool:
     return False
 
 
+def _log_mentions(path: Path, needle: str, *, since: int, timeout: float, child: Any) -> bool:
+    """Wait until the child writes a known line, or dies trying.
+
+    The port trick `_accepting` uses does not work here: the default peer
+    server opens no port at all -- it dials out and answers on that
+    connection, which is what makes it reachable without one. So readiness is
+    read from what the child prints, which it prints only once its endpoint
+    is actually up.
+
+    `since` is the log's size before the child started, so a line from an
+    earlier run cannot be mistaken for this one's.
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if child.poll() is not None:
+            return False
+        with contextlib.suppress(OSError):
+            with path.open("r", encoding="utf-8", errors="replace") as log:
+                log.seek(since)
+                if needle in log.read():
+                    return True
+        time.sleep(0.1)
+    return False
+
+
+def _stop_pid(pid_file: Path, what: str) -> None:
+    """Stop whatever a pid file records, and say what happened."""
+    pid = _running_pid(pid_file)
+    if pid is None:
+        tui.note("Not running.")
+        return
+
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except OSError as e:
+        tui.warn(f"Could not stop pid {pid}: {e}")
+        return
+
+    # Give it a moment to go, so `stop` followed by `start` does not collide
+    # with a process that is still shutting down.
+    deadline = time.monotonic() + 5.0
+    while time.monotonic() < deadline and _process_alive(pid):
+        time.sleep(0.1)
+
+    pid_file.unlink(missing_ok=True)
+    tui.ok(f"{what} stopped")
+
+
 @cli.command()
 @click.option(
     "--port",
@@ -708,26 +778,7 @@ def start(port: int) -> None:
 @cli.command()
 def stop() -> None:
     """Stop the background MCP server"""
-    pid_file = get_pid_file()
-    pid = _running_pid(pid_file)
-    if pid is None:
-        tui.note("Not running.")
-        return
-
-    try:
-        os.kill(pid, signal.SIGTERM)
-    except OSError as e:
-        tui.warn(f"Could not stop pid {pid}: {e}")
-        return
-
-    # Give it a moment to go, so `stop` followed by `start` does not collide
-    # on the port with a process that is still shutting down.
-    deadline = time.monotonic() + 5.0
-    while time.monotonic() < deadline and _process_alive(pid):
-        time.sleep(0.1)
-
-    pid_file.unlink(missing_ok=True)
-    tui.ok("Server stopped")
+    _stop_pid(get_pid_file(), "Server")
 
 
 def _server_row(pid_file: Path) -> Text:
@@ -3895,6 +3946,100 @@ def peer_serve(host: str, port: int | None, http: bool) -> None:
     )
 
 
+@peer.command("start")
+@click.option("--host", default="127.0.0.1", help="Address to listen on (--http only)")
+@click.option("--port", default=None, type=int, help="Port to listen on (--http only)")
+@click.option(
+    "--http",
+    is_flag=True,
+    help="Listen on a port instead, for peers already on the same network",
+)
+def peer_start(host: str, port: int | None, http: bool) -> None:
+    """Serve to peers in the background, and keep serving after you log out
+
+    `flanner peer serve` holds the terminal, which is why serving ended up
+    being something one person did rather than everybody. Nothing about the
+    protocol made it the admin's job: any device with a role in the workspace
+    can answer, and several can answer at once. The only real constraint was
+    uptime, and this removes it.
+    """
+    import subprocess
+    import sys
+
+    from . import session as cache
+
+    _open_store()
+    if cache.load() is None:
+        console.print("ERROR Not signed in, so no peer could be authorised.", style="red")
+        console.print("Run 'flanner login' first.", style="dim")
+        raise SystemExit(1)
+
+    pid_file = get_peer_pid_file()
+    already = _running_pid(pid_file)
+    if already is not None:
+        tui.warn(f"Already serving (pid {already}). Stop it with 'flanner peer stop'.")
+        return
+
+    argv = [sys.executable, "-m", "flanner", "peer", "serve"]
+    if http:
+        argv += ["--http", "--host", host]
+        if port is not None:
+            argv += ["--port", str(port)]
+
+    log_path = get_mcp_dir() / "peer.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    # Where the log already ends, so a line from a previous run cannot be
+    # read as this one having started.
+    written_so_far = log_path.stat().st_size if log_path.exists() else 0
+
+    detach: dict[str, Any] = (
+        {"creationflags": subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP}
+        if os.name == "nt"
+        else {"start_new_session": True}
+    )
+    with log_path.open("ab") as log:
+        child = subprocess.Popen(  # noqa: S603 - fixed argv, no shell, no user input
+            argv,
+            stdin=subprocess.DEVNULL,
+            stdout=log,
+            stderr=log,
+            **detach,
+        )
+
+    # Recorded before it is known to be up, so `peer stop` can act on a
+    # process that died while starting rather than leaving an orphan.
+    pid_file.write_text(str(child.pid))
+
+    console.print("Starting...", style="muted")
+    ready = (
+        _accepting(port or peer_default_port(), timeout=90.0, child=child)
+        if http
+        else _log_mentions(log_path, PEER_READY, since=written_so_far, timeout=90.0, child=child)
+    )
+    if not ready:
+        pid_file.unlink(missing_ok=True)
+        with contextlib.suppress(OSError):
+            child.terminate()
+        tui.warn("The peer server did not come up.")
+        console.print(f"  Its output: {tui.code(str(log_path))}", style="muted")
+        raise SystemExit(2)
+
+    console.print()
+    from . import identity as device_identity
+
+    tui.ok("Serving plans to authorised peers, in the background")
+    console.print(f"  This device: {tui.code(device_identity.device_id())}", style="muted")
+    console.print(f"  pid {child.pid}, logging to {tui.code(str(log_path))}", style="muted")
+    console.print(f"  Stop it with {tui.command('flanner peer stop')}", style="muted")
+    console.print()
+
+
+@peer.command("stop")
+def peer_stop() -> None:
+    """Stop the background peer server"""
+    _stop_pid(get_peer_pid_file(), "Peer server")
+
+
 @peer.command("status")
 @click.argument("device_id", required=False)
 def peer_status(device_id: str | None) -> None:
@@ -3940,6 +4085,20 @@ def peer_status(device_id: str | None) -> None:
         raise SystemExit(1) from None
 
     console.print(f"This device {status.device_id}", style="green")
+
+    # Reachable and actually answering are different things, and this command
+    # reported only the first. A device with a perfect address and nothing
+    # serving refuses every pull, which read as the other end's fault.
+    serving = _running_pid(get_peer_pid_file())
+    if serving is not None:
+        console.print(f"Serving     yes, in the background (pid {serving})", style="green")
+    else:
+        console.print("Serving     no", style="yellow")
+        console.print(
+            "            'flanner peer start' serves in the background,\n"
+            "            'flanner peer serve' in this terminal.",
+            style="dim",
+        )
     console.print("Peers reach it with 'flanner peer pull <device-id>'.", style="dim")
     if status.home_relay:
         console.print(f"Home relay  {status.home_relay}")

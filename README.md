@@ -72,6 +72,7 @@ flanner sync [--project NAME] [--dry-run]               # import existing .plans
 flanner config NAME [--plan-dir DIR] [...]              # change project settings
 flanner web [--port 8080] [--host 127.0.0.1] [--open-browser]
 flanner start [--port 8765] / flanner stop              # MCP server in the background, over http
+flanner peer start / flanner peer stop                  # serve plans to teammates in the background
 flanner register [--force] / flanner unregister         # MCP registration with Claude Desktop
 flanner claude-info                                     # integration status
 ```
