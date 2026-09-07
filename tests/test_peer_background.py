@@ -176,3 +176,72 @@ def _a_free_port() -> int:
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         return int(sock.getsockname()[1])
+
+
+# --- warning about a wide bind ----------------------------------------------
+
+
+@pytest.fixture
+def ready_to_spawn(stored, monkeypatch):
+    """Signed in, and with the spawn stubbed out.
+
+    A session, because `start` refuses before it gets near the bind, which
+    is the right order: warning about a risky bind it is not going to make
+    would be noise. And no real child, because the point here is what the
+    parent prints, not a server.
+    """
+    import json as json_module
+
+    session_file = Path(os.environ["FLANNER_HOME"]) / "session.json"
+    session_file.write_text(
+        json_module.dumps(
+            {
+                "endpoint": "https://x.test",
+                "device_id": "dev_abc",
+                "organization_id": "org_1",
+                "user_id": "maria",
+                "entitlement": "not-checked-here",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    class _Stub:
+        pid = 424242
+
+        def __init__(self, *a, **k) -> None: ...
+
+        def poll(self) -> int:
+            return 1  # already gone, so the readiness wait ends at once
+
+        def terminate(self) -> None: ...
+
+    monkeypatch.setattr(subprocess, "Popen", _Stub)
+    return stored
+
+
+def test_a_wide_bind_is_warned_about_where_the_person_will_see_it(ready_to_spawn):
+    """`peer serve` warns too, but in the background its output goes to the
+    log file. A warning written where nobody looks is not a warning."""
+    result = ready_to_spawn.invoke(cli, ["peer", "start", "--http", "--host", "0.0.0.0"])  # noqa: S104
+
+    assert "Reachable from other machines" in result.output
+    assert "0.0.0.0" in result.output  # noqa: S104
+    assert "signed request" in result.output, "warned without saying what still protects the port"
+
+
+def test_the_default_bind_is_not_warned_about(ready_to_spawn):
+    """A warning on the safe path is one people learn to scroll past."""
+    result = ready_to_spawn.invoke(cli, ["peer", "start", "--http"])
+
+    assert "Reachable from other machines" not in result.output
+
+
+def test_every_command_agrees_on_what_counts_as_loopback(runner):
+    """Each of the three had its own tuple, in a different order. One that
+    drifts means a bind quietly exposed by one command and warned about by
+    another."""
+    for host in ("127.0.0.1", "localhost", "::1"):
+        assert not cli_module.beyond_loopback(host), host
+    for host in ("0.0.0.0", "192.168.1.4", "::"):  # noqa: S104
+        assert cli_module.beyond_loopback(host), host

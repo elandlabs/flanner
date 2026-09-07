@@ -110,6 +110,16 @@ def peer_default_port() -> int:
     return int(peer_transport.DEFAULT_PORT)
 
 
+def beyond_loopback(host: str) -> bool:
+    """Whether binding here lets other machines reach the port.
+
+    Three commands ask this and each had its own tuple, in a different
+    order. A list that drifts is a bind that is quietly exposed by one
+    command and warned about by another.
+    """
+    return host not in ("127.0.0.1", "localhost", "::1")
+
+
 def get_peer_pid_file() -> Path:
     """Where `flanner peer start` records the serving process.
 
@@ -1192,7 +1202,7 @@ def web(port: int, host: str, open_browser: bool) -> None:
 
     from . import web as web_module
 
-    if host not in ("127.0.0.1", "localhost", "::1"):
+    if beyond_loopback(host):
         console.print(
             f"WARN Binding {host} exposes the web UI beyond localhost. It has no "
             "authentication; anyone who can reach this address can read and edit "
@@ -3931,7 +3941,7 @@ def peer_serve(host: str, port: int | None, http: bool) -> None:
     # `--http` is the fallback somebody reaches for on a machine where the
     # default transport could not start, which is not the moment to open a
     # port on every interface without being asked.
-    if host not in ("127.0.0.1", "::1", "localhost"):
+    if beyond_loopback(host):
         tui.warn(f"Reachable from other machines on {host}. Anyone can reach the port.")
     # Over HTTP a peer is named by address, and this device knows device ids
     # rather than addresses, so there is nobody to dial. Catching up here is
@@ -3982,6 +3992,17 @@ def peer_start(host: str, port: int | None, http: bool) -> None:
 
     argv = [sys.executable, "-m", "flanner", "peer", "serve"]
     if http:
+        # `serve` warns about a wide bind too, but in the background its
+        # output goes to the log file, so the person who typed the command
+        # would never see it. A warning nobody reads is not a warning.
+        if beyond_loopback(host):
+            tui.warn(f"Reachable from other machines on {host}. Anyone can reach the port.")
+            console.print(
+                "  Callers still need a signed request and an entitlement for the\n"
+                "  workspace, so the port grants nothing on its own. Bind 127.0.0.1\n"
+                "  unless another machine has to reach this one directly.",
+                style="muted",
+            )
         argv += ["--http", "--host", host]
         if port is not None:
             argv += ["--port", str(port)]
