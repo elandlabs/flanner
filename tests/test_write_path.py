@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-import flanner.plan_ops as plan_ops
+from flanner import storage
 from flanner.database import create_plan_file, create_project, get_session
 from flanner.exceptions import DatabaseError
 from flanner.plan_ops import plan_write_lock, record_new_version, write_version
@@ -101,13 +101,13 @@ def test_never_reuses_version_number_taken_on_disk(plan):
 
 
 def _lock_path(project, plan_id):
-    return _plan_dir(project) / f"{plan_ops._LOCK_PREFIX}{plan_id}{plan_ops._LOCK_SUFFIX}"
+    return _plan_dir(project) / f"{storage.LOCK_PREFIX}{plan_id}{storage.LOCK_SUFFIX}"
 
 
 def test_lock_contention_times_out(plan, monkeypatch):
     """Two writers on the same plan still exclude each other."""
     session, project, plan_file = plan
-    monkeypatch.setattr(plan_ops, "_LOCK_TIMEOUT_S", 0.3)
+    monkeypatch.setattr(storage, "LOCK_TIMEOUT_S", 0.3)
     with plan_write_lock(project.project_root, project.plan_directory, plan_file.id):
         with pytest.raises(DatabaseError, match="write lock"):
             with plan_write_lock(project.project_root, project.plan_directory, plan_file.id):
@@ -121,7 +121,7 @@ def test_two_plans_in_one_project_do_not_wait_for_each_other(plan, monkeypatch):
     on the first and timed out, despite touching a different plan.
     """
     session, project, plan_file = plan
-    monkeypatch.setattr(plan_ops, "_LOCK_TIMEOUT_S", 0.3)
+    monkeypatch.setattr(storage, "LOCK_TIMEOUT_S", 0.3)
     other = create_plan_file(session, project_id=project.id, name="other")
 
     with plan_write_lock(project.project_root, project.plan_directory, plan_file.id):

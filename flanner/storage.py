@@ -8,13 +8,99 @@ import contextlib
 import logging
 import os
 import tempfile
+import time
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-from .exceptions import PlanFileNotFoundError
+from .exceptions import DatabaseError, PlanFileNotFoundError
 from .frontmatter import parse_frontmatter
 
 logger = logging.getLogger(__name__)
+
+
+#: Lock file naming and timing. Shared by every writer that needs one name
+#: held across processes, so two domains cannot disagree about how long an
+#: abandoned lock stays believed.
+LOCK_PREFIX = ".flanner-"
+LOCK_SUFFIX = ".lock"
+LOCK_TIMEOUT_S = 10.0
+LOCK_STALE_S = 30.0
+LOCK_RETRY_S = 0.05
+
+
+def atomic_write_text(path: Path, text: str) -> None:
+    """Write text so a reader sees the whole file or the old one, never half.
+
+    A temp file in the same directory, fsynced, then renamed. Same directory
+    because ``os.replace`` is only atomic within a filesystem, and a temp
+    directory can easily be on another one.
+
+    Newlines are normalised to LF and written without OS translation.
+    Browsers submit textarea content as CRLF, and text-mode writing on
+    Windows would translate the LF again into CRLF-CR. On the next read
+    universal newlines turns that into an extra blank line, so a file
+    degrades a little on every edit. Doing it here rather than at each
+    caller is the only way that stays true for a caller written later.
+
+    The parent directory is created; the caller decides where, not whether.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+
+    fd, tmp_path = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(normalized)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_path, path)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp_path)
+        raise
+
+
+@contextlib.contextmanager
+def exclusive_lock(directory: Path, key: str) -> Iterator[None]:
+    """Hold one named lock across processes, or give up saying so.
+
+    Creation with O_EXCL is atomic on every supported platform, which is the
+    whole mechanism. A lock older than ``LOCK_STALE_S`` is treated as
+    abandoned by a crashed holder and taken over, because the alternative is
+    a machine that stays wedged until somebody deletes a file they have
+    never heard of.
+
+    ``key`` must already be safe as a filename. Callers key on ids rather
+    than user-supplied names for that reason, and because a rename would
+    otherwise move a lock out from under whoever holds it.
+
+    A crash strands one small file, cleared by the next writer of the same
+    key. Nothing scans for them, so the name is prefixed and suffixed to
+    stay out of the way of anything globbing for content.
+    """
+    directory.mkdir(parents=True, exist_ok=True)
+    lock_path = directory / f"{LOCK_PREFIX}{key}{LOCK_SUFFIX}"
+    deadline = time.monotonic() + LOCK_TIMEOUT_S
+    while True:
+        try:
+            fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.write(fd, str(os.getpid()).encode())
+            os.close(fd)
+            break
+        except FileExistsError:
+            with contextlib.suppress(OSError):
+                if time.time() - lock_path.stat().st_mtime > LOCK_STALE_S:
+                    lock_path.unlink()
+                    continue
+            if time.monotonic() > deadline:
+                raise DatabaseError(f"Timed out waiting for write lock at {lock_path}") from None
+            time.sleep(LOCK_RETRY_S)
+    try:
+        yield
+    finally:
+        with contextlib.suppress(OSError):
+            lock_path.unlink()
 
 
 def init_storage(base_path: str) -> None:
@@ -49,30 +135,10 @@ def save_plan_file_with_frontmatter(
     full_plan_path = Path(project_root) / plan_directory
     full_plan_path.mkdir(parents=True, exist_ok=True)
 
+    # The file name may address a subdirectory (e.g. "auth/login_v1.md"),
+    # which `atomic_write_text` creates along with the plan directory.
     file_path = full_plan_path / file_name
-    # The file name may address a subdirectory (e.g. "auth/login_v1.md").
-    file_path.parent.mkdir(parents=True, exist_ok=True)
-
-    # Normalize to LF and write without OS newline translation. Browsers submit
-    # textarea content as CRLF; text-mode writing on Windows would translate the
-    # LF again, yielding CRLF-CR (\r\r\n). On the next read universal-newlines
-    # turns that into an extra blank line, so the file degrades on every edit.
-    normalized = content.replace("\r\n", "\n").replace("\r", "\n")
-
-    # Atomic write: temp file in the same directory, then os.replace, so a
-    # crash mid-write can never leave a truncated plan visible as current.
-    fd, tmp_path = tempfile.mkstemp(dir=file_path.parent, suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
-            f.write(normalized)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp_path, file_path)
-    except BaseException:
-        with contextlib.suppress(OSError):
-            os.unlink(tmp_path)
-        raise
-
+    atomic_write_text(file_path, content)
     return str(file_path)
 
 

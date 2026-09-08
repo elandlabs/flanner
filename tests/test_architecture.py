@@ -26,6 +26,10 @@ FOUNDATION = {
     "refusals",
     "frontmatter",
     "git_integration",
+    # Deciding whether a body carries a credential. Pure regex and
+    # arithmetic, so it can be tested with a table of strings and reused by
+    # every capture path without one of them arranging a database first.
+    "memory_guard",
     "jira_utils",
     "linear_utils",
 }

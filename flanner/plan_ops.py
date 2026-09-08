@@ -16,9 +16,6 @@ other's files (PRD Phase 1: single-writer discipline).
 from __future__ import annotations
 
 import contextlib
-import os
-import time
-from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -43,17 +40,12 @@ from .database import (
 from .database import create_plan_file as db_create_plan_file
 from .exceptions import DatabaseError
 from .frontmatter import create_plan_file_content, generate_frontmatter, read_managed
-from .storage import save_plan_file_with_frontmatter
+from .storage import exclusive_lock, save_plan_file_with_frontmatter
 from .utils import generate_file_name, hash_content, utcnow
 
 # One file-based lock per plan, so it works across unrelated processes on
 # every OS. Was one lock per directory, which made two writers on different
 # plans in the same project wait for each other for no reason.
-_LOCK_PREFIX = ".flanner-"
-_LOCK_SUFFIX = ".lock"
-_LOCK_TIMEOUT_S = 10.0
-_LOCK_STALE_S = 30.0
-_LOCK_RETRY_S = 0.05
 
 
 def workspace_id_for(project: ProjectModel) -> str:
@@ -81,8 +73,7 @@ def _parent_artifact_ids(session: Session, plan_file: PlanFileModel) -> tuple[st
     return (latest.artifact_id,)
 
 
-@contextlib.contextmanager
-def plan_write_lock(project_root: str, plan_directory: str, plan_id: Any) -> Iterator[None]:
+def plan_write_lock(project_root: str, plan_directory: str, plan_id: Any) -> Any:
     """Cross-process write lock for one plan.
 
     Every holder acts on a single named plan, so the directory was never the
@@ -94,38 +85,13 @@ def plan_write_lock(project_root: str, plan_directory: str, plan_id: Any) -> Ite
     sanitising to be a filename, and a rename would move a plan's lock out
     from under a live holder.
 
-    Lock file creation with O_EXCL is atomic on all supported platforms. A
-    lock file older than ``_LOCK_STALE_S`` is treated as abandoned (crashed
-    holder) and taken over. The cost of the split is that a crash now
+    The mechanism is `storage.exclusive_lock`; this names what a plan lock
+    is and where it lives. The cost of keying per plan is that a crash
     strands one small file per plan rather than one per project, each
     cleared by the next writer of that plan. Nothing scans for them:
     `reconcile` globs `*.md` and the write guard only inspects `.md`.
     """
-    lock_dir = Path(project_root) / plan_directory
-    lock_dir.mkdir(parents=True, exist_ok=True)
-    lock_path = lock_dir / f"{_LOCK_PREFIX}{plan_id}{_LOCK_SUFFIX}"
-    deadline = time.monotonic() + _LOCK_TIMEOUT_S
-    while True:
-        try:
-            fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-            os.write(fd, str(os.getpid()).encode())
-            os.close(fd)
-            break
-        except FileExistsError:
-            with contextlib.suppress(OSError):
-                if time.time() - lock_path.stat().st_mtime > _LOCK_STALE_S:
-                    lock_path.unlink()
-                    continue
-            if time.monotonic() > deadline:
-                raise DatabaseError(
-                    f"Timed out waiting for plan write lock at {lock_path}"
-                ) from None
-            time.sleep(_LOCK_RETRY_S)
-    try:
-        yield
-    finally:
-        with contextlib.suppress(OSError):
-            lock_path.unlink()
+    return exclusive_lock(Path(project_root) / plan_directory, str(plan_id))
 
 
 def create_plan(

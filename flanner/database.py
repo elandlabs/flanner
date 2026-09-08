@@ -30,7 +30,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.engine import Engine
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import DBAPIError, SQLAlchemyError
 from sqlalchemy.orm import (
     DeclarativeBase,
     Mapped,
@@ -403,6 +403,55 @@ def _migration_3(conn: Connection) -> None:
     conn.exec_driver_sql("ALTER TABLE projects ADD COLUMN workspace_id VARCHAR")
 
 
+#: Whether this Python's SQLite was built with FTS5.
+#:
+#: Read rather than assumed. The module is standard in CPython's bundled
+#: SQLite and absent from some distribution and conda builds, and the
+#: failure without this flag is a crash on the first search rather than a
+#: slower search. `flanner doctor` reports it; memory recall falls back to
+#: LIKE; nothing about plans depends on it either way.
+SEARCH_INDEX_AVAILABLE = True
+
+#: The memory search index.
+#:
+#: Deliberately not a `Base` table and deliberately not a migration. It is
+#: not a `Base` table because an FTS5 virtual table is not something
+#: `create_all` can make. It is not a migration because `_apply_schema`
+#: stamps a fresh database and returns before the ladder runs, so a
+#: migration here would exist on every upgraded machine and on no new one --
+#: which is the worst shape a schema bug can take, since it only appears for
+#: people who have never used the product.
+#:
+#: `IF NOT EXISTS` makes it safe to run on every start, which is what keeps
+#: it true after a rebuild drops and recreates it.
+SEARCH_INDEX_DDL = """
+CREATE VIRTUAL TABLE IF NOT EXISTS memory_search USING fts5(
+    title,
+    body,
+    source_refs,
+    category UNINDEXED,
+    memory_id UNINDEXED,
+    tokenize = 'unicode61 remove_diacritics 2'
+)
+"""
+
+
+def _ensure_search_index(conn: Connection) -> None:
+    """Create the memory search index, or record that this build cannot.
+
+    Never raises. A machine without FTS5 must still get a working flanner:
+    plans do not use it at all, and memory degrades to a slower search
+    rather than refusing to start.
+    """
+    global SEARCH_INDEX_AVAILABLE
+    try:
+        conn.exec_driver_sql(SEARCH_INDEX_DDL)
+        SEARCH_INDEX_AVAILABLE = True
+    except DBAPIError as e:
+        SEARCH_INDEX_AVAILABLE = False
+        logger.warning("This Python's SQLite has no FTS5, so memory search will be slower: %s", e)
+
+
 MIGRATIONS: dict[int, Callable[[Connection], None]] = {
     1: _migration_1,
     2: _migration_2,
@@ -424,6 +473,10 @@ def _apply_schema(engine: Engine) -> None:
     Base.metadata.create_all(engine)
 
     with engine.begin() as conn:
+        # Before the fresh-database early return below, not after it, or a
+        # new install would be the one machine without a search index.
+        _ensure_search_index(conn)
+
         found = int(conn.exec_driver_sql("PRAGMA user_version").scalar() or 0)
         if found > SCHEMA_VERSION:
             raise DatabaseError(
