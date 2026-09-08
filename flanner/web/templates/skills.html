@@ -24,6 +24,10 @@
 {% block content %}
 <div class="pane">
 
+  {% if said %}
+  <div class="notice good" style="margin-bottom:14px">{{ said }}</div>
+  {% endif %}
+
   {% if report.summary.defects %}
   <div class="notice bad" style="margin-bottom:14px">
     {{ report.summary.defects }} defect{{ '' if report.summary.defects == 1 else 's' }}
@@ -75,6 +79,100 @@
       package is executed by a scan.</p>
   </div>
   {% endif %}
+
+  {% set scope_row = (observe.scopes | selectattr('observing') | list | first)
+                     or (observe.scopes | list | first) %}
+  <div class="card card-pad" style="margin-top:14px">
+    <div class="card-head" style="padding:0 0 10px 0">Watching skill use
+      <span class="note">{% if scope_row and scope_row.observing %}on{% else %}off{% endif %}</span>
+    </div>
+    <p class="hint">Records that a named skill was invoked, when, and by which
+      local session. Not your prompts, not the agent's replies. Nothing leaves
+      this machine. Only explicit invocations are visible: Claude Code shows
+      every skill's description to the model without reporting it, so reads
+      are unknown rather than zero.</p>
+    <div class="listctl" style="margin-top:10px">
+      {% if scope_row and scope_row.observing %}
+      <form method="post" action="/skills/observe">
+        <input type="hidden" name="action" value="disable">
+        <button class="btn btn-sm">Stop watching</button>
+      </form>
+      <form method="post" action="/skills/purge">
+        <input type="hidden" name="scope" value="project">
+        <button class="btn btn-sm">Delete what was recorded</button>
+      </form>
+      <span class="hint">Keeping {{ scope_row.retention_days }} days ·
+        {{ scope_row.observations }} recorded
+        {%- if scope_row.dropped %} · {{ scope_row.dropped }} dropped{% endif %}</span>
+      {% else %}
+      <form method="post" action="/skills/observe">
+        <input type="hidden" name="action" value="enable">
+        <input type="hidden" name="retention_days" value="30">
+        <button class="btn btn-sm btn-primary">Start watching this project</button>
+      </form>
+      <span class="hint">Off. Nothing is being recorded.</span>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:14px">
+    <div class="card-head">Used in the last {{ usage.window_days }} days
+      <span class="note">
+        {% if usage.coverage.watching %}{{ usage.rows | length }} skill(s)
+        {% else %}nothing was watching{% endif %}</span></div>
+    {% if usage.rows %}
+    <div class="grid-row grid-head cols-usage">
+      <span>Skill</span><span>Uses</span><span>Last used</span><span>Models</span>
+    </div>
+    {% for row in usage.rows %}
+    <div class="grid-row cols-usage">
+      <span>{{ row.skill }}</span>
+      <span class="tnum">{{ row.invocations }}{% if row.attributed < row.invocations %}
+        <span class="hint">{{ row.invocations - row.attributed }} unversioned</span>{% endif %}</span>
+      <span class="when">{{ row.last_used_at[:16].replace('T', ' ') }}</span>
+      <span class="muted">{% for k, v in row.by_model.items() %}{{ k }} ({{ v }}){% if not loop.last %}, {% endif %}{% endfor %}</span>
+    </div>
+    {% endfor %}
+    {% else %}
+    <div class="card-pad card-prose">
+      <p>{% if usage.coverage.watching %}Nothing was invoked in this window.
+        {% else %}Nothing has been watching, so a zero here means nothing
+        rather than "unused".{% endif %}</p>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="card" style="margin-top:14px">
+    <div class="card-head">Versions flanner is holding
+      <span class="note">{{ stored | length }} stored ·
+        {{ installs | length }} install(s)</span></div>
+    {% if installs %}
+    <div class="grid-row grid-head cols-installs">
+      <span>Installed</span><span>Where</span><span>State</span><span></span>
+    </div>
+    {% for row in installs %}
+    <div class="grid-row cols-installs">
+      <span class="when">{{ row.installed_at[:16].replace('T', ' ') }}</span>
+      <span>{{ row.name }}
+        <span class="path">{{ row.manifest_hash[:23] }}…</span></span>
+      <span>{% if row.intact %}<span class="pill pill-fresh">intact</span>
+        {% elif row.status == 'installed' %}<span class="pill pill-aging">edited since</span>
+        {% else %}<span class="pill pill-quiet">{{ row.status }}</span>{% endif %}</span>
+      <span>{% if row.replaced_hash and row.status == 'installed' %}
+        <form method="post" action="/skills/rollback">
+          <input type="hidden" name="installation_id" value="{{ row.id }}">
+          <button class="btn btn-sm">Roll back</button>
+        </form>{% endif %}</span>
+    </div>
+    {% endfor %}
+    {% else %}
+    <div class="card-pad card-prose">
+      <p>Nothing installed by flanner. Skills stay where their owner put
+        them; <code>flanner skills adopt &lt;name&gt;</code> keeps a copy
+        flanner can put back.</p>
+    </div>
+    {% endif %}
+  </div>
 
   {% if report.findings %}
   <div class="card" style="margin-top:14px">

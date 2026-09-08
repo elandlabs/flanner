@@ -278,6 +278,8 @@ a:hover { color: var(--accent-hi); }
 .clamp2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
           overflow: hidden; }
 .cols-findings { grid-template-columns: 180px 1fr 1.6fr; }
+.cols-usage { grid-template-columns: 1.4fr 110px 160px 1fr; }
+.cols-installs { grid-template-columns: 160px 1.4fr 130px 110px; }
 /* The skill's name and the detail beneath it share one cell, and inline they
    run together into one unreadable string. */
 .cols-findings .hint { display: block; }
@@ -662,7 +664,7 @@ kbd {
   .pane, .plan-main { padding-left: 16px; padding-right: 16px; }
   .cols-projects, .cols-freshness, .cols-plans, .cols-history,
   .cols-recent, .cols-links, .cols-peers, .cols-wsaccess, .cols-review,
-  .cols-skills, .cols-findings,
+  .cols-skills, .cols-findings, .cols-usage, .cols-installs,
   .plan-file-card { grid-template-columns: 1fr; gap: 6px; }
   .grid-head { display: none; }
   .input, .doc, .raw-content { max-width: 100%; }

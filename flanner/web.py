@@ -1665,7 +1665,12 @@ async def review_page(request: Request) -> HTMLResponse:
 
 @app.get("/skills", response_class=HTMLResponse)
 async def skills_page(
-    request: Request, scope: str = "", shadowed: str = "", agent: str = "claude-code"
+    request: Request,
+    scope: str = "",
+    shadowed: str = "",
+    agent: str = "claude-code",
+    days: int = 30,
+    said: str = "",
 ) -> HTMLResponse:
     """Every skill this machine's agents would load, and what is wrong with them.
 
@@ -1688,6 +1693,10 @@ async def skills_page(
         for pkg in report["packages"]
         if (shadowed or pkg["effective"]) and (not scope or pkg["scope"] == scope)
     ]
+
+    from . import skills_manage, skills_observe
+
+    here = Path(root) if root else None
     return templates.TemplateResponse(
         request,
         "skills.html",
@@ -1698,8 +1707,83 @@ async def skills_page(
             "rows": rows,
             "scope": scope,
             "shadowed": bool(shadowed),
+            "said": said,
+            "observe": await run_in_threadpool(skills_observe.status, session),
+            "usage": await run_in_threadpool(skills_observe.usage, session, here, days),
+            "days": days,
+            "stored": await run_in_threadpool(skills_manage.stored),
+            "installs": await run_in_threadpool(skills_manage.installations, session, here),
         },
     )
+
+
+@app.post("/skills/observe")
+async def skills_observe_form(
+    request: Request,
+    action: str = Form(...),
+    agent: str = Form("claude-code"),
+    retention_days: int = Form(30),
+) -> RedirectResponse:
+    """Turn observation on or off for the project this server is serving.
+
+    Installs and removes the hook as well as flipping the flag. Leaving a
+    hook behind after switching off would keep starting a flanner process
+    on every skill invocation to be told it is not wanted.
+    """
+    ensure_db()
+    session = get_session()
+    from . import skills_observe
+    from .agent_hooks import ensure_observe_hook, remove_observe_hook
+
+    root = find_git_root(str(Path.cwd()))
+    if root is None:
+        return RedirectResponse("/skills?said=not+a+repository", status_code=303)
+
+    try:
+        if action == "enable":
+            await run_in_threadpool(
+                skills_observe.enable, session, Path(root), agent, retention_days
+            )
+            await run_in_threadpool(ensure_observe_hook, root)
+            said = "watching+this+project"
+        else:
+            await run_in_threadpool(skills_observe.disable, session, Path(root), agent)
+            await run_in_threadpool(remove_observe_hook, root)
+            said = "stopped+watching"
+    except ValueError as error:
+        return RedirectResponse(f"/skills?said={quote(str(error))}", status_code=303)
+    return RedirectResponse(f"/skills?said={said}", status_code=303)
+
+
+@app.post("/skills/purge")
+async def skills_purge_form(request: Request, scope: str = Form("project")) -> RedirectResponse:
+    """Delete recorded skill uses. Only ever when asked."""
+    ensure_db()
+    session = get_session()
+    from . import skills_observe
+
+    root = find_git_root(str(Path.cwd()))
+    where = Path(root) if (root and scope == "project") else None
+    gone = await run_in_threadpool(skills_observe.purge, session, where)
+    return RedirectResponse(
+        f"/skills?said=deleted+{gone['deleted']}+recorded+use(s)", status_code=303
+    )
+
+
+@app.post("/skills/rollback")
+async def skills_rollback_form(
+    request: Request, installation_id: str = Form(...)
+) -> RedirectResponse:
+    """Put back what an install replaced."""
+    ensure_db()
+    session = get_session()
+    from . import skills_manage
+
+    try:
+        await run_in_threadpool(skills_manage.rollback, session, installation_id, None)
+    except (ValueError, OSError) as error:
+        return RedirectResponse(f"/skills?said={quote(str(error))}", status_code=303)
+    return RedirectResponse("/skills?said=rolled+back", status_code=303)
 
 
 @app.get("/settings", response_class=HTMLResponse)

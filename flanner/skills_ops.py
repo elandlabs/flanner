@@ -91,7 +91,7 @@ def utcnow() -> datetime:
 # --- reading ------------------------------------------------------------------
 
 
-def _package_files(directory: Path) -> tuple[list[Path], int, bool]:
+def package_files(directory: Path) -> tuple[list[Path], int, bool]:
     """Every file that counts toward identity, its total size, and whether
     the caps were hit. Symlinks are skipped rather than followed: a link
     out of the package is not part of it, and following one is how a scan
@@ -124,7 +124,7 @@ def manifest_hash(directory: Path) -> tuple[str, int, int, bool]:
     changes the hash. Two packages hash the same only if they would behave
     the same.
     """
-    files, total, truncated = _package_files(directory)
+    files, total, truncated = package_files(directory)
     digest = hashlib.sha256()
     for path in files:
         digest.update(str(path.relative_to(directory)).replace("\\", "/").encode("utf-8"))

@@ -43,6 +43,13 @@ ALLOWED = {
     # Reading skill packages: hashes, health findings, and the one report
     # the CLI, the web UI and MCP all render.
     "skills_ops": {"database", "frontmatter", "skills_adapters"},
+    # Watching which skills an agent uses. Reaches the inventory to say
+    # which package a use was of; reaches nothing that talks to a network.
+    "skills_observe": {"database", "git_integration", "skills_adapters", "skills_ops"},
+    # Bytes flanner is responsible for: the snapshot store, installs and
+    # rollbacks. Reads packages through skills_ops so the hash a snapshot
+    # is filed under is the same hash the inventory reports.
+    "skills_manage": {"database", "skills_ops"},
     "storage": {"exceptions", "frontmatter", "utils"},
     "freshness": {"utils"},
     "ipc": set(),
@@ -171,6 +178,11 @@ ALLOWED = {
         # The Skills page renders the same report the CLI prints, so the
         # two cannot disagree about what is on disk.
         "skills_ops",
+        "skills_observe",
+        "skills_manage",
+        # Turning observation on from the page installs the same hook the
+        # command line installs, through the same function.
+        "agent_hooks",
         "storage",
         "plan_ops",
         # The memory pages read the domain rather than the tables, so
@@ -235,6 +247,8 @@ ALLOWED = {
     | {
         "tui",
         "skills_ops",
+        "skills_observe",
+        "skills_manage",
         # Writes a plan out as a standalone file, and reads back the notes
         # an outside reviewer returned. Both are local reads of local state.
         "packet",

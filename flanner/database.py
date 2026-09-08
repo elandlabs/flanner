@@ -581,9 +581,7 @@ class SkillModel(Base):
     """
 
     __tablename__ = "skills"
-    __table_args__ = (
-        UniqueConstraint("name", "agent", "directory", name="uq_skill_per_path"),
-    )
+    __table_args__ = (UniqueConstraint("name", "agent", "directory", name="uq_skill_per_path"),)
 
     id: Mapped[uuid.UUID] = mapped_column(GUID, primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String, nullable=False, index=True)
@@ -626,6 +624,141 @@ class SkillVersionModel(Base):
 
     def __repr__(self) -> str:
         return f"<SkillVersion(skill_id={self.skill_id}, hash={self.manifest_hash[:16]})>"
+
+
+class SkillPolicyModel(Base):
+    """Whether this machine watches an agent's skill use, and for how long.
+
+    Off unless somebody turned it on, per agent and per project. There is
+    no global switch: consent to being watched in one repository is not
+    consent in another, and a single flag would make it one.
+    """
+
+    __tablename__ = "skill_policies"
+    __table_args__ = (UniqueConstraint("agent", "project_id", name="uq_skill_policy_scope"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(GUID, primary_key=True, default=uuid.uuid4)
+    agent: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        GUID, ForeignKey("projects.id"), nullable=False, index=True
+    )
+    observing: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    #: How long a recorded use is kept. Days, because a window shorter than
+    #: a working day answers nothing and one longer than a month is a
+    #: liability nobody asked for.
+    retention_days: Mapped[int] = mapped_column(Integer, nullable=False, default=30)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+
+    def __repr__(self) -> str:
+        return f"<SkillPolicy(agent={self.agent}, observing={self.observing})>"
+
+
+class SkillObservationModel(Base):
+    """One recorded use of a skill.
+
+    What is stored is that a named skill was invoked, when, and by which
+    session — never what was said to the agent or what it replied. A
+    session reference is a local identifier, not a conversation.
+
+    `skill_version_id` is nullable and stays null when the use cannot be
+    tied to one package with confidence. An observation assigned to the
+    wrong version is worse than one assigned to none: the first quietly
+    corrupts every comparison drawn from it.
+    """
+
+    __tablename__ = "skill_observations"
+
+    id: Mapped[uuid.UUID] = mapped_column(GUID, primary_key=True, default=uuid.uuid4)
+    #: Same event delivered twice writes one row. A hook can fire again
+    #: after a retry, and a doubled count reads as real usage.
+    dedupe_key: Mapped[str] = mapped_column(String, nullable=False, unique=True, index=True)
+    agent: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        GUID, ForeignKey("projects.id"), nullable=False, index=True
+    )
+    #: A local session identifier from the harness. Not a conversation.
+    session_ref: Mapped[str] = mapped_column(String, nullable=False, default="")
+    skill_name: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    skill_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        GUID, ForeignKey("skill_versions.id"), nullable=True, index=True
+    )
+    #: What happened: an explicit invocation, or a load we merely inferred.
+    kind: Mapped[str] = mapped_column(String, nullable=False, default="invocation")
+    #: Where the evidence came from, and how far it can be trusted. Both
+    #: travel with every row so a report can say which is which.
+    evidence: Mapped[str] = mapped_column(String, nullable=False, default="hook")
+    certainty: Mapped[str] = mapped_column(String, nullable=False, default="observed")
+    #: The model or harness build, when the harness said. Blank is common
+    #: and groups as unknown rather than being folded into a real one.
+    agent_version: Mapped[str] = mapped_column(String, nullable=False, default="")
+    occurred_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)
+
+    def __repr__(self) -> str:
+        return f"<SkillObservation(skill={self.skill_name}, at={self.occurred_at})>"
+
+
+class SkillCoverageWindowModel(Base):
+    """A stretch of time this machine was actually watching.
+
+    Without this, a report cannot tell "nobody used that skill" from "the
+    hook was never installed". Both look like zero, and only one of them
+    means anything.
+    """
+
+    __tablename__ = "skill_coverage_windows"
+
+    id: Mapped[uuid.UUID] = mapped_column(GUID, primary_key=True, default=uuid.uuid4)
+    agent: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        GUID, ForeignKey("projects.id"), nullable=False, index=True
+    )
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)
+    #: Null while the window is open.
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    #: What the adapter could do at the time, so an old window is not read
+    #: as if it had today's abilities.
+    capabilities: Mapped[str] = mapped_column(String, nullable=False, default="")
+    #: Events that arrived and could not be stored. A gap that is known
+    #: about is a different thing from a gap that is not.
+    dropped_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    gap_reason: Mapped[str] = mapped_column(String, nullable=False, default="")
+
+    def __repr__(self) -> str:
+        return f"<SkillCoverageWindow(agent={self.agent}, started={self.started_at})>"
+
+
+class SkillInstallationModel(Base):
+    """A skill package flanner put somewhere, and what it replaced.
+
+    The row is what makes an install reversible and a conflict detectable.
+    `manifest_hash` is what was meant to be installed, `observed_hash` what
+    was verified on disk afterwards, and `replaced_hash` names the snapshot
+    of whatever was there before — so going back is looking up a hash, not
+    hoping a backup was taken.
+
+    A directory whose current bytes no longer match `observed_hash` has
+    been edited by hand, and is treated as somebody else's from then on.
+    """
+
+    __tablename__ = "skill_installations"
+
+    id: Mapped[uuid.UUID] = mapped_column(GUID, primary_key=True, default=uuid.uuid4)
+    agent: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    #: Null for an install outside any project, such as into ~/.claude.
+    project_id: Mapped[uuid.UUID | None] = mapped_column(
+        GUID, ForeignKey("projects.id"), nullable=True, index=True
+    )
+    target_path: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    manifest_hash: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    observed_hash: Mapped[str] = mapped_column(String, nullable=False, default="")
+    replaced_hash: Mapped[str] = mapped_column(String, nullable=False, default="")
+    ownership: Mapped[str] = mapped_column(String, nullable=False, default="flanner")
+    status: Mapped[str] = mapped_column(String, nullable=False, default="installed", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+
+    def __repr__(self) -> str:
+        return f"<SkillInstallation(target={self.target_path}, status={self.status})>"
 
 
 # Database session management

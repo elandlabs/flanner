@@ -1460,6 +1460,25 @@ def guard_write() -> None:
         click.echo(output)
 
 
+@hook.command("skill-use")
+def skill_use() -> None:
+    """PostToolUse: record that a skill was invoked, if this repo opted in."""
+    from .skills_observe import run_hook
+
+    raw = sys.stdin.read()
+    outcome = "error"
+    try:
+        init_database()  # fresh hook process has no session yet
+        outcome = run_hook(raw, get_session())
+    except Exception as error:
+        # Swallowed on purpose: a usage statistic is never worth interrupting
+        # somebody's work. The reason still goes somewhere findable, because
+        # a hook that silently records nothing is the failure that looks
+        # exactly like a skill nobody uses.
+        logging.getLogger(__name__).debug("skill-use hook failed: %s", error)
+    logging.getLogger(__name__).debug("skill-use hook: %s", outcome)
+
+
 def _process_alive(pid: int) -> bool:
     """Whether a process id belongs to something still running.
 
@@ -2756,6 +2775,455 @@ def skills_inspect(name: str, project: str | None, agent: str) -> None:
         for problem in pkg["problems"]:
             tui.warn(f"  {problem}")
         console.print()
+
+
+@skills.group("observe")
+def skills_observe_group() -> None:
+    """Watch which skills an agent actually uses (off until you turn it on)"""
+
+
+@skills_observe_group.command("enable")
+@click.option("--agent", default="claude-code", help="Which agent to watch")
+@click.option("--project", default=None, help="Repository to watch in (uses this one if omitted)")
+@click.option("--retention-days", default=30, show_default=True, help="How long a use is kept")
+def skills_observe_enable(agent: str, project: str | None, retention_days: int) -> None:
+    """Start recording this agent's skill invocations in this repository
+
+    What is recorded is that a named skill was invoked, when, and by which
+    local session. Not your prompts, not the agent's replies, not the files
+    it touched. Nothing leaves this machine.
+
+    Only explicit invocations are visible. Claude Code shows every skill's
+    description to the model whether or not it is used, and does not report
+    which were read, so those stay unknown rather than being counted.
+    """
+    _open_store()
+    from . import skills_observe
+    from .agent_hooks import ensure_observe_hook
+    from .database import get_session
+
+    root = Path(project).resolve() if project else _skills_project()
+    if root is None:
+        tui.bad("Not inside a git repository, so there is no project to watch.")
+        raise SystemExit(1)
+
+    try:
+        started = skills_observe.enable(get_session(), root, agent, retention_days)
+    except ValueError as error:
+        tui.bad(str(error))
+        raise SystemExit(1) from None
+
+    wired = ensure_observe_hook(str(root))
+    console.print()
+    tui.ok(f"Watching {agent} in {started['project']}.")
+    console.print(
+        tui.fields(
+            [
+                ("Records", "explicit skill invocations only"),
+                ("Keeps", f"{retention_days} days"),
+                ("Hook", "installed" if wired else "already installed"),
+                ("Leaves machine", "no"),
+            ]
+        )
+    )
+    console.print()
+    tui.hint(f"  {tui.command('flanner skills report')} shows what it has seen.")
+    console.print()
+
+
+@skills_observe_group.command("status")
+@click.option("--json", "as_json", is_flag=True, help="Machine-readable status")
+def skills_observe_status(as_json: bool) -> None:
+    """Where observation is on, and what it managed to see"""
+    _open_store()
+    from . import skills_observe
+    from .database import get_session
+
+    state = skills_observe.status(get_session())
+    if as_json:
+        import json
+
+        click.echo(json.dumps(state, indent=2))
+        return
+
+    console.print()
+    if not state["scopes"]:
+        tui.note("Observation is off everywhere.")
+        tui.hint(f"  {tui.command('flanner skills observe enable')} turns it on here.")
+        console.print()
+        return
+
+    table = tui.table("Project", "Agent", "State", "Kept", "Uses", "Dropped")
+    for row in state["scopes"]:
+        table.add_row(
+            row["project"],
+            row["agent"],
+            "[green]on[/]" if row["observing"] else "[muted]off[/]",
+            f"{row['retention_days']}d",
+            str(row["observations"]),
+            str(row["dropped"]) if row["dropped"] else "-",
+        )
+    console.print(table)
+    console.print()
+    for note in state["notes"]:
+        console.print(f"  {note}", style="muted")
+    console.print()
+
+
+@skills_observe_group.command("disable")
+@click.option("--agent", default="claude-code", help="Which agent to stop watching")
+@click.option("--project", default=None, help="Repository to stop watching")
+def skills_observe_disable(agent: str, project: str | None) -> None:
+    """Stop recording, and take the hook back out
+
+    What was already recorded stays. Stopping collection and destroying
+    what was collected are separate decisions, and `flanner skills data
+    purge` is the second one.
+    """
+    _open_store()
+    from . import skills_observe
+    from .agent_hooks import remove_observe_hook
+    from .database import get_session
+
+    root = Path(project).resolve() if project else _skills_project()
+    if root is None:
+        tui.bad("Not inside a git repository, so there is no project to stop watching.")
+        raise SystemExit(1)
+
+    try:
+        stopped = skills_observe.disable(get_session(), root, agent)
+    except ValueError as error:
+        tui.bad(str(error))
+        raise SystemExit(1) from None
+
+    remove_observe_hook(str(root))
+    console.print()
+    tui.ok(f"No longer watching {agent} in {stopped['project']}.")
+    console.print(
+        f"  {stopped['kept_observations']} recorded use(s) kept. "
+        f"{tui.command('flanner skills data purge')} deletes them.",
+        style="muted",
+    )
+    console.print()
+
+
+@skills.command("report")
+@click.option("--project", default=None, help="Repository to report on")
+@click.option("--days", default=30, show_default=True, help="How far back to look")
+@click.option("--json", "as_json", is_flag=True, help="Machine-readable report")
+@click.option("--csv", "as_csv", is_flag=True, help="Comma-separated, for a spreadsheet")
+def skills_report(project: str | None, days: int, as_json: bool, as_csv: bool) -> None:
+    """Which skills were used, over a window you can see
+
+    Every count is bounded by that window and by whether anything was
+    watching during it. Both are printed with the numbers, because a count
+    without them reads as "nobody uses this" when the truth may be that
+    nothing was ever listening.
+    """
+    _open_store()
+    from . import skills_observe
+    from .database import get_session
+
+    root = Path(project).resolve() if project else _skills_project()
+    report = skills_observe.usage(get_session(), root, days)
+
+    if as_json:
+        import json
+
+        click.echo(json.dumps(report, indent=2))
+        return
+    if as_csv:
+        click.echo(skills_observe.to_csv(report), nl=False)
+        return
+
+    console.print()
+    coverage = report["coverage"]
+    if not coverage["watching"]:
+        tui.warn("Nothing was watching in this window, so a zero here means nothing.")
+        tui.hint(f"  {tui.command('flanner skills observe enable')} starts recording.")
+
+    if report["rows"]:
+        table = tui.table("Skill", ("Uses", {"justify": "right"}), "Last used", "Models")
+        for row in report["rows"]:
+            attributed = (
+                "" if row["attributed"] == row["invocations"] else " [muted](some unversioned)[/]"
+            )
+            table.add_row(
+                row["skill"],
+                f"{row['invocations']}{attributed}",
+                (row["last_used_at"] or "")[:16].replace("T", " "),
+                ", ".join(f"{k} ({v})" for k, v in sorted(row["by_model"].items())),
+            )
+        console.print(table)
+        console.print()
+
+    console.print(
+        f"  Last {report['window_days']} days. "
+        f"{len(report['not_observed'])} installed skill(s) not seen in it.",
+        style="muted",
+    )
+    if coverage["dropped"]:
+        console.print(
+            f"  {coverage['dropped']} event(s) arrived and could not be "
+            "stored; the count above is short by at least that.",
+            style="yellow",
+        )
+    for note in report["notes"]:
+        console.print(f"  {note}", style="muted")
+    console.print()
+
+
+@skills.group("data")
+def skills_data() -> None:
+    """What was recorded, and getting rid of it"""
+
+
+@skills_data.command("purge")
+@click.option("--project", default=None, help="Repository to purge (every one if omitted)")
+@click.option("--older-than", default=None, type=int, help="Only rows older than this many days")
+@click.option("--yes", is_flag=True, help="Do not ask")
+def skills_data_purge(project: str | None, older_than: int | None, yes: bool) -> None:
+    """Delete recorded skill uses
+
+    Nothing here is ever scheduled. An automatic purge eventually destroys
+    the one week somebody needed, on a day nobody was thinking about it.
+    """
+    _open_store()
+    from . import skills_observe
+    from .database import get_session
+
+    root = Path(project).resolve() if project else None
+    where = "this project" if root else "every project"
+    span = f" older than {older_than} days" if older_than else ""
+    if not yes and not click.confirm(f"Delete recorded skill uses for {where}{span}?"):
+        tui.note("Nothing deleted.")
+        return
+
+    gone = skills_observe.purge(get_session(), root, older_than)
+    console.print()
+    tui.ok(f"Deleted {gone['deleted']} recorded use(s).")
+    console.print()
+
+
+def _skills_project_row(session: Any, root: Path | None) -> Any:
+    from .database import get_project_by_root
+
+    return get_project_by_root(session, str(root)) if root else None
+
+
+@skills.command("adopt")
+@click.argument("name")
+@click.option("--project", default=None, help="Repository the skill is loaded in")
+@click.option("--agent", default="claude-code", help="Which agent's copy to take")
+def skills_adopt(name: str, project: str | None, agent: str) -> None:
+    """Keep a copy of a skill package where flanner can put it back
+
+    A copy, not a move. The package stays where its owner put it; what is
+    stored is the bytes an install or a rollback would restore. Adopting
+    something cannot break it.
+    """
+    _open_store()
+    from . import skills_manage
+
+    root = Path(project).resolve() if project else _skills_project()
+    try:
+        kept = skills_manage.adopt(get_session(), name, root, agent)
+    except ValueError as error:
+        tui.bad(str(error))
+        raise SystemExit(1) from None
+
+    console.print()
+    tui.ok(f"{'Stored' if kept['new'] else 'Already stored'}: {name}")
+    console.print(
+        tui.fields(
+            [
+                ("Hash", kept["manifest_hash"]),
+                ("Contents", f"{kept['files']} files, {tui.size(kept['size_bytes'])}"),
+                ("Taken from", kept["source"]),
+            ]
+        )
+    )
+    console.print()
+    tui.hint(f"  {tui.command('flanner skills versions')} lists what is stored.")
+    console.print()
+
+
+@skills.command("versions")
+@click.option("--json", "as_json", is_flag=True, help="Machine-readable listing")
+def skills_versions(as_json: bool) -> None:
+    """Package versions flanner is holding on to"""
+    from . import skills_manage
+
+    held = skills_manage.stored()
+    if as_json:
+        import json
+
+        click.echo(json.dumps(held, indent=2))
+        return
+
+    console.print()
+    if not held:
+        tui.note("Nothing stored yet.")
+        tui.hint(f"  {tui.command('flanner skills adopt <name>')} keeps a copy of one.")
+        console.print()
+        return
+
+    table = tui.table("Hash", "Files", "Size", "Verified")
+    for row in held:
+        table.add_row(
+            row["manifest_hash"][:23] + "…",
+            str(row["files"]),
+            tui.size(row["size_bytes"]),
+            "[green]yes[/]" if row["verified"] else "[red]NO[/]",
+        )
+    console.print(table)
+    console.print()
+
+
+@skills.command("install")
+@click.argument("manifest_hash")
+@click.option(
+    "--name", default=None, help="Directory name to install as (defaults to the skill's)"
+)
+@click.option("--project", default=None, help="Repository to install into")
+@click.option("--agent", default="claude-code", help="Which agent to install for")
+@click.option("--force", is_flag=True, help="Overwrite a directory flanner did not install")
+def skills_install(
+    manifest_hash: str, name: str | None, project: str | None, agent: str, force: bool
+) -> None:
+    """Install a stored package version into a project's skills directory
+
+    Whatever was there first is snapshotted, so a bad install can be
+    undone. A directory flanner did not install, or one somebody has
+    edited since, is refused rather than overwritten.
+    """
+    _open_store()
+    from . import skills_manage
+
+    root = Path(project).resolve() if project else _skills_project()
+    if root is None:
+        tui.bad("Not inside a git repository, so there is nowhere to install to.")
+        raise SystemExit(1)
+
+    folder = name or _name_in_snapshot(manifest_hash)
+    if folder is None:
+        tui.bad("Could not read a skill name out of that snapshot; pass --name.")
+        raise SystemExit(1)
+
+    target = root / ".claude" / "skills" / folder
+    try:
+        done = skills_manage.install(
+            get_session(),
+            manifest_hash,
+            target,
+            agent,
+            _skills_project_row(get_session(), root),
+            force=force,
+        )
+    except skills_manage.ConflictError as clash:
+        tui.bad(str(clash))
+        tui.hint("  --force overwrites it; the current bytes are stored first either way.")
+        raise SystemExit(1) from None
+    except (ValueError, OSError) as error:
+        tui.bad(str(error))
+        raise SystemExit(1) from None
+
+    console.print()
+    if not done["changed"]:
+        tui.ok(f"{folder} already holds exactly these bytes. Nothing to do.")
+        console.print()
+        return
+
+    tui.ok(f"Installed {folder}.")
+    console.print(
+        tui.fields(
+            [
+                ("Where", str(target)),
+                ("Hash", done["manifest_hash"]),
+                ("Replaced", done["replaced_hash"] or "nothing"),
+                ("Undo with", f"flanner skills rollback {done['installation_id']}"),
+            ]
+        )
+    )
+    console.print()
+
+
+@skills.command("rollback")
+@click.argument("installation_id")
+@click.option("--to", "to_hash", default=None, help="A specific stored version to go back to")
+def skills_rollback(installation_id: str, to_hash: str | None) -> None:
+    """Put back what an install replaced"""
+    _open_store()
+    from . import skills_manage
+
+    try:
+        done = skills_manage.rollback(get_session(), installation_id, to_hash)
+    except (ValueError, OSError) as error:
+        tui.bad(str(error))
+        raise SystemExit(1) from None
+
+    console.print()
+    tui.ok(f"Rolled back {Path(done['target']).name}.")
+    console.print(tui.fields([("Where", done["target"]), ("Now holds", done["manifest_hash"])]))
+    console.print()
+
+
+@skills.command("installs")
+@click.option("--project", default=None, help="Repository to list installs for")
+@click.option("--json", "as_json", is_flag=True, help="Machine-readable listing")
+def skills_installs(project: str | None, as_json: bool) -> None:
+    """What flanner has installed, and whether it is still intact"""
+    _open_store()
+    from . import skills_manage
+
+    root = Path(project).resolve() if project else None
+    rows = skills_manage.installations(get_session(), root)
+    if as_json:
+        import json
+
+        click.echo(json.dumps(rows, indent=2))
+        return
+
+    console.print()
+    if not rows:
+        tui.note("Nothing installed by flanner.")
+        console.print()
+        return
+
+    table = tui.table("Installed", "Where", "State", "Id")
+    for row in rows:
+        state = (
+            "[green]intact[/]"
+            if row["intact"]
+            else ("[yellow]edited since[/]" if row["status"] == "installed" else row["status"])
+        )
+        table.add_row(
+            row["installed_at"][:16].replace("T", " "),
+            Path(row["target"]).name,
+            state,
+            row["id"],
+        )
+    console.print(table)
+    console.print()
+
+
+def _name_in_snapshot(manifest_hash: str) -> str | None:
+    """The skill's own name, read out of the stored SKILL.md.
+
+    Read from the snapshot rather than taken from its directory name: the
+    store is content-addressed, so the directory is a hash and carries no
+    name at all.
+    """
+    from . import skills_manage
+    from .frontmatter import parse_frontmatter
+
+    manifest = skills_manage.snapshot_path(manifest_hash) / "SKILL.md"
+    try:
+        meta, _ = parse_frontmatter(manifest.read_text(encoding="utf-8", errors="replace"))
+    except (OSError, ValueError):
+        return None
+    found = str((meta or {}).get("name") or "").strip()
+    return found or None
 
 
 @cli.group()

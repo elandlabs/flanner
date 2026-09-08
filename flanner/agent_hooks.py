@@ -265,6 +265,94 @@ def ensure_settings_hook(root: str) -> bool:
     return True
 
 
+# The observation hook. Separate from the guard, and installed only when
+# somebody turns observation on for the repository: a hook that reports
+# what an agent did has to be a decision, not a side effect of `init`.
+#
+# PostToolUse rather than PreToolUse. A skill that was invoked and then
+# failed to start is not a use, and PreToolUse cannot tell the difference.
+OBSERVE_HOOK_COMMAND = "flanner hook skill-use"
+OBSERVE_HOOK_MATCHER = "Skill"
+
+
+def _settings_hooks(root: str) -> tuple[Path, dict[str, Any]]:
+    path = Path(root) / ".claude" / "settings.json"
+    return path, _existing_object(path)
+
+
+def ensure_observe_hook(root: str) -> bool:
+    """Merge the skill-use PostToolUse hook into <root>/.claude/settings.json.
+
+    Idempotent; returns True if the file was changed.
+    """
+    path, settings = _settings_hooks(root)
+    post = settings.setdefault("hooks", {}).setdefault("PostToolUse", [])
+    if any(
+        h.get("command") == OBSERVE_HOOK_COMMAND
+        for entry in post
+        if isinstance(entry, dict)
+        for h in entry.get("hooks", [])
+    ):
+        return False
+
+    post.append(
+        {
+            "matcher": OBSERVE_HOOK_MATCHER,
+            "hooks": [{"type": "command", "command": OBSERVE_HOOK_COMMAND}],
+        }
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
+    return True
+
+
+def remove_observe_hook(root: str) -> bool:
+    """Take the skill-use hook back out. Returns True if anything changed.
+
+    Turning observation off has to remove the thing doing the observing.
+    Leaving a disabled hook installed means every skill invocation still
+    starts a flanner process to be told it is not wanted, which is both a
+    cost nobody agreed to and a promise this made that it did not keep.
+    """
+    path, settings = _settings_hooks(root)
+    post = (settings.get("hooks") or {}).get("PostToolUse")
+    if not isinstance(post, list):
+        return False
+
+    kept = []
+    changed = False
+    for entry in post:
+        if not isinstance(entry, dict):
+            kept.append(entry)
+            continue
+        # Only flanner's own hook goes. Another tool's entry sharing the
+        # matcher is not ours to remove.
+        hooks = [h for h in entry.get("hooks", []) if h.get("command") != OBSERVE_HOOK_COMMAND]
+        if len(hooks) != len(entry.get("hooks", [])):
+            changed = True
+        if hooks:
+            kept.append({**entry, "hooks": hooks})
+        elif not entry.get("hooks"):
+            kept.append(entry)
+
+    if not changed:
+        return False
+
+    hooks = settings.setdefault("hooks", {})
+    if kept:
+        hooks["PostToolUse"] = kept
+    else:
+        # Removed rather than left as an empty list. Turning observation off
+        # should leave the file as it was found, and a stub key is a trace of
+        # flanner in somebody's config that does nothing.
+        hooks.pop("PostToolUse", None)
+        if not hooks:
+            settings.pop("hooks", None)
+
+    path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
+    return True
+
+
 # Claude Code (the CLI) reads project-scoped MCP servers from <root>/.mcp.json,
 # not from Claude Desktop's config that `flanner init` registers separately. The
 # portable `flanner-mcp` console script is used (not an absolute interpreter
