@@ -36,6 +36,20 @@
     <div class="kv"><span>File</span><b class="mono">{{ memory.file_path }}</b></div>
   </div>
 
+  {% if attachments %}
+  <div class="card">
+    <div class="card-head">Attached <span class="note">{{ attachments | length }}</span></div>
+    {% for file in attachments %}
+    <div class="grid-row cols-events">
+      <span><a href="/memory/{{ memory.id }}/attachments/{{ file.id }}">{{ file.name }}</a>
+        {% if file.description %}<span class="hint">{{ file.description }}</span>{% endif %}</span>
+      <span class="muted">{{ file.mime_type }}</span>
+      <span class="muted">{{ (file.size_bytes / 1024) | round | int }} KB</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
   {% if memory.events %}
   <div class="card">
     <div class="card-head">What happened to it</div>

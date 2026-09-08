@@ -1066,6 +1066,55 @@ def memory_decide(
     return outcome
 
 
+def memory_attach(
+    memory_id: str, path: str, description: str = "", created_by: str = "claude"
+) -> dict[str, Any]:
+    """Attach a local file to a memory."""
+    from . import memory_ops
+
+    try:
+        ensure_database()
+        session = get_session()
+        return memory_ops.attach(
+            session,
+            memory_id=UUID(memory_id),
+            source=path,
+            description=description,
+            created_by=created_by,
+        )
+    except Exception as e:  # noqa: BLE001 - the seam returns, never raises
+        return {"error": True, "message": str(e)}
+
+
+def memory_detach(attachment_id: str, created_by: str = "claude") -> dict[str, Any]:
+    """Remove one attachment's reference to a file."""
+    from . import memory_ops
+
+    try:
+        ensure_database()
+        session = get_session()
+        return memory_ops.detach(session, attachment_id=UUID(attachment_id), created_by=created_by)
+    except Exception as e:  # noqa: BLE001
+        return {"error": True, "message": str(e)}
+
+
+def memory_gc() -> dict[str, Any]:
+    """Delete stored files nothing points at."""
+    from . import memory_ops
+
+    try:
+        ensure_database()
+        session = get_session()
+        outcome = memory_ops.collect_blobs(session)
+    except Exception as e:  # noqa: BLE001
+        return {"error": True, "message": str(e)}
+
+    outcome["message"] = (
+        f"{outcome['removed']} file(s) removed, {outcome['freed_bytes'] // 1024} KB freed."
+    )
+    return outcome
+
+
 def _memory_time(value: str | None) -> Any:
     """An ISO timestamp from a caller, or nothing."""
     if not value:
@@ -1097,6 +1146,9 @@ REGISTRY: dict[str, Callable[..., Any]] = {
     "memory_rebuild": memory_rebuild,
     "memory_consider": memory_consider,
     "memory_decide": memory_decide,
+    "memory_attach": memory_attach,
+    "memory_detach": memory_detach,
+    "memory_gc": memory_gc,
 }
 
 

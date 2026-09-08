@@ -15,6 +15,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple, NoReturn
+from uuid import UUID
 
 import click
 from rich.text import Text
@@ -23,8 +24,6 @@ from . import tui
 from .exceptions import DatabaseError, FlannerError, StorageError
 
 if TYPE_CHECKING:  # annotations only; `from __future__` makes them strings
-    from uuid import UUID
-
     from sqlalchemy.orm import Session
 
     from .database import ProjectModel
@@ -807,6 +806,16 @@ def mem_show(memory_id: str, output: str) -> None:
     if detail["supersedes"]:
         console.print(f"{'Replaces':<12}{detail['supersedes']}", style="muted")
 
+    attached = memory_ops.attachments_of(session, UUID(memory_id))
+    if attached:
+        console.print()
+        for item in attached:
+            console.print(
+                f"  {item['name']}  {item['mime_type']}  {item['size_bytes'] // 1024} KB",
+                style="muted",
+            )
+            console.print(f"    {tui.code(item['id'])}", style="muted")
+
     if detail["events"]:
         console.print()
         for event in detail["events"]:
@@ -1232,6 +1241,137 @@ def mem_policy_init(project: str | None, force: bool) -> None:
     console.print(
         "  Every value in it is the default; delete what you do not change.", style="muted"
     )
+    console.print()
+
+
+@mem.command("attach")
+@click.argument("memory_id")
+@click.argument("path", type=click.Path(exists=True, dir_okay=False))
+@click.option("--description", default="", help="What this file shows")
+def mem_attach(memory_id: str, path: str, description: str) -> None:
+    """Attach a file to a memory as evidence
+
+    The file is copied into flanner's store, so the original may be moved
+    or deleted afterwards.
+    """
+    result = _dispatch_or_exit(
+        "memory_attach",
+        {
+            "memory_id": memory_id,
+            "path": path,
+            "description": description,
+            "created_by": _whoami(),
+        },
+    )
+    console.print()
+    tui.ok(result["message"])
+    if result.get("deduplicated"):
+        console.print("  Already in the store, so nothing was copied.", style="muted")
+    console.print(f"  {tui.code(result['id'])}", style="muted")
+    console.print()
+
+
+@mem.command("detach")
+@click.argument("attachment_id")
+def mem_detach(attachment_id: str) -> None:
+    """Remove an attachment from a memory"""
+    result = _dispatch_or_exit(
+        "memory_detach", {"attachment_id": attachment_id, "created_by": _whoami()}
+    )
+    console.print()
+    tui.ok(result["message"])
+    console.print()
+
+
+@mem.command("open")
+@click.argument("attachment_id")
+@click.option("--to", "destination", default=None, help="Copy it here instead of opening it")
+def mem_open(attachment_id: str, destination: str | None) -> None:
+    """Open an attachment, or copy it somewhere"""
+    from . import memory_ops
+
+    session = _require_session()
+    try:
+        path, mime, name = memory_ops.open_attachment(session, UUID(attachment_id))
+    except (DatabaseError, ValueError) as e:
+        console.print()
+        tui.bad(str(e))
+        console.print()
+        raise SystemExit(1) from None
+
+    if destination:
+        from . import blobs
+
+        target = Path(destination)
+        if target.is_dir():
+            target = target / name
+        blobs.export(
+            _attachment_digest(session, UUID(attachment_id)),
+            home=get_mcp_dir(),
+            destination=target,
+        )
+        console.print()
+        tui.ok(f"Copied to {target}")
+        console.print()
+        return
+
+    click.launch(str(path))
+    console.print()
+    tui.ok(f"Opened {name} ({mime})")
+    console.print()
+
+
+def _attachment_digest(session: Any, attachment_id: UUID) -> str:
+    from .database import get_attachment
+
+    found = get_attachment(session, attachment_id)
+    if found is None:
+        raise DatabaseError(f"No attachment with id {attachment_id}")
+    return str(found.content_hash)
+
+
+@mem.command("gc")
+@click.option("--yes", is_flag=True, help="Do not ask")
+def mem_gc(yes: bool) -> None:
+    """Delete stored files no memory points at any more
+
+    Detaching a file leaves it in the store, because another memory may
+    hold the same one. This is the step that actually removes bytes, and
+    it only runs when you ask.
+    """
+    from . import memory_ops
+
+    session = _require_session()
+    outcome = memory_ops.collect_blobs(session) if yes else None
+
+    if outcome is None:
+        from . import blobs
+        from .database import referenced_digests
+
+        keep = referenced_digests(session)
+        root = blobs.blob_root(get_mcp_dir())
+        loose = [
+            blob
+            for shard in (root.iterdir() if root.is_dir() else [])
+            if shard.is_dir()
+            for blob in shard.iterdir()
+            if blob.is_file() and blob.name not in keep and blob.suffix != ".part"
+        ]
+        console.print()
+        if not loose:
+            tui.note("Nothing to collect.")
+            console.print()
+            return
+        size = sum(blob.stat().st_size for blob in loose)
+        tui.note(f"{len(loose)} file(s), {size // 1024} KB, are referenced by nothing.")
+        if not click.confirm("Delete them?", default=False):
+            tui.note("Nothing was deleted.")
+            return
+        outcome = memory_ops.collect_blobs(session)
+
+    console.print()
+    tui.ok(f"{outcome['removed']} file(s) removed, {outcome['freed_bytes'] // 1024} KB freed")
+    console.print(f"  {outcome['remaining_bytes'] // 1024} KB still stored.", style="muted")
     console.print()
 
 

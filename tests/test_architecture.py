@@ -200,9 +200,12 @@ ALLOWED = {
     # machine" means when written as a rule rather than a promise.
     # Reading two files and deciding what they mean. Pure, so a policy
     # can be described in a test without arranging a database.
+    # Files on disk, addressed by the hash of their content. Knows what a
+    # digest is and nothing about what a memory is.
+    "blobs": {"exceptions"},
     "memory_policy": {"exceptions"},
     "memory_ops": FOUNDATION
-    | {"database", "storage", "identity", "memory_guard", "memory_policy"},
+    | {"database", "storage", "identity", "memory_guard", "memory_policy", "blobs"},
     "plan_ops": FOUNDATION | {"database", "storage", "artifacts", "identity"},
     "cli": FOUNDATION
     | {
@@ -237,6 +240,9 @@ ALLOWED = {
         # Joining re-roots existing plans, which is a write-path concern.
         "plan_ops",
         "memory_ops",
+        # `mem open --to` copies a stored file back out, and `mem gc`
+        # counts what is loose before asking whether to delete it.
+        "blobs",
         "memory_policy",
         "authz",
         "entitlements",

@@ -37,8 +37,8 @@ from uuid import UUID, uuid4
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from . import blobs, memory_guard, memory_policy
 from . import database as db
-from . import memory_guard, memory_policy
 from .database import (
     MEMORY_CATEGORIES,
     NO_PROJECT,
@@ -202,13 +202,30 @@ def _reindex(session: Session, memory: MemoryModel) -> None:
             ),
             {
                 "title": memory.title,
-                "body": memory.body,
+                "body": " ".join([memory.body, *_attachment_text(session, memory.id)]),
                 "refs": " ".join(json.loads(memory.source_refs or "[]")),
                 "category": memory.category,
                 "mid": str(memory.id),
             },
         )
     session.commit()
+
+
+def _attachment_text(session: Session, memory_id: UUID) -> list[str]:
+    """What an attachment contributes to its memory's searchability.
+
+    A filename, a type and whatever description somebody gave, plus the
+    text of a text file. An image contributes its name, which is often the
+    only thing anybody would search for it by.
+    """
+    pieces: list[str] = []
+    for attachment in db.list_attachments(session, memory_id):
+        pieces.append(attachment.original_name)
+        if attachment.description:
+            pieces.append(attachment.description)
+        if attachment.extracted_text:
+            pieces.append(attachment.extracted_text)
+    return pieces
 
 
 def _unindex(session: Session, memory_id: UUID) -> None:
@@ -1213,6 +1230,243 @@ def policy_for(project: ProjectModel | None) -> Policy:
     return memory_policy.load(project.project_root if project else None, home=flanner_home())
 
 
+# --- attachments --------------------------------------------------------------
+#
+# A memory says why something matters; an attachment is the evidence. The
+# body still carries the claim, because a screenshot with no sentence
+# beside it is a file somebody has to open to find out whether it is worth
+# opening.
+#
+# Nothing here can damage the memory it belongs to. A refused attachment
+# leaves the memory exactly as it was, which is the property that lets a
+# person attach something without first wondering what happens if it fails.
+
+#: How much of a text attachment is read into the search index.
+#:
+#: The point is to make an attachment findable, not to put a whole document
+#: into an index that also has to answer quickly.
+EXTRACT_LIMIT = 64 * 1024
+
+#: Text of these types is read for searching. Everything else is recorded
+#: as unsupported, which is an answer rather than a failure: an image has
+#: no text and saying so is different from having failed to find any.
+EXTRACTABLE = ("text/",)
+
+
+def attach(
+    session: Session,
+    *,
+    memory_id: UUID,
+    source: str | Path,
+    description: str = "",
+    policy: Policy | None = None,
+    created_by: str = "claude",
+) -> dict[str, Any]:
+    """Attach a local file to a memory.
+
+    Refusing is the common case worth getting right: too large, a type this
+    project does not take, or a file that is not there. Every refusal
+    leaves the memory untouched and writes nothing, because an attachment
+    that half-worked is worse than one that did not.
+    """
+    memory = get_memory(session, memory_id)
+    if memory is None:
+        raise NotFoundError(f"No memory with id {memory_id}")
+
+    rules = policy or policy_for(_project_of(session, memory))
+    if not rules.attachments_enabled:
+        raise ValidationError("this project does not take attachments")
+
+    path = Path(source).expanduser()
+    if not path.is_file():
+        raise ValidationError(f"{path} is not a file")
+
+    home = flanner_home()
+    already = db.attached_bytes(session, memory.id)
+    room = rules.max_memory_bytes - already
+    if room <= 0:
+        raise ValidationError(
+            f"this memory already holds {already // (1024 * 1024)} MB, which is its limit"
+        )
+
+    stored = blobs.store(path, home=home, max_bytes=min(rules.max_file_bytes, room))
+
+    if not _mime_allowed(stored.mime_type, rules.allowed_mime_prefixes):
+        # The blob is left in place rather than deleted: another memory may
+        # legitimately hold the same file, and `mem gc` is the one thing
+        # allowed to remove bytes.
+        raise ValidationError(
+            f"{stored.mime_type} is not a type this project takes "
+            f"({', '.join(rules.allowed_mime_prefixes)})"
+        )
+
+    duplicate = next(
+        (a for a in db.list_attachments(session, memory.id) if a.content_hash == stored.digest),
+        None,
+    )
+    if duplicate is not None:
+        return {
+            "id": str(duplicate.id),
+            "attached": False,
+            "digest": stored.digest,
+            "name": duplicate.original_name,
+            "message": "That file is already attached to this memory.",
+        }
+
+    status, text_body = _extract(stored, home=home)
+    attachment = db.add_attachment(
+        session,
+        memory_id=memory.id,
+        content_hash=stored.digest,
+        mime_type=stored.mime_type,
+        original_name=blobs.sanitise_name(path.name),
+        size_bytes=stored.size_bytes,
+        description=description,
+        extraction_status=status,
+        extracted_text=text_body,
+    )
+    record_memory_event(
+        session,
+        memory_id=memory.id,
+        action="attached",
+        actor=created_by,
+        detail=json.dumps(
+            {
+                "attachment": str(attachment.id),
+                "digest": stored.digest,
+                "mime_type": stored.mime_type,
+                "bytes": stored.size_bytes,
+            }
+        ),
+    )
+    # Extracted text is searchable, so the index has to be told.
+    _reindex(session, memory)
+
+    return {
+        "id": str(attachment.id),
+        "attached": True,
+        "digest": stored.digest,
+        "name": attachment.original_name,
+        "mime_type": stored.mime_type,
+        "size_bytes": stored.size_bytes,
+        "deduplicated": not stored.written,
+        "message": f"Attached {attachment.original_name} to {memory.title!r}.",
+    }
+
+
+def detach(session: Session, *, attachment_id: UUID, created_by: str = "claude") -> dict[str, Any]:
+    """Remove an attachment's reference.
+
+    Never the file. Another memory may hold the same one, and deciding
+    that from here would mean this function knowing about every other
+    memory. `collect_blobs` is where that question is answered.
+    """
+    attachment = db.get_attachment(session, attachment_id)
+    if attachment is None:
+        raise NotFoundError(f"No attachment with id {attachment_id}")
+
+    memory_id = attachment.memory_id
+    name = attachment.original_name
+    digest = attachment.content_hash
+    db.delete_attachment(session, attachment_id)
+
+    record_memory_event(
+        session,
+        memory_id=memory_id,
+        action="detached",
+        actor=created_by,
+        detail=json.dumps({"name": name, "digest": digest}),
+    )
+    memory = get_memory(session, memory_id)
+    if memory is not None:
+        _reindex(session, memory)
+
+    return {
+        "id": str(attachment_id),
+        "name": name,
+        "message": f"Detached {name}. The file stays until `flanner mem gc` runs.",
+    }
+
+
+def attachments_of(session: Session, memory_id: UUID) -> list[dict[str, Any]]:
+    """What is attached to one memory, as plain data."""
+    return [
+        {
+            "id": str(a.id),
+            "name": a.original_name,
+            "mime_type": a.mime_type,
+            "size_bytes": a.size_bytes,
+            "description": a.description or "",
+            "extraction_status": a.extraction_status,
+            "digest": a.content_hash,
+            "created_at": a.created_at.isoformat() + "Z" if a.created_at else None,
+        }
+        for a in db.list_attachments(session, memory_id)
+    ]
+
+
+def open_attachment(session: Session, attachment_id: UUID) -> tuple[Path, str, str]:
+    """The file on disk, its type and its display name.
+
+    Returns the type detected when it was stored rather than one guessed
+    from the name, so a `.png` that is really something else is served as
+    what it is.
+    """
+    attachment = db.get_attachment(session, attachment_id)
+    if attachment is None:
+        raise NotFoundError(f"No attachment with id {attachment_id}")
+    path = blobs.path_for(flanner_home(), attachment.content_hash)
+    if not path.is_file():
+        raise NotFoundError(
+            f"{attachment.original_name} is recorded but its file is gone from the store"
+        )
+    return path, attachment.mime_type, attachment.original_name
+
+
+def collect_blobs(session: Session) -> dict[str, Any]:
+    """Delete stored files no attachment points at any more.
+
+    Only when asked. A store that tidied itself on a timer would be
+    deleting somebody's evidence on a schedule they did not choose, and
+    the set of live digests is knowable only from the database.
+    """
+    removed, freed = blobs.collect(flanner_home(), keep=db.referenced_digests(session))
+    return {
+        "removed": removed,
+        "freed_bytes": freed,
+        "remaining_bytes": blobs.total_size(flanner_home()),
+    }
+
+
+def _project_of(session: Session, memory: MemoryModel) -> ProjectModel | None:
+    """The project a memory belongs to, or None when it is personal."""
+    if memory.scope != PROJECT:
+        return None
+    return db.get_project(session, memory.project_id)
+
+
+def _mime_allowed(mime_type: str, prefixes: tuple[str, ...]) -> bool:
+    """Whether a detected type is one this project takes.
+
+    An empty list means every type, which is the default: somebody
+    attaching a log archive to a debugging lesson should not have to
+    configure that first.
+    """
+    if not prefixes:
+        return True
+    return any(mime_type.startswith(prefix) for prefix in prefixes)
+
+
+def _extract(stored: blobs.Stored, *, home: Path) -> tuple[str, str | None]:
+    """Text worth indexing, and whether looking was even applicable."""
+    if not stored.mime_type.startswith(EXTRACTABLE):
+        return "unsupported", None
+    text_body = blobs.read_text(stored.digest, home=home, limit=EXTRACT_LIMIT)
+    if not text_body:
+        return "failed", None
+    return "ready", text_body
+
+
 # --- rebuilding --------------------------------------------------------------
 
 
@@ -1396,15 +1650,20 @@ __all__ = [
     "Candidate",
     "Policy",
     "consider",
+    "attach",
+    "attachments_of",
+    "collect_blobs",
     "content_hash",
     "decide",
     "derive_title",
     "describe",
+    "detach",
     "drift",
     "expire_due",
     "forget",
     "memory_dir",
     "normalise",
+    "open_attachment",
     "pending",
     "policy_for",
     "rebuild",

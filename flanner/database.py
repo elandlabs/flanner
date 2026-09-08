@@ -330,6 +330,9 @@ class MemoryModel(Base):
     events: Mapped[list["MemoryEventModel"]] = relationship(
         "MemoryEventModel", back_populates="memory", cascade="all, delete-orphan"
     )
+    attachments: Mapped[list["MemoryAttachmentModel"]] = relationship(
+        "MemoryAttachmentModel", back_populates="memory", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         # The whole of deduplication. `remember` called twice with the same
@@ -368,6 +371,55 @@ class MemoryEventModel(Base):
 
     def __repr__(self) -> str:
         return f"<MemoryEvent({self.action} on {self.memory_id})>"
+
+
+class MemoryAttachmentModel(Base):
+    """One file attached to a memory.
+
+    The row, never the bytes. `content_hash` addresses the file in the blob
+    store, which is what lets the same screenshot attached to three
+    memories be stored once and lets a backup of this database stay small
+    enough to be worth taking.
+
+    A memory may have several attachments and the same file may be attached
+    to several memories, so deleting a row never deletes a blob. Collecting
+    unreferenced blobs is a separate, deliberate step.
+    """
+
+    __tablename__ = "memory_attachments"
+
+    id: Mapped[uuid.UUID] = mapped_column(GUID, primary_key=True, default=uuid.uuid4)
+    memory_id: Mapped[uuid.UUID] = mapped_column(
+        GUID, ForeignKey("memories.id"), nullable=False, index=True
+    )
+    content_hash: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    mime_type: Mapped[str] = mapped_column(String, nullable=False)
+    # For showing a person which file this was. Never used to build a path:
+    # the digest decides where the blob lives.
+    original_name: Mapped[str] = mapped_column(String, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    # Whether anything has been read out of the file for searching, and
+    # what. `unsupported` is an answer, not a failure: an image has no text
+    # and saying so is different from having failed to find any.
+    extraction_status: Mapped[str] = mapped_column(String, nullable=False, default="not_requested")
+    extracted_text: Mapped[str | None] = mapped_column(Text)
+
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, default=_utcnow)
+
+    memory: Mapped["MemoryModel"] = relationship("MemoryModel", back_populates="attachments")
+
+    __table_args__ = (
+        # The same file attached to the same memory twice is one
+        # attachment. Attaching it to a different memory is a second row
+        # pointing at the same blob, which is the point of addressing by
+        # content.
+        UniqueConstraint("memory_id", "content_hash", name="ux_attachment_per_memory"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<MemoryAttachment({self.original_name} on {self.memory_id})>"
 
 
 class JiraConfigModel(Base):
@@ -1889,3 +1941,70 @@ def delete_memory(session: Session, memory_id: uuid.UUID) -> bool:
     session.delete(memory)
     _commit(session)
     return True
+
+
+def add_attachment(
+    session: Session,
+    *,
+    memory_id: uuid.UUID,
+    content_hash: str,
+    mime_type: str,
+    original_name: str,
+    size_bytes: int,
+    description: str = "",
+    extraction_status: str = "not_requested",
+    extracted_text: str | None = None,
+) -> MemoryAttachmentModel:
+    """Record one file against one memory."""
+    attachment = MemoryAttachmentModel(
+        memory_id=memory_id,
+        content_hash=content_hash,
+        mime_type=mime_type,
+        original_name=original_name,
+        size_bytes=size_bytes,
+        description=description or None,
+        extraction_status=extraction_status,
+        extracted_text=extracted_text,
+    )
+    session.add(attachment)
+    _commit(session)
+    session.refresh(attachment)
+    return attachment
+
+
+def get_attachment(session: Session, attachment_id: uuid.UUID) -> MemoryAttachmentModel | None:
+    return session.query(MemoryAttachmentModel).filter_by(id=attachment_id).first()
+
+
+def list_attachments(session: Session, memory_id: uuid.UUID) -> list[MemoryAttachmentModel]:
+    """Everything attached to one memory, oldest first."""
+    return list(
+        session.query(MemoryAttachmentModel)
+        .filter_by(memory_id=memory_id)
+        .order_by(MemoryAttachmentModel.created_at.asc())
+        .all()
+    )
+
+
+def delete_attachment(session: Session, attachment_id: uuid.UUID) -> bool:
+    """Remove the reference. Never the file: another memory may hold it."""
+    attachment = get_attachment(session, attachment_id)
+    if attachment is None:
+        return False
+    session.delete(attachment)
+    _commit(session)
+    return True
+
+
+def referenced_digests(session: Session) -> set[str]:
+    """Every blob some attachment still points at.
+
+    What the collector keeps. Read from the database rather than tracked as
+    a count, because a count that drifts deletes somebody's evidence.
+    """
+    return {row[0] for row in session.query(MemoryAttachmentModel.content_hash).all()}
+
+
+def attached_bytes(session: Session, memory_id: uuid.UUID) -> int:
+    """How much one memory's attachments come to, for the per-memory cap."""
+    return sum(a.size_bytes for a in list_attachments(session, memory_id))

@@ -1336,9 +1336,11 @@ def memory_get(memory_id: str) -> dict[str, Any]:
     from . import memory_ops
 
     try:
-        return memory_ops.describe(session, UUID(memory_id))
+        detail = memory_ops.describe(session, UUID(memory_id))
     except Exception as e:  # noqa: BLE001 - a bad id is an answer, not a crash
         return {"error": True, "message": str(e)}
+    detail["attachments"] = memory_ops.attachments_of(session, UUID(memory_id))
+    return detail
 
 
 @mcp.tool()
@@ -1583,6 +1585,51 @@ def memory_policy(project_id: str = "") -> dict[str, Any]:
         ],
         "refused": list(policy.refused),
     }
+
+
+@mcp.tool()
+def memory_attach(
+    memory_id: str, path: str, description: str = "", created_by: str = "claude"
+) -> dict[str, Any]:
+    """
+    Attach a local file to a memory as evidence.
+
+    The memory still carries the claim; the file is what backs it. A
+    screenshot of the architecture a decision refers to, the specification
+    a constraint came from, the log behind a lesson.
+
+    Do NOT attach something instead of writing the memory. A file with no
+    sentence beside it is something a person has to open to find out
+    whether it is worth opening.
+
+    `path` is a file on this machine. It is copied into flanner's store and
+    addressed by its content, so attaching the same file twice costs
+    nothing and the original may be moved or deleted afterwards.
+
+    Refused when the file is larger than the project allows, when its type
+    is not one this project takes, or when it does not exist. Every refusal
+    leaves the memory exactly as it was.
+    """
+    return dispatch(
+        "memory_attach",
+        {
+            "memory_id": memory_id,
+            "path": path,
+            "description": description,
+            "created_by": created_by,
+        },
+    )
+
+
+@mcp.tool()
+def memory_detach(attachment_id: str, created_by: str = "claude") -> dict[str, Any]:
+    """
+    Remove an attachment from a memory.
+
+    The stored file is not deleted, because another memory may hold the
+    same one. `flanner mem gc` removes files nothing points at.
+    """
+    return dispatch("memory_detach", {"attachment_id": attachment_id, "created_by": created_by})
 
 
 def main(argv: list[str] | None = None) -> None:

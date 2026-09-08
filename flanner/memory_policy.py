@@ -95,6 +95,15 @@ class Policy:
     max_results: int = 8
     max_context_chars: int = 8000
 
+    # --- attachments ---
+    #: A memory says why something matters; an attachment is the evidence.
+    #: Empty prefixes mean every type: somebody attaching a log archive to
+    #: a debugging lesson should not have to configure that first.
+    attachments_enabled: bool = True
+    max_file_mb: int = 25
+    max_memory_mb: int = 100
+    allowed_mime_prefixes: tuple[str, ...] = ()
+
     #: Which file each value came from, for `flanner mem policy show`. A
     #: person changing a setting and seeing no effect needs to be told
     #: which file is winning, not left to guess.
@@ -113,6 +122,14 @@ class Policy:
     @property
     def captures_automatically(self) -> bool:
         return self.capture_mode == AUTO_SAFE
+
+    @property
+    def max_file_bytes(self) -> int:
+        return self.max_file_mb * 1024 * 1024
+
+    @property
+    def max_memory_bytes(self) -> int:
+        return self.max_memory_mb * 1024 * 1024
 
     @property
     def suggests(self) -> bool:
@@ -140,6 +157,10 @@ _FIELDS: tuple[tuple[str, tuple[str, ...], type], ...] = (
     ("include_personal", ("retrieval", "include_personal"), bool),
     ("max_results", ("retrieval", "max_results"), int),
     ("max_context_chars", ("retrieval", "max_context_chars"), int),
+    ("attachments_enabled", ("attachments", "enabled"), bool),
+    ("max_file_mb", ("attachments", "max_file_mb"), int),
+    ("max_memory_mb", ("attachments", "max_memory_mb"), int),
+    ("allowed_mime_prefixes", ("attachments", "allowed_mime_prefixes"), tuple),
 )
 
 
@@ -278,8 +299,14 @@ def _tightens(name: str, project_value: Any, global_value: Any) -> bool:
         return not project_value or bool(global_value)
     if name in ("max_suggestions_per_session", "max_auto_commits_per_day", "max_results"):
         return int(project_value) <= int(global_value)
-    if name == "max_context_chars":
+    if name in ("max_context_chars", "max_file_mb", "max_memory_mb"):
         return int(project_value) <= int(global_value)
+    if name == "attachments_enabled":
+        return not project_value or bool(global_value)
+    if name == "allowed_mime_prefixes":
+        # An empty global list means every type, so any project list is a
+        # narrowing of it. Otherwise the project's must be a subset.
+        return not global_value or set(project_value) <= set(global_value)
     if name == "allow_categories":
         return bool(set(project_value) <= set(global_value))
     if name == "secrets":
@@ -405,4 +432,12 @@ retrieval:
   include_personal: true
   max_results: 8
   max_context_chars: 8000
+
+attachments:
+  enabled: true
+  max_file_mb: 25
+  max_memory_mb: 100
+  # Empty means every type. Narrow it to, say, ["image/", "application/pdf"]
+  # if this project should only take screenshots and specifications.
+  allowed_mime_prefixes: []
 """

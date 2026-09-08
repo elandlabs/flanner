@@ -1849,7 +1849,46 @@ async def memory_detail(request: Request, memory_id: str) -> HTMLResponse:
         raise HTTPException(status_code=404, detail="No such memory") from None
 
     return templates.TemplateResponse(
-        request, "memory_detail.html", {"memory": detail, **_nav(session)}
+        request,
+        "memory_detail.html",
+        {
+            "memory": detail,
+            "attachments": await run_in_threadpool(
+                memory_ops.attachments_of, session, UUID(memory_id)
+            ),
+            **_nav(session),
+        },
+    )
+
+
+@app.get("/memory/{memory_id}/attachments/{attachment_id}")
+async def memory_attachment(memory_id: str, attachment_id: str) -> FileResponse:
+    """Serve one attached file.
+
+    The type is the one detected when the file was stored, never one
+    guessed from its name, so a `.png` that is really something else is
+    served as what it is. `nosniff` stops a browser second-guessing that,
+    and the file downloads rather than rendering: this is a local tool, and
+    a file somebody added is not something to run inside the page.
+    """
+    ensure_db()
+    session = get_session()
+    from . import memory_ops
+
+    try:
+        path, mime, name = await run_in_threadpool(
+            memory_ops.open_attachment, session, UUID(attachment_id)
+        )
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=404, detail="No such attachment") from None
+    except Exception:
+        raise HTTPException(status_code=404, detail="No such attachment") from None
+
+    return FileResponse(
+        path,
+        media_type=mime,
+        filename=name,
+        headers={"X-Content-Type-Options": "nosniff"},
     )
 
 
