@@ -39,6 +39,7 @@ from starlette.responses import StreamingResponse
 from . import __version__, ipc, services
 from .database import (
     PlanFileModel,
+    SkillEvalCaseModel,
     SkillModel,
     count_memories,
     create_project,
@@ -1784,6 +1785,119 @@ async def skills_rollback_form(
     except (ValueError, OSError) as error:
         return RedirectResponse(f"/skills?said={quote(str(error))}", status_code=303)
     return RedirectResponse("/skills?said=rolled+back", status_code=303)
+
+
+@app.get("/skills/proposals", response_class=HTMLResponse)
+async def skills_proposals_page(
+    request: Request, open_id: str = "", suite: str = "", said: str = ""
+) -> HTMLResponse:
+    """Skills waiting on a person, and the comparisons behind them.
+
+    Declared before `/skills/{...}` would be, and reached from the Skills
+    page rather than the sidebar: it is the same area, and a second rail
+    entry for an inbox that is empty on most machines earns nothing.
+    """
+    ensure_db()
+    session = get_session()
+    from . import skills_eval, skills_learn
+    from .database import get_project_by_root
+
+    root = find_git_root(str(Path.cwd()))
+    project = get_project_by_root(session, root) if root else None
+    if project is None:
+        return templates.TemplateResponse(
+            request,
+            "skills_proposals.html",
+            {
+                **_nav(session),
+                "request": request,
+                "rows": [],
+                "open": None,
+                "clusters": [],
+                "matrix": None,
+                "suites": [],
+                "suite": "",
+                "said": said,
+                "no_project": True,
+            },
+        )
+
+    rows = await run_in_threadpool(skills_learn.proposals, session, project, None)
+    opened = None
+    if open_id:
+        try:
+            opened = await run_in_threadpool(skills_learn.review, session, open_id, "")
+        except ValueError:
+            opened = None
+
+    kept = await run_in_threadpool(skills_learn.evidence, session, project)
+    suites = sorted({c.suite for c in session.query(SkillEvalCaseModel).all()})
+    grid = await run_in_threadpool(skills_eval.matrix, session, suite) if suite in suites else None
+    return templates.TemplateResponse(
+        request,
+        "skills_proposals.html",
+        {
+            **_nav(session),
+            "request": request,
+            "rows": rows,
+            "open": opened,
+            "clusters": await run_in_threadpool(skills_learn.cluster, kept),
+            "matrix": grid,
+            "suites": suites,
+            "suite": suite,
+            "said": said,
+            "no_project": False,
+        },
+    )
+
+
+@app.post("/skills/proposals/decide")
+async def skills_decide_form(
+    request: Request,
+    proposal_id: str = Form(...),
+    decision: str = Form(...),
+    note: str = Form(""),
+) -> RedirectResponse:
+    """Approve or reject one exact draft, from the page that showed it.
+
+    The approval binds to the draft's hash, so this cannot approve
+    anything but the text that was on screen.
+    """
+    ensure_db()
+    session = get_session()
+    from . import skills_learn
+
+    try:
+        await run_in_threadpool(
+            skills_learn.decide, session, proposal_id, decision, actor="web", note=note
+        )
+    except ValueError as error:
+        return RedirectResponse(f"/skills/proposals?said={quote(str(error))}", status_code=303)
+    return RedirectResponse(
+        f"/skills/proposals?open_id={proposal_id}&said={decision}", status_code=303
+    )
+
+
+@app.post("/skills/proposals/revise")
+async def skills_revise_form(
+    request: Request, proposal_id: str = Form(...), body: str = Form(...)
+) -> RedirectResponse:
+    """Edit a draft, which puts it back in review.
+
+    Editing after approval is meant to invalidate the approval. That is
+    the whole reason an approval names a hash rather than a row.
+    """
+    ensure_db()
+    session = get_session()
+    from . import skills_learn
+
+    try:
+        await run_in_threadpool(skills_learn.revise, session, proposal_id, body)
+    except ValueError as error:
+        return RedirectResponse(f"/skills/proposals?said={quote(str(error))}", status_code=303)
+    return RedirectResponse(
+        f"/skills/proposals?open_id={proposal_id}&said=revised", status_code=303
+    )
 
 
 @app.get("/settings", response_class=HTMLResponse)

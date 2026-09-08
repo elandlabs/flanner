@@ -50,6 +50,14 @@ ALLOWED = {
     # rollbacks. Reads packages through skills_ops so the hash a snapshot
     # is filed under is the same hash the inventory reports.
     "skills_manage": {"database", "skills_ops"},
+    # Proposals and approvals. Reaches memory_guard so a pasted excerpt
+    # carrying a key is refused the same way a memory would be; a stored
+    # secret is not undone by deleting the row that carried it.
+    "skills_learn": {"database", "memory_guard"},
+    # Recording comparisons. Imports the tables and nothing else: it must
+    # not be able to reach a network, and an import boundary says that
+    # better than a promise nobody will.
+    "skills_eval": {"database"},
     "storage": {"exceptions", "frontmatter", "utils"},
     "freshness": {"utils"},
     "ipc": set(),
@@ -180,6 +188,8 @@ ALLOWED = {
         "skills_ops",
         "skills_observe",
         "skills_manage",
+        "skills_learn",
+        "skills_eval",
         # Turning observation on from the page installs the same hook the
         # command line installs, through the same function.
         "agent_hooks",
@@ -249,6 +259,8 @@ ALLOWED = {
         "skills_ops",
         "skills_observe",
         "skills_manage",
+        "skills_learn",
+        "skills_eval",
         # Writes a plan out as a standalone file, and reads back the notes
         # an outside reviewer returned. Both are local reads of local state.
         "packet",

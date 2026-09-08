@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+{% block title %}Proposals{% endblock %}
+
+{% block topbar_main %}
+<h1>Proposals</h1>
+<span class="sub">Skills waiting on you</span>
+{% endblock %}
+
+{% block topbar_actions %}
+<a class="btn btn-sm" href="/skills">Back to skills</a>
+{% endblock %}
+
+{% block content %}
+<div class="pane">
+
+  {% if said %}
+  <div class="notice good" style="margin-bottom:14px">{{ said }}</div>
+  {% endif %}
+
+  {% if no_project %}
+  <div class="card card-pad card-prose">
+    <h2 class="card-title">Not a flanner project</h2>
+    <p>Learning is scoped to a repository, so this page needs one. Evidence
+      from one repository proposing a skill in another is exactly the leak
+      the scoping exists to prevent.</p>
+  </div>
+  {% else %}
+
+  <div class="card card-pad card-prose">
+    <h2 class="card-title">How a skill gets here</h2>
+    <p>Nothing is harvested. Watching skill use sees names and times, not
+      what you were working on, and nothing reads your conversation history.
+      A proposal exists because somebody handed over the work it came from.</p>
+    <p>Approving covers the exact draft you read. Editing it afterwards sends
+      it back for another look rather than shipping the edit under the old
+      approval.</p>
+  </div>
+
+  {% if clusters %}
+  <div class="card" style="margin-top:14px">
+    <div class="card-head">Repeated work
+      <span class="note">{{ clusters | selectattr('eligible') | list | length }} ready</span></div>
+    {% for group in clusters %}
+    <div class="grid-row cols-clusters">
+      <span>{{ group.topic }}</span>
+      <span>{% if group.eligible %}<span class="pill pill-fresh">ready to propose</span>
+        {% else %}<span class="pill pill-quiet">not yet</span>{% endif %}</span>
+      <span class="hint">{{ group.why }}</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="card" style="margin-top:14px">
+    <div class="card-head">Waiting on a decision
+      <span class="note">{{ rows | length }}</span></div>
+    {% if rows %}
+    <div class="grid-row grid-head cols-proposals">
+      <span>Skill</span><span>Action</span><span>State</span><span>Installable</span><span></span>
+    </div>
+    {% for row in rows %}
+    <div class="grid-row cols-proposals">
+      <span>{{ row.skill }}<span class="hint">{{ row.rationale }}</span></span>
+      <span class="muted">{{ row.action }}</span>
+      <span>{% if row.state == 'approved' %}<span class="pill pill-fresh">approved</span>
+        {% elif row.state == 'rejected' %}<span class="pill pill-stale">rejected</span>
+        {% else %}<span class="pill pill-quiet">{{ row.state }}</span>{% endif %}</span>
+      <span class="hint">{% if row.installable %}yes{% else %}{{ row.why }}{% endif %}</span>
+      <span><a class="btn btn-sm" href="/skills/proposals?open_id={{ row.id }}">Review</a></span>
+    </div>
+    {% endfor %}
+    {% else %}
+    <div class="card-pad card-prose">
+      <p>Nothing proposed. <code>flanner skills evidence submit</code> hands
+        over a piece of work, and <code>flanner skills propose</code> drafts
+        a skill from it.</p>
+    </div>
+    {% endif %}
+  </div>
+
+  {% if open %}
+  <div class="card card-pad" style="margin-top:14px">
+    <div class="card-head" style="padding:0 0 10px 0">{{ open.skill }}
+      <span class="note">{{ open.action }} · {{ open.state }}</span></div>
+
+    <p class="hint">{{ open.draft_hash }}</p>
+    {% if open.rationale %}<p>{{ open.rationale }}</p>{% endif %}
+
+    <h3 class="card-title" style="margin-top:14px">Came from</h3>
+    {% if open.evidence %}
+    <ul>
+      {% for item in open.evidence %}
+      <li>{{ item.summary or '(no summary)' }} —
+        <span class="muted">{% if item.source == 'agent' %}reported by the agent{% else %}submitted by you{% endif %},
+          {{ item.outcome }}{% if item.outcome_detail %} ({{ item.outcome_detail }}){% endif %}</span></li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="muted">No evidence is readable. It may have expired.</p>
+    {% endif %}
+    {% if open.evidence_expired %}
+    <p class="muted">{{ open.evidence_expired }} piece(s) have since expired.</p>
+    {% endif %}
+
+    <h3 class="card-title" style="margin-top:14px">The draft</h3>
+    <form method="post" action="/skills/proposals/revise">
+      <input type="hidden" name="proposal_id" value="{{ open.id }}">
+      <textarea class="input mono" name="body" rows="14"
+                style="width:100%">{{ open.draft_body }}</textarea>
+      <div class="listctl" style="margin-top:10px">
+        <button class="btn btn-sm">Save this edit</button>
+        <span class="hint">Saving sends it back for another look; the approval
+          covers the text as it was read.</span>
+      </div>
+    </form>
+
+    <div class="listctl" style="margin-top:14px">
+      <form method="post" action="/skills/proposals/decide">
+        <input type="hidden" name="proposal_id" value="{{ open.id }}">
+        <input type="hidden" name="decision" value="approved">
+        <button class="btn btn-sm btn-primary">Approve this draft</button>
+      </form>
+      <form method="post" action="/skills/proposals/decide">
+        <input type="hidden" name="proposal_id" value="{{ open.id }}">
+        <input type="hidden" name="decision" value="rejected">
+        <button class="btn btn-sm">Reject</button>
+      </form>
+      <span class="hint">{% if open.installable %}Approved and unchanged since.
+        {% else %}{{ open.why }}{% endif %}</span>
+    </div>
+
+    {% if open.decisions %}
+    <h3 class="card-title" style="margin-top:14px">Decided</h3>
+    <ul>
+      {% for made in open.decisions %}
+      <li>{{ made.decision }} by {{ made.actor or 'somebody' }} at {{ made.at[:16] }}
+        {% if not made.still_covers_the_draft %}
+        <span class="muted">— the draft has changed since</span>{% endif %}</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+
+    {% for note in open.notes %}{% if note %}
+    <p class="muted">{{ note }}</p>
+    {% endif %}{% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="card" style="margin-top:14px">
+    <div class="card-head">Comparisons
+      <span class="note">{{ suites | length }} suite(s)</span></div>
+    {% if suites %}
+    <div class="card-pad">
+      <form method="get" action="/skills/proposals" class="listctl">
+        {% if open %}<input type="hidden" name="open_id" value="{{ open.id }}">{% endif %}
+        <select class="btn btn-sm" name="suite" onchange="this.form.requestSubmit()">
+          <option value="">Pick a suite</option>
+          {% for one in suites %}
+          <option value="{{ one }}" {% if one == suite %}selected{% endif %}>{{ one }}</option>
+          {% endfor %}
+        </select>
+      </form>
+    </div>
+    {% endif %}
+
+    {% if matrix and matrix.cells %}
+    <div class="grid-row grid-head cols-matrix">
+      <span>Case</span><span>Profile</span><span>Arm</span><span>Result</span><span>Trials</span>
+    </div>
+    {% for cell in matrix.cells %}
+    <div class="grid-row cols-matrix">
+      <span>{{ cell.case }}</span>
+      <span class="muted">{{ cell.profile }}</span>
+      <span class="path">{{ cell.arm }}</span>
+      <span>{% if cell.result == 'passed' %}<span class="pill pill-fresh">passed</span>
+        {% elif cell.result == 'failed' %}<span class="pill pill-stale">failed</span>
+        {% elif cell.result == 'not run' %}<span class="pill pill-quiet">not run</span>
+        {% else %}<span class="pill pill-aging">{{ cell.result }}</span>{% endif %}</span>
+      <span class="tnum">{{ cell.trials }}</span>
+    </div>
+    {% endfor %}
+    <div class="card-pad card-prose">
+      {% for arm, stats in matrix.summary.items() %}
+      <p class="muted">{{ arm }}: {{ stats.passed }}/{{ stats.trials }} passed
+        ({{ stats.reads_as }}), {{ stats.not_run }} cell(s) not run.</p>
+      {% endfor %}
+      {% for limit in matrix.limits %}<p class="muted">{{ limit }}</p>{% endfor %}
+      {% for note in matrix.notes %}<p class="muted">{{ note }}</p>{% endfor %}
+    </div>
+    {% else %}
+    <div class="card-pad card-prose">
+      <p>Flanner records comparisons; it does not run them. Nothing here calls
+        a model provider, so results are entered by whatever actually ran
+        them — <code>flanner skills eval record</code>.</p>
+    </div>
+    {% endif %}
+  </div>
+
+  {% endif %}
+</div>
+{% endblock %}

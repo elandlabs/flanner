@@ -761,6 +761,191 @@ class SkillInstallationModel(Base):
         return f"<SkillInstallation(target={self.target_path}, status={self.status})>"
 
 
+class SkillEvidenceModel(Base):
+    """A piece of work somebody explicitly handed over to learn from.
+
+    Never harvested. Metadata observation cannot see repeated prompt
+    content, and there is deliberately no fallback that reads conversation
+    archives, so everything here arrived because a person submitted it or
+    an agent reported it and said so.
+
+    `expires_at` is not decoration. An excerpt is somebody's working
+    material, and keeping it indefinitely to maybe write a skill one day
+    is not a trade they agreed to.
+    """
+
+    __tablename__ = "skill_evidence"
+
+    id: Mapped[uuid.UUID] = mapped_column(GUID, primary_key=True, default=uuid.uuid4)
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        GUID, ForeignKey("projects.id"), nullable=False, index=True
+    )
+    #: The local session it came from. Not a conversation, just a name.
+    session_ref: Mapped[str] = mapped_column(String, nullable=False, default="", index=True)
+    #: Who says so: `user` submitted it, `agent` reported it. An agent's
+    #: account of its own work is weaker evidence and is labelled as such
+    #: wherever it is shown.
+    source: Mapped[str] = mapped_column(String, nullable=False, default="user")
+    #: What kind of knowledge this is (LRN-01). Only `procedure` is
+    #: eligible to become a skill; a repeated fact is a memory.
+    kind: Mapped[str] = mapped_column(String, nullable=False, default="procedure", index=True)
+    summary: Mapped[str] = mapped_column(String, nullable=False, default="")
+    body: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    #: What says this went well, and how strongly. "Nobody complained" is
+    #: not success evidence and is recorded as `none`.
+    outcome: Mapped[str] = mapped_column(String, nullable=False, default="unknown")
+    outcome_detail: Mapped[str] = mapped_column(String, nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+
+    def __repr__(self) -> str:
+        return f"<SkillEvidence(kind={self.kind}, source={self.source})>"
+
+
+class SkillProposalModel(Base):
+    """A suggested new skill, or a change to one, waiting on a person.
+
+    Nothing here is ever activated by the thing that proposed it. The
+    draft carries a hash, an approval names that exact hash, and an
+    install checks the approval — so editing a draft after approval
+    invalidates the approval rather than quietly shipping the edit.
+    """
+
+    __tablename__ = "skill_proposals"
+
+    id: Mapped[uuid.UUID] = mapped_column(GUID, primary_key=True, default=uuid.uuid4)
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        GUID, ForeignKey("projects.id"), nullable=False, index=True
+    )
+    #: create, update or merge.
+    action: Mapped[str] = mapped_column(String, nullable=False, default="create")
+    skill_name: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    #: What the draft would change, when it is not a new skill.
+    base_hash: Mapped[str] = mapped_column(String, nullable=False, default="")
+    draft_body: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    #: Over `draft_body`. What an approval binds to.
+    draft_hash: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    #: Evidence ids, comma separated. A proposal that cannot point at what
+    #: it came from is not reviewable.
+    provenance: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    rationale: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    #: draft, approved, rejected, superseded.
+    state: Mapped[str] = mapped_column(String, nullable=False, default="draft", index=True)
+    created_by: Mapped[str] = mapped_column(String, nullable=False, default="user")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+
+    def __repr__(self) -> str:
+        return f"<SkillProposal(skill={self.skill_name}, state={self.state})>"
+
+
+class SkillApprovalModel(Base):
+    """One person, saying yes to one exact revision.
+
+    Append-only. Withdrawing an approval writes a new row rather than
+    deleting the old one: "who approved this and when" has to stay
+    answerable after somebody changes their mind.
+    """
+
+    __tablename__ = "skill_approvals"
+
+    id: Mapped[uuid.UUID] = mapped_column(GUID, primary_key=True, default=uuid.uuid4)
+    proposal_id: Mapped[uuid.UUID] = mapped_column(
+        GUID, ForeignKey("skill_proposals.id"), nullable=False, index=True
+    )
+    #: The draft hash this approval covers, and nothing else.
+    approved_hash: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    actor: Mapped[str] = mapped_column(String, nullable=False, default="")
+    decision: Mapped[str] = mapped_column(String, nullable=False, default="approved")
+    note: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)
+
+    def __repr__(self) -> str:
+        return f"<SkillApproval(decision={self.decision}, hash={self.approved_hash[:16]})>"
+
+
+class SkillEvalCaseModel(Base):
+    """One task a skill is meant to be good at, written down beforehand.
+
+    Fixtures are hashed so a comparison can say which version of the task
+    it ran. Changing the fixture and reusing the old results is the
+    easiest way to produce a flattering number by accident.
+    """
+
+    __tablename__ = "skill_eval_cases"
+
+    id: Mapped[uuid.UUID] = mapped_column(GUID, primary_key=True, default=uuid.uuid4)
+    suite: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    prompt: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    rubric: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    fixture_hash: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+
+    def __repr__(self) -> str:
+        return f"<SkillEvalCase(suite={self.suite}, name={self.name})>"
+
+
+class SkillModelProfileModel(Base):
+    """A model and harness a comparison ran against.
+
+    A model is not an agent. Calling an endpoint directly does not show
+    how a skill behaves inside Claude Code, so the harness and its version
+    are separate fields and both appear in every report.
+    """
+
+    __tablename__ = "skill_model_profiles"
+
+    id: Mapped[uuid.UUID] = mapped_column(GUID, primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String, nullable=False, unique=True, index=True)
+    provider: Mapped[str] = mapped_column(String, nullable=False, default="")
+    model: Mapped[str] = mapped_column(String, nullable=False, default="")
+    #: Null when the provider does not publish one, which is the usual case.
+    revision: Mapped[str | None] = mapped_column(String, nullable=True)
+    harness: Mapped[str] = mapped_column(String, nullable=False, default="")
+    harness_version: Mapped[str] = mapped_column(String, nullable=False, default="")
+    settings_hash: Mapped[str] = mapped_column(String, nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+
+    def __repr__(self) -> str:
+        return f"<SkillModelProfile(name={self.name})>"
+
+
+class SkillTrialModel(Base):
+    """One result: this fixture, this skill version, this profile.
+
+    A cell of the comparison matrix. Cells with no row are reported as not
+    run rather than as a zero — an empty cell and a bad score are
+    different facts, and only one of them is evidence.
+    """
+
+    __tablename__ = "skill_trials"
+
+    id: Mapped[uuid.UUID] = mapped_column(GUID, primary_key=True, default=uuid.uuid4)
+    suite: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    case_id: Mapped[uuid.UUID] = mapped_column(
+        GUID, ForeignKey("skill_eval_cases.id"), nullable=False, index=True
+    )
+    profile_id: Mapped[uuid.UUID] = mapped_column(
+        GUID, ForeignKey("skill_model_profiles.id"), nullable=False, index=True
+    )
+    #: The skill version under test, or empty for the no-skill baseline.
+    skill_hash: Mapped[str] = mapped_column(String, nullable=False, default="", index=True)
+    #: Whether this row is the baseline the others are read against.
+    baseline: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    #: passed, failed, error, skipped.
+    result: Mapped[str] = mapped_column(String, nullable=False, default="skipped")
+    score: Mapped[str] = mapped_column(String, nullable=False, default="")
+    #: Where the number came from. A result with no stated source is not
+    #: usable as evidence and is displayed as such.
+    measured_by: Mapped[str] = mapped_column(String, nullable=False, default="")
+    note: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)
+
+    def __repr__(self) -> str:
+        return f"<SkillTrial(suite={self.suite}, result={self.result})>"
+
+
 # Database session management
 _engine: Engine | None = None
 _SessionLocal: sessionmaker[Session] | None = None

@@ -3226,6 +3226,622 @@ def _name_in_snapshot(manifest_hash: str) -> str | None:
     return found or None
 
 
+def _skills_project_or_exit(session: Any = None) -> Any:
+    """The project a learning command is scoped to, or a refusal.
+
+    Learning is project-scoped throughout. Evidence from one repository
+    proposing a skill in another is the cross-project leak the PRD spends
+    a section refusing, and the cheapest place to stop it is here.
+    """
+    root = _skills_project()
+    project = _skills_project_row(session or get_session(), root) if root else None
+    if project is None:
+        tui.bad("Not inside a flanner project, so there is nothing to learn for.")
+        tui.hint(f"  {tui.command('flanner init')} adopts this repository.")
+        raise SystemExit(1)
+    return project
+
+
+@skills.group("evidence")
+def skills_evidence() -> None:
+    """Work you have authorized flanner to learn from"""
+
+
+@skills_evidence.command("submit")
+@click.argument("summary")
+@click.option("--body", default="", help="The detail, in full")
+@click.option("--file", "from_file", default=None, help="Read the body from a file")
+@click.option(
+    "--kind",
+    type=click.Choice(["procedure", "memory", "preference", "task"]),
+    default="procedure",
+    help="What sort of knowledge this is",
+)
+@click.option("--session-ref", default="", help="Which session it came from")
+@click.option(
+    "--outcome",
+    type=click.Choice(["test_passed", "user_accepted", "rubric_met", "none"]),
+    default="none",
+    help="What says it worked",
+)
+@click.option("--outcome-detail", default="", help="Which test, which acceptance")
+@click.option("--keep-days", default=7, show_default=True, help="How long to keep the excerpt")
+def skills_evidence_submit(
+    summary: str,
+    body: str,
+    from_file: str | None,
+    kind: str,
+    session_ref: str,
+    outcome: str,
+    outcome_detail: str,
+    keep_days: int,
+) -> None:
+    """Hand flanner one piece of work to learn from
+
+    Nothing is harvested. Watching skill use sees names and times, not what
+    you were working on, and there is no fallback that reads conversation
+    archives — so learning only ever sees what you put here.
+
+    Excerpts expire. Keeping your working material indefinitely in case a
+    skill gets written one day is not a trade worth making on your behalf.
+    """
+    _open_store()
+    from . import skills_learn
+
+    session = get_session()
+    text = Path(from_file).read_text(encoding="utf-8") if from_file else body
+    try:
+        kept = skills_learn.submit(
+            session,
+            _skills_project_or_exit(session),
+            summary,
+            text,
+            kind=kind,
+            session_ref=session_ref,
+            outcome=outcome,
+            outcome_detail=outcome_detail,
+            keep_days=keep_days,
+        )
+    except ValueError as error:
+        tui.bad(str(error))
+        raise SystemExit(1) from None
+
+    console.print()
+    tui.ok(f"Kept: {kept['summary'] or '(no summary)'}")
+    console.print(
+        tui.fields(
+            [
+                ("Id", kept["id"]),
+                ("Kind", kept["kind"]),
+                ("Says it worked", kept["outcome"]),
+                ("Expires", (kept["expires_at"] or "never")[:16]),
+            ]
+        )
+    )
+    console.print()
+
+
+@skills_evidence.command("list")
+@click.option("--session-ref", default="", help="Only from this session")
+@click.option("--json", "as_json", is_flag=True, help="Machine-readable listing")
+def skills_evidence_list(session_ref: str, as_json: bool) -> None:
+    """What has been handed over, and what it adds up to so far"""
+    _open_store()
+    from . import skills_learn
+
+    session = get_session()
+    project = _skills_project_or_exit(session)
+    rows = skills_learn.evidence(session, project, session_ref=session_ref)
+    groups = skills_learn.cluster(rows)
+
+    if as_json:
+        import json
+
+        click.echo(
+            json.dumps(
+                {
+                    "evidence": [
+                        {
+                            "id": str(r.id),
+                            "summary": r.summary,
+                            "kind": r.kind,
+                            "source": r.source,
+                            "outcome": r.outcome,
+                            "session_ref": r.session_ref,
+                        }
+                        for r in rows
+                    ],
+                    "clusters": [
+                        {
+                            "topic": c.topic,
+                            "count": len(c.items),
+                            "sessions": c.sessions,
+                            "eligible": c.eligible,
+                            "why": c.why,
+                        }
+                        for c in groups
+                    ],
+                },
+                indent=2,
+            )
+        )
+        return
+
+    console.print()
+    if not rows:
+        tui.note("Nothing handed over yet.")
+        tui.hint(f"  {tui.command('flanner skills evidence submit')} adds a piece.")
+        console.print()
+        return
+
+    listing = tui.table("Summary", "Kind", "From", "Worked", "Session")
+    for row in rows:
+        listing.add_row(
+            _clip(row.summary or "(no summary)", 40),
+            row.kind,
+            row.source,
+            row.outcome,
+            row.session_ref or "-",
+        )
+    console.print(listing)
+    console.print()
+
+    if groups:
+        console.print("  Repeated work:", style="muted")
+        for group in groups:
+            mark = "[green]ready to propose[/]" if group.eligible else "[muted]not yet[/]"
+            console.print(f"    {mark}  {_clip(group.topic, 46)} — {group.why}", style="muted")
+        console.print()
+
+
+@skills.command("propose")
+@click.argument("skill_name")
+@click.option("--file", "from_file", required=True, help="The draft SKILL.md")
+@click.option(
+    "--action",
+    type=click.Choice(["create", "update", "merge"]),
+    default="create",
+    help="What this would do to the collection",
+)
+@click.option("--evidence", "evidence_ids", multiple=True, help="Evidence id this came from")
+@click.option("--session-ref", default="", help="Use every piece from this session as evidence")
+@click.option("--rationale", default="", help="Why this is worth having")
+def skills_propose(
+    skill_name: str,
+    from_file: str,
+    action: str,
+    evidence_ids: tuple[str, ...],
+    session_ref: str,
+    rationale: str,
+) -> None:
+    """Draft a skill for somebody to review
+
+    A proposal must name the evidence it came from. The reviewer's job is
+    to check the draft against that, and a draft pointing nowhere makes
+    that impossible — which is the shape an invented skill arrives in.
+
+    Drafting is not installing. Nothing here reaches an agent's directory
+    until a person approves this exact text.
+    """
+    _open_store()
+    from . import skills_learn
+
+    session = get_session()
+    project = _skills_project_or_exit(session)
+    ids = list(evidence_ids)
+    if session_ref:
+        ids += [
+            str(r.id) for r in skills_learn.evidence(session, project, session_ref=session_ref)
+        ]
+
+    try:
+        drafted = skills_learn.propose(
+            session,
+            project,
+            skill_name,
+            Path(from_file).read_text(encoding="utf-8"),
+            action=action,
+            provenance=sorted(set(ids)),
+            rationale=rationale,
+        )
+    except (ValueError, OSError) as error:
+        tui.bad(str(error))
+        raise SystemExit(1) from None
+
+    console.print()
+    tui.ok(f"Proposed {action} of {skill_name}.")
+    console.print(
+        tui.fields(
+            [
+                ("Id", drafted["id"]),
+                ("Draft hash", drafted["draft_hash"]),
+                ("Evidence", str(len(ids))),
+                ("State", drafted["state"]),
+            ]
+        )
+    )
+    console.print()
+    tui.hint(f"  {tui.command('flanner skills review ' + drafted['id'])} shows it in full.")
+    console.print()
+
+
+@skills.command("proposals")
+@click.option("--state", default=None, help="Only proposals in this state")
+@click.option("--json", "as_json", is_flag=True, help="Machine-readable listing")
+def skills_proposals(state: str | None, as_json: bool) -> None:
+    """Skills waiting on a decision"""
+    _open_store()
+    from . import skills_learn
+
+    session = get_session()
+    rows = skills_learn.proposals(session, _skills_project_or_exit(session), state)
+    if as_json:
+        import json
+
+        click.echo(json.dumps(rows, indent=2))
+        return
+
+    console.print()
+    if not rows:
+        tui.note("No proposals.")
+        console.print()
+        return
+
+    listing = tui.table("Skill", "Action", "State", "Installable", "Id")
+    for row in rows:
+        listing.add_row(
+            row["skill"],
+            row["action"],
+            row["state"],
+            "[green]yes[/]" if row["installable"] else f"[muted]{row['why']}[/]",
+            row["id"],
+        )
+    console.print(listing)
+    console.print()
+
+
+@skills.command("review")
+@click.argument("proposal_id")
+@click.option("--against", default=None, help="File holding the version this would replace")
+@click.option("--json", "as_json", is_flag=True, help="Machine-readable review")
+def skills_review(proposal_id: str, against: str | None, as_json: bool) -> None:
+    """Read a proposal, its evidence, and what it would change"""
+    _open_store()
+    from . import skills_learn
+
+    current = Path(against).read_text(encoding="utf-8") if against else ""
+    try:
+        seen = skills_learn.review(get_session(), proposal_id, current)
+    except (ValueError, OSError) as error:
+        tui.bad(str(error))
+        raise SystemExit(1) from None
+
+    if as_json:
+        import json
+
+        click.echo(json.dumps(seen, indent=2))
+        return
+
+    console.print()
+    console.print(
+        tui.fields(
+            [
+                ("Skill", seen["skill"]),
+                ("Action", seen["action"]),
+                ("State", seen["state"]),
+                ("Draft hash", seen["draft_hash"]),
+                ("Installable", "yes" if seen["installable"] else f"no — {seen['why']}"),
+            ]
+        )
+    )
+    if seen["rationale"]:
+        console.print(f"\n  {seen['rationale']}", style="muted")
+
+    console.print("\n  Came from:", style="muted")
+    for item in seen["evidence"]:
+        label = "reported by the agent" if item["source"] == "agent" else "submitted by you"
+        console.print(
+            f"    {_clip(item['summary'] or '(no summary)', 50)} — {label}, " f"{item['outcome']}",
+            style="muted",
+        )
+    if seen["evidence_expired"]:
+        console.print(
+            f"    {seen['evidence_expired']} piece(s) have since expired and cannot be read.",
+            style="yellow",
+        )
+
+    if seen["diff"]:
+        console.print("\n  Changes:", style="muted")
+        for line in seen["diff"]:
+            style = "green" if line.startswith("+") else "red" if line.startswith("-") else "muted"
+            console.print(f"    {line}", style=style)
+
+    if seen["decisions"]:
+        console.print("\n  Decided:", style="muted")
+        for made in seen["decisions"]:
+            covers = "" if made["still_covers_the_draft"] else "  (the draft has changed since)"
+            console.print(
+                f"    {made['decision']} by {made['actor'] or 'somebody'} "
+                f"at {made['at'][:16]}{covers}",
+                style="muted",
+            )
+
+    console.print()
+    for note in seen["notes"]:
+        if note:
+            console.print(f"  {note}", style="muted")
+    console.print()
+
+
+@skills.command("revise")
+@click.argument("proposal_id")
+@click.option("--file", "from_file", required=True, help="The new draft")
+def skills_revise(proposal_id: str, from_file: str) -> None:
+    """Edit a draft, which sends it back for another look
+
+    An approval covers the bytes somebody read. Changing them leaves the
+    approval behind on the text that was actually reviewed, so a revised
+    draft is not installable until it is approved again.
+    """
+    _open_store()
+    from . import skills_learn
+
+    try:
+        revised = skills_learn.revise(
+            get_session(), proposal_id, Path(from_file).read_text(encoding="utf-8")
+        )
+    except (ValueError, OSError) as error:
+        tui.bad(str(error))
+        raise SystemExit(1) from None
+
+    console.print()
+    tui.ok(f"Revised {revised['skill']}.")
+    console.print(
+        f"  Now {revised['draft_hash'][:23]}… and back in review.",
+        style="muted",
+    )
+    console.print()
+
+
+@skills.command("approve")
+@click.argument("proposal_id")
+@click.option("--actor", default="", help="Who is approving")
+@click.option("--note", default="", help="Anything worth recording with the decision")
+def skills_approve(proposal_id: str, actor: str, note: str) -> None:
+    """Approve one exact draft
+
+    The approval covers the bytes you just read, not the proposal. Editing
+    the draft afterwards leaves the approval behind on the text that was
+    actually reviewed, and the edit needs another look.
+    """
+    _open_store()
+    from . import skills_learn
+
+    try:
+        done = skills_learn.decide(
+            get_session(), proposal_id, skills_learn.APPROVED, actor=actor, note=note
+        )
+    except ValueError as error:
+        tui.bad(str(error))
+        raise SystemExit(1) from None
+
+    console.print()
+    tui.ok(f"Approved {done['skill']}.")
+    console.print(f"  Covers {done['approved_hash']}", style="muted")
+    console.print()
+
+
+@skills.command("reject")
+@click.argument("proposal_id")
+@click.option("--actor", default="", help="Who is rejecting")
+@click.option("--note", default="", help="Why")
+def skills_reject(proposal_id: str, actor: str, note: str) -> None:
+    """Turn a proposal down, with the reason on the record"""
+    _open_store()
+    from . import skills_learn
+
+    try:
+        done = skills_learn.decide(
+            get_session(), proposal_id, skills_learn.REJECTED, actor=actor, note=note
+        )
+    except ValueError as error:
+        tui.bad(str(error))
+        raise SystemExit(1) from None
+
+    console.print()
+    tui.ok(f"Rejected {done['skill']}.")
+    console.print()
+
+
+# --- comparisons --------------------------------------------------------------
+
+
+@skills.group("eval")
+def skills_eval_group() -> None:
+    """Compare a candidate skill against a baseline on tasks you defined"""
+
+
+@skills_eval_group.command("add-case")
+@click.argument("suite")
+@click.argument("name")
+@click.option("--prompt", required=True, help="The task")
+@click.option("--rubric", required=True, help="How a result on it is judged")
+def skills_eval_add_case(suite: str, name: str, prompt: str, rubric: str) -> None:
+    """Write down a task, and how it will be judged
+
+    Both are hashed together. Moving the goalposts is as good a way to
+    produce a flattering number as changing the question, so a comparison
+    always says which version of the fixture it ran.
+    """
+    _open_store()
+    from . import skills_eval
+
+    case = skills_eval.add_case(get_session(), suite, name, prompt, rubric)
+    console.print()
+    tui.ok(f"Added {name} to {suite}.")
+    console.print(f"  Fixture {case['fixture_hash']}", style="muted")
+    console.print()
+
+
+@skills_eval_group.command("add-profile")
+@click.argument("name")
+@click.option("--provider", default="", help="Who serves the model")
+@click.option("--model", default="", help="Model identifier")
+@click.option("--revision", default=None, help="Model revision, if the provider publishes one")
+@click.option("--harness", default="", help="The agent it ran inside")
+@click.option("--harness-version", default="", help="That agent's version")
+def skills_eval_add_profile(
+    name: str,
+    provider: str,
+    model: str,
+    revision: str | None,
+    harness: str,
+    harness_version: str,
+) -> None:
+    """Register a model and harness that results can be filed under
+
+    Both, separately. A model is not an agent: calling an endpoint says
+    nothing about how a skill behaves inside Claude Code, and a report
+    that conflated them would be making a claim it cannot support.
+    """
+    _open_store()
+    from . import skills_eval
+
+    skills_eval.add_profile(
+        get_session(),
+        name,
+        provider=provider,
+        model=model,
+        revision=revision,
+        harness=harness,
+        harness_version=harness_version,
+    )
+    console.print()
+    tui.ok(f"Registered {name}.")
+    console.print()
+
+
+@skills_eval_group.command("record")
+@click.argument("suite")
+@click.argument("case_name")
+@click.argument("profile_name")
+@click.option("--skill-hash", default="", help="Version under test; omit for the baseline")
+@click.option(
+    "--result",
+    type=click.Choice(["passed", "failed", "error", "skipped"]),
+    required=True,
+    help="What happened",
+)
+@click.option("--score", default="", help="A number, if there is one")
+@click.option("--measured-by", default="", help="Who or what measured this")
+@click.option("--note", default="", help="Anything a reader needs")
+def skills_eval_record(
+    suite: str,
+    case_name: str,
+    profile_name: str,
+    skill_hash: str,
+    result: str,
+    score: str,
+    measured_by: str,
+    note: str,
+) -> None:
+    """File one result
+
+    Flanner does not run these. Nothing in it calls a provider, because
+    external model processing stays off until a provider, a content
+    boundary and a budget have been chosen — and a tool that quietly
+    reached the network would make that setting a lie.
+    """
+    _open_store()
+    from . import skills_eval
+
+    try:
+        skills_eval.record_trial(
+            get_session(),
+            suite,
+            case_name,
+            profile_name,
+            skill_hash=skill_hash,
+            baseline=not skill_hash,
+            result=result,
+            score=score,
+            measured_by=measured_by,
+            note=note,
+        )
+    except ValueError as error:
+        tui.bad(str(error))
+        raise SystemExit(1) from None
+
+    console.print()
+    tui.ok(f"Recorded {result} for {case_name} on {profile_name}.")
+    console.print()
+
+
+@skills_eval_group.command("matrix")
+@click.argument("suite")
+@click.option("--json", "as_json", is_flag=True, help="Machine-readable matrix")
+def skills_eval_matrix(suite: str, as_json: bool) -> None:
+    """Every fixture against every profile and version, gaps included"""
+    _open_store()
+    from . import skills_eval
+
+    grid = skills_eval.matrix(get_session(), suite)
+    if as_json:
+        import json
+
+        click.echo(json.dumps(grid, indent=2))
+        return
+
+    console.print()
+    if not grid["cells"]:
+        tui.note(f"Nothing defined for {suite}.")
+        for note in grid["notes"]:
+            console.print(f"  {note}", style="muted")
+        console.print()
+        return
+
+    table = tui.table("Case", "Profile", "Arm", "Result", "Trials", "Measured by")
+    for cell in grid["cells"]:
+        style = {"passed": "green", "failed": "red", "not run": "muted"}.get(
+            cell["result"], "yellow"
+        )
+        table.add_row(
+            cell["case"],
+            cell["profile"],
+            _clip(cell["arm"], 26),
+            f"[{style}]{cell['result']}[/]",
+            str(cell["trials"]),
+            ", ".join(cell["measured_by"]) or "-",
+        )
+    console.print(table)
+    console.print()
+
+    for arm, stats in grid["summary"].items():
+        console.print(
+            f"  {_clip(arm, 30)}: {stats['passed']}/{stats['trials']} passed "
+            f"({stats['reads_as']}), {stats['not_run']} cell(s) not run",
+            style="muted",
+        )
+    console.print()
+
+    slipped = skills_eval.regressions(get_session(), suite)
+    if slipped:
+        tui.warn(f"{len(slipped)} cell(s) did worse than the baseline:")
+        for row in slipped:
+            console.print(
+                f"    {row['case']} on {row['profile']}: {row['passed']} vs "
+                f"{row['baseline_passed']} ({row['reads_as']})",
+                style="yellow",
+            )
+        console.print()
+
+    for limit in grid["limits"]:
+        console.print(f"  {limit}", style="muted")
+    for note in grid["notes"]:
+        console.print(f"  {note}", style="muted")
+    console.print()
+
+
 @cli.group()
 def review() -> None:
     """Propose plans for review and record decisions"""
