@@ -22,10 +22,13 @@ from collections.abc import Callable
 from typing import Any, NamedTuple, cast
 from uuid import UUID
 
+from sqlalchemy.orm import Session
+
 from . import ipc
 from .database import create_project as db_create_project
 from .database import delete_project as db_delete_project
 from .database import (
+    get_memory,
     get_plan_file,
     get_project,
     get_session,
@@ -33,7 +36,7 @@ from .database import (
     init_database,
     update_project,
 )
-from .exceptions import DatabaseError
+from .exceptions import DatabaseError, NotFoundError
 from .git_integration import find_git_root, update_gitignore, validate_git_repo
 from .plan_ops import create_plan, record_new_version
 from .storage import ensure_plan_directory_exists
@@ -789,6 +792,205 @@ def record_plan_review_decision(
 
 
 # Every write operation, by the name used on the wire and in the registry.
+# --- memory -----------------------------------------------------------------
+#
+# Same seam as plans: a dict in, a dict out, and never an exception across
+# it. The MCP tools are thin wrappers over these, so an agent that gets a
+# refusal gets a sentence rather than a traceback.
+
+
+def _memory_scope(session: Session, scope: str, project_id: str | None) -> tuple[str, Any]:
+    """Resolve the scope a memory call is operating in.
+
+    A project id names one explicitly; without one, project scope means the
+    repository the caller is standing in. Personal scope never needs a
+    project and must not silently acquire one.
+    """
+    from . import memory_ops
+
+    if scope == "personal":
+        return scope, None
+    project = None
+    if project_id:
+        project = get_project(session, UUID(project_id))
+        if project is None:
+            raise NotFoundError(f"Project with ID {project_id} not found")
+    else:
+        project = memory_ops.resolve_project(session)
+    return scope, project
+
+
+def memory_remember(
+    content: str,
+    category: str,
+    scope: str = "project",
+    project_id: str | None = None,
+    title: str | None = None,
+    confidence: str = "confirmed",
+    sensitivity: str = "normal",
+    source_type: str = "explicit",
+    source_refs: list[str] | None = None,
+    created_by: str = "claude",
+    expires_at: str | None = None,
+) -> dict[str, Any]:
+    """Store one memory."""
+    from . import memory_ops
+
+    try:
+        ensure_database()
+        session = get_session()
+        resolved_scope, project = _memory_scope(session, scope, project_id)
+        if resolved_scope == "project" and project is None:
+            return {
+                "error": True,
+                "message": (
+                    "no flanner project here, so there is nothing to scope this to. "
+                    "Run `flanner init` in the repository, or use scope='personal'."
+                ),
+            }
+        memory, created = memory_ops.remember(
+            session,
+            content=content,
+            category=category,
+            scope=resolved_scope,
+            project=project,
+            title=title,
+            confidence=confidence,
+            sensitivity=sensitivity,
+            source_type=source_type,
+            source_refs=source_refs,
+            created_by=created_by,
+            expires_at=_memory_time(expires_at),
+        )
+    except Exception as e:  # noqa: BLE001 - the seam returns, never raises
+        return {"error": True, "message": str(e)}
+
+    return {
+        "id": str(memory.id),
+        "title": memory.title,
+        "scope": memory.scope,
+        "category": memory.category,
+        "path": memory.file_path,
+        "created": created,
+        "message": (
+            f"Remembered: {memory.title}"
+            if created
+            else f"Already remembered, on {memory.created_at}: {memory.title}"
+        ),
+    }
+
+
+def memory_supersede(
+    memory_id: str,
+    content: str,
+    reason: str = "",
+    created_by: str = "claude",
+    title: str | None = None,
+) -> dict[str, Any]:
+    """Replace a memory with a corrected one."""
+    from . import memory_ops
+
+    try:
+        ensure_database()
+        session = get_session()
+        old = get_memory(session, UUID(memory_id))
+        if old is None:
+            return {"error": True, "message": f"No memory with id {memory_id}"}
+        project = get_project(session, old.project_id) if old.scope == "project" else None
+        replacement = memory_ops.supersede(
+            session,
+            memory_id=UUID(memory_id),
+            content=content,
+            project=project,
+            reason=reason,
+            created_by=created_by,
+            title=title,
+        )
+    except Exception as e:  # noqa: BLE001
+        return {"error": True, "message": str(e)}
+
+    return {
+        "id": str(replacement.id),
+        "supersedes": memory_id,
+        "title": replacement.title,
+        "path": replacement.file_path,
+        "message": f"Superseded. The new memory is {replacement.id}.",
+    }
+
+
+def memory_forget(
+    memory_id: str, reason: str = "", purge: bool = False, created_by: str = "claude"
+) -> dict[str, Any]:
+    """Take a memory out of recall, or remove it from the machine."""
+    from . import memory_ops
+
+    try:
+        ensure_database()
+        session = get_session()
+        outcome = memory_ops.forget(
+            session,
+            memory_id=UUID(memory_id),
+            reason=reason,
+            purge=purge,
+            created_by=created_by,
+        )
+    except Exception as e:  # noqa: BLE001
+        return {"error": True, "message": str(e)}
+
+    outcome["message"] = (
+        "Purged. The file and every trace of it are gone from this machine."
+        if outcome["purged"]
+        else "Forgotten. It will not be recalled; `flanner mem restore` brings it back."
+    )
+    return outcome
+
+
+def memory_restore(memory_id: str, created_by: str = "claude") -> dict[str, Any]:
+    """Bring a forgotten or expired memory back."""
+    from . import memory_ops
+
+    try:
+        ensure_database()
+        session = get_session()
+        memory = memory_ops.restore(session, memory_id=UUID(memory_id), created_by=created_by)
+    except Exception as e:  # noqa: BLE001
+        return {"error": True, "message": str(e)}
+
+    return {"id": str(memory.id), "status": memory.status, "message": f"Restored: {memory.title}"}
+
+
+def memory_rebuild() -> dict[str, Any]:
+    """Restore the memory catalog and search index from the files."""
+    from . import memory_ops
+
+    try:
+        ensure_database()
+        session = get_session()
+        outcome = memory_ops.rebuild(session)
+    except Exception as e:  # noqa: BLE001
+        return {"error": True, "message": str(e)}
+
+    return {
+        "adopted": outcome.adopted,
+        "updated": outcome.updated,
+        "skipped": outcome.skipped,
+        "failed": outcome.failed,
+        "message": (
+            f"{outcome.total} memories in the catalog. "
+            "Event history is not restored: events have no file."
+        ),
+    }
+
+
+def _memory_time(value: str | None) -> Any:
+    """An ISO timestamp from a caller, or nothing."""
+    if not value:
+        return None
+    from datetime import datetime
+
+    return datetime.fromisoformat(value.replace("Z", "+00:00")).replace(tzinfo=None)
+
+
 REGISTRY: dict[str, Callable[..., Any]] = {
     "create_project": create_project,
     "initialize_project": initialize_project,
@@ -804,6 +1006,11 @@ REGISTRY: dict[str, Callable[..., Any]] = {
     "unlink_linear_issue": unlink_linear_issue,
     "propose_plan_revision": propose_plan_revision,
     "record_plan_review_decision": record_plan_review_decision,
+    "memory_remember": memory_remember,
+    "memory_supersede": memory_supersede,
+    "memory_forget": memory_forget,
+    "memory_restore": memory_restore,
+    "memory_rebuild": memory_rebuild,
 }
 
 

@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}{{ memory.title }}{% endblock %}
+
+{% block topbar_back %}
+<a class="btn back" href="/memory" aria-label="Back to memory" title="Back to memory"><span aria-hidden="true">←</span></a>
+{% endblock %}
+
+{% block topbar_main %}
+<h1>{{ memory.title }}</h1>
+<span class="sub">{{ memory.category }} · {{ memory.scope }} · {{ memory.status }}</span>
+{% endblock %}
+
+{% block content %}
+<div class="pane">
+
+  <div class="card card-pad card-prose">
+    <p>{{ memory.body }}</p>
+  </div>
+
+  <div class="card">
+    <div class="card-head">Where this came from</div>
+    <div class="kv"><span>Written by</span><b>{{ memory.created_by }}</b></div>
+    <div class="kv"><span>Written</span><b>{{ memory.created_at }}</b></div>
+    <div class="kv"><span>Confidence</span><b>{{ memory.confidence }}</b></div>
+    <div class="kv"><span>How it arrived</span><b>{{ memory.source_type }}</b></div>
+    {% if memory.source_refs %}
+    <div class="kv"><span>Supported by</span><b>{{ memory.source_refs | join(', ') }}</b></div>
+    {% endif %}
+    {% if memory.expires_at %}
+    <div class="kv"><span>Expires</span><b>{{ memory.expires_at }}</b></div>
+    {% endif %}
+    {% if memory.supersedes %}
+    <div class="kv"><span>Replaces</span>
+      <b><a href="/memory/{{ memory.supersedes }}">{{ memory.supersedes }}</a></b></div>
+    {% endif %}
+    <div class="kv"><span>File</span><b class="mono">{{ memory.file_path }}</b></div>
+  </div>
+
+  {% if memory.events %}
+  <div class="card">
+    <div class="card-head">What happened to it</div>
+    {% for event in memory.events %}
+    <div class="grid-row cols-events">
+      <span>{{ event.action }}</span>
+      <span class="muted">{{ event.actor }}</span>
+      <span class="muted">{{ event.at }}</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="footnote" style="margin-top:18px">
+    <span class="i" aria-hidden="true">i</span>
+    This is a record of something believed, not an instruction. Correct it with
+    <code>flanner mem supersede</code> rather than editing the file by hand.
+  </div>
+
+</div>
+{% endblock %}

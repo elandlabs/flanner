@@ -123,11 +123,32 @@ ALLOWED = {
     "sync": FOUNDATION | {"artifacts", "database", "plan_ops"},
     "reconcile": FOUNDATION | {"database", "artifacts", "identity"},
     "services": FOUNDATION
-    | {"database", "storage", "plan_ops", "linear_api", "agent_hooks", "ipc", "review"},
+    | {
+        "database",
+        "storage",
+        "plan_ops",
+        "memory_ops",
+        "linear_api",
+        "agent_hooks",
+        "ipc",
+        "review",
+    },
     "claude_integration": set(),
     "linear_api": {"exceptions", "linear_utils"},
     "server": FOUNDATION
-    | {"database", "storage", "freshness", "services", "artifacts", "assurance", "review"},
+    | {
+        "database",
+        "storage",
+        "freshness",
+        "services",
+        "artifacts",
+        "assurance",
+        "review",
+        # Recall's ranking is domain logic. The read tools call it
+        # rather than reimplementing it here, the same way the plan
+        # read tools call into `database` and `storage`.
+        "memory_ops",
+    },
     # The web UI reads freshness and MCP registration state so the Freshness
     # and Settings pages cannot disagree with what the CLI prints. Both are
     # pure local reads - freshness depends only on utils, claude_integration
@@ -138,6 +159,10 @@ ALLOWED = {
         "database",
         "storage",
         "plan_ops",
+        # The memory pages read the domain rather than the tables, so
+        # the ranking and the provenance a page shows are the same ones
+        # the agent gets. Same layer as `plan_ops`, already here.
+        "memory_ops",
         "ipc",
         "services",
         "freshness",
@@ -168,6 +193,11 @@ ALLOWED = {
     # Whether an incoming version may move the current-version pointer turns
     # entirely on that, and getting it wrong means either a peer changing
     # what you have open or a received history stuck on its oldest version.
+    # The memory domain, at the same layer as `plan_ops`: above the store,
+    # below anything that composes surfaces. It may not reach `account`,
+    # `session` or `peer`, which is what "your memory stays on this
+    # machine" means when written as a rule rather than a promise.
+    "memory_ops": FOUNDATION | {"database", "storage", "identity", "memory_guard"},
     "plan_ops": FOUNDATION | {"database", "storage", "artifacts", "identity"},
     "cli": FOUNDATION
     | {
@@ -201,6 +231,7 @@ ALLOWED = {
         "peer_iroh",
         # Joining re-roots existing plans, which is a write-path concern.
         "plan_ops",
+        "memory_ops",
         "authz",
         "entitlements",
         "identity",

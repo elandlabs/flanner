@@ -68,6 +68,9 @@
       <a href="/freshness" {% if here.startswith('/freshness') %}class="active" aria-current="page"{% endif %}>
         <span class="glyph" aria-hidden="true">◔</span> Freshness
         <span class="n n-warn tnum" data-attention hidden></span></a>
+      <a href="/memory" {% if here.startswith('/memory') %}class="active" aria-current="page"{% endif %}>
+        <span class="glyph" aria-hidden="true">◈</span> Memory
+        {% if nav_memory %}<span class="n tnum">{{ nav_memory }}</span>{% endif %}</a>
       <a href="/integrations" {% if here.startswith('/integrations') %}class="active" aria-current="page"{% endif %}>
         <span class="glyph" aria-hidden="true">⚯</span> Integrations</a>
 

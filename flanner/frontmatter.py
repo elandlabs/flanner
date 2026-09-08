@@ -263,3 +263,104 @@ def read_managed(text: str) -> tuple[dict[str, Any], str]:
         return fm_data, parsed
     after = text[end + len(_CLOSING_DELIMITER) :]
     return fm_data, after[1:] if after.startswith("\n") else after
+
+
+# --- memory ------------------------------------------------------------------
+#
+# A second header format in the same module, because it is the same job and
+# splitting it would mean two places that know how a flanner file starts.
+# The marker differs (`flanner_memory` rather than `mcp_plan_file`), which
+# is what lets one directory hold both and what `is_memory_file` reads.
+
+#: Fields a memory header must carry to be adopted by a rebuild. Anything
+#: else is optional and omitted when absent, so a header stays as short as
+#: the memory it describes.
+MEMORY_REQUIRED_FIELDS = (
+    "flanner_memory",
+    "id",
+    "title",
+    "scope",
+    "category",
+    "status",
+    "confidence",
+    "created_by",
+    "created_at",
+)
+
+
+def generate_memory_frontmatter(
+    memory_id: UUID,
+    title: str,
+    scope: str,
+    category: str,
+    created_by: str,
+    *,
+    project_id: UUID | None = None,
+    workspace_id: str | None = None,
+    status: str = "active",
+    confidence: str = "confirmed",
+    sensitivity: str = "normal",
+    source_type: str = "explicit",
+    source_refs: list[str] | tuple[str, ...] | None = None,
+    supersedes: UUID | None = None,
+    expires_at: datetime | None = None,
+    created_at: datetime | None = None,
+) -> str:
+    """YAML frontmatter for a memory file.
+
+    Ordered so that a person opening the file reads what it is before how
+    it is filed. Optional fields are omitted rather than written as null,
+    following the plan header, so that adding a field later does not change
+    the bytes of every file that does not use it.
+    """
+    if created_at is None:
+        created_at = _utcnow()
+
+    fm_data: dict[str, Any] = {
+        "flanner_memory": True,
+        "id": str(memory_id),
+        "title": title,
+        "scope": scope,
+        "category": category,
+        "status": status,
+        "confidence": confidence,
+        "sensitivity": sensitivity,
+        "source_type": source_type,
+        "created_by": created_by,
+        "created_at": created_at.isoformat() + "Z",
+    }
+
+    for key, value in (
+        ("project_id", str(project_id) if project_id else None),
+        ("workspace_id", workspace_id),
+        ("source_refs", list(source_refs) if source_refs else None),
+        ("supersedes", str(supersedes) if supersedes else None),
+        ("expires_at", expires_at.isoformat() + "Z" if expires_at else None),
+    ):
+        if value:
+            fm_data[key] = value
+
+    yaml_str = yaml.dump(fm_data, default_flow_style=False, sort_keys=False)
+    return f"---\n{yaml_str}---"
+
+
+def validate_memory_frontmatter(fm_data: dict[str, Any]) -> bool:
+    """Whether this header describes a memory a rebuild can adopt.
+
+    Deliberately checks presence and the marker, not the vocabularies. A
+    file whose category the current version does not recognise is still
+    that person's memory; the database layer decides what it will accept,
+    and reporting a bad value there says more than refusing to parse here.
+    """
+    if fm_data.get("flanner_memory") is not True:
+        return False
+    return all(field in fm_data for field in MEMORY_REQUIRED_FIELDS)
+
+
+def is_memory_file(content: str) -> bool:
+    """Whether this text is a flanner memory, without trusting its path."""
+    try:
+        fm_data, _ = parse_frontmatter(content)
+    except Exception:  # noqa: BLE001 - a file that cannot be parsed is not one
+        return False
+    return fm_data.get("flanner_memory") is True

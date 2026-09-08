@@ -38,6 +38,7 @@ from starlette.responses import StreamingResponse
 from . import __version__, ipc, services
 from .database import (
     PlanFileModel,
+    count_memories,
     create_project,
     delete_project,
     get_linear_config,
@@ -683,6 +684,9 @@ def _nav(session: Any) -> dict[str, Any]:
         "nav_signed_in": held is not None,
         "nav_peers": len(held.device_keys or {}) if held else 0,
         "nav_review": count_review_subjects(session),
+        # Cheap, unlike freshness: memory counts are two indexed
+        # queries and touch no repository, so this one can be here.
+        "nav_memory": count_memories(session),
     }
 
 
@@ -1712,6 +1716,85 @@ async def integrations_page(request: Request) -> HTMLResponse:
             "linear_config": config,
             **_nav(session),
         },
+    )
+
+
+# --- memory ------------------------------------------------------------------
+
+
+@app.get("/memory", response_class=HTMLResponse)
+async def memory_page(request: Request, q: str = "", status: str = "active") -> HTMLResponse:
+    """Everything remembered on this machine, searchable.
+
+    One page for both browsing and searching, because the difference is a
+    filled-in box and splitting them would mean two places that decide what
+    a memory row looks like.
+    """
+    ensure_db()
+    session = get_session()
+    from . import memory_ops
+    from .database import list_memories as db_list_memories
+
+    if q:
+        # `search_all`, not `recall`. Recall's scope is a boundary for an
+        # agent; this page already lists every project's memories beside
+        # the box, and a search that returned fewer than the list shows
+        # would read as broken.
+        rows = await run_in_threadpool(
+            functools.partial(memory_ops.search_all, session, query=q, limit=50)
+        )
+        reason = True
+    else:
+        rows = [
+            {
+                "id": str(m.id),
+                "title": m.title,
+                "summary": m.body[:240],
+                "category": m.category,
+                "scope": m.scope,
+                "confidence": m.confidence,
+                "created_by": m.created_by,
+                "created_at": m.created_at.isoformat() + "Z" if m.created_at else None,
+                "match_reason": "",
+            }
+            for m in await run_in_threadpool(
+                functools.partial(
+                    db_list_memories, session, status=None if status == "all" else status
+                )
+            )
+        ]
+        reason = False
+
+    return templates.TemplateResponse(
+        request,
+        "memory.html",
+        {
+            "rows": rows,
+            "query": q,
+            "status": status,
+            "show_reason": reason,
+            "summary": await run_in_threadpool(memory_ops.summary, session),
+            **_nav(session),
+        },
+    )
+
+
+@app.get("/memory/{memory_id}", response_class=HTMLResponse)
+async def memory_detail(request: Request, memory_id: str) -> HTMLResponse:
+    """One memory, its provenance and everything that happened to it."""
+    ensure_db()
+    session = get_session()
+    from . import memory_ops
+
+    try:
+        detail = await run_in_threadpool(memory_ops.describe, session, UUID(memory_id))
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=404, detail="No such memory") from None
+    except Exception:
+        raise HTTPException(status_code=404, detail="No such memory") from None
+
+    return templates.TemplateResponse(
+        request, "memory_detail.html", {"memory": detail, **_nav(session)}
     )
 
 

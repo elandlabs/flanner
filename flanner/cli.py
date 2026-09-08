@@ -159,6 +159,10 @@ class Sectioned(click.Group):
             ("sync", "history", "diff", "config", "delete", "setup-gitignore"),
         ),
         (
+            "Memory on this machine (no account, no network)",
+            ("mem",),
+        ),
+        (
             "Is a plan still true (local, reads your git history)",
             ("freshness", "why"),
         ),
@@ -419,6 +423,31 @@ def _import_existing_plans(project_root: str) -> None:
     )
 
 
+def _ask(question: str, default: str) -> str:
+    """Ask for one line, and take the default when there is nobody to ask.
+
+    Not `click.prompt`. Click raises the same `Abort` for end-of-input and
+    for Ctrl-C, which leaves the caller guessing which happened, and the
+    guess this used to make was `sys.stdin.isatty()`. On Windows the null
+    device reports itself as a terminal, so `flanner init < NUL` -- a
+    script, a CI step, exactly the unattended case the fallback existed
+    for -- guessed "a person cancelled" and died with "Aborted!".
+
+    Reading the line here keeps the two apart with no guess at all. An
+    empty string back from `readline` is end-of-input on every platform,
+    and Ctrl-C is still a KeyboardInterrupt that propagates the way it
+    should.
+    """
+    click.echo(f"{question} [{default}]: ", nl=False)
+    answer = sys.stdin.readline()
+    if answer == "":
+        # No input stream at all. Say which name was chosen rather than
+        # appearing to hang and then inventing one.
+        console.print(f"No terminal to ask, so the project is named '{default}'.", style="dim")
+        return default
+    return answer.strip() or default
+
+
 def _adopt_repository(project_root: str, plan_dir: str, force_new_project: bool) -> None:
     """Make this repository a project, or report the one already here.
 
@@ -453,17 +482,7 @@ def _adopt_repository(project_root: str, plan_dir: str, force_new_project: bool)
         console.print("  Creating a new project anyway (--force-new-project)", style="yellow")
 
     offered = Path(project_root).name
-    try:
-        project_name = click.prompt("Enter project name", default=offered)
-    except click.Abort:
-        # Click aborts on end-of-input as well as on Ctrl-C. Only one of
-        # those is a person cancelling. With no terminal attached — a
-        # script, CI, `< /dev/null` — the offered default is the answer,
-        # and dying with "Aborted!" made `init` unusable anywhere unattended.
-        if sys.stdin.isatty():
-            raise
-        project_name = offered
-        console.print(f"No terminal to ask, so the project is named '{offered}'.", style="dim")
+    project_name = _ask("Enter project name", offered)
 
     from .server import create_project_tool
 
@@ -562,6 +581,406 @@ def _setup_agent_integration(project_root: str) -> None:
             tui.warn(f"Left alone: {reason}")
     except Exception as e:
         console.print(f"WARN Could not set up agent integration: {e}", style="yellow")
+
+
+# --- memory ------------------------------------------------------------------
+
+
+@cli.group()
+def mem() -> None:
+    """Durable context: what a later session needs to know"""
+
+
+def _mem_project(session: Any, project: str | None) -> Any:
+    """The project a memory command is operating in, or None for personal."""
+    from . import memory_ops
+
+    if project:
+        found = get_project_by_name(session, project)
+        if found is None:
+            _no_project(project)
+        return found
+    return memory_ops.resolve_project(session)
+
+
+def _mem_or_exit(session: Any, memory_id: str) -> Any:
+    from .database import get_memory
+
+    try:
+        found = get_memory(session, UUID(memory_id))
+    except (ValueError, AttributeError):
+        found = None
+    if found is None:
+        tui.bad(f"No memory with id {memory_id}")
+        tui.hint(f"  {tui.command('flanner mem list')} shows what is there.")
+        raise SystemExit(1)
+    return found
+
+
+@mem.command("remember")
+@click.argument("content")
+@click.option(
+    "--category",
+    type=click.Choice(
+        ["fact", "decision", "preference", "constraint", "lesson", "relationship", "task_context"]
+    ),
+    required=True,
+    help="What kind of thing this is",
+)
+@click.option(
+    "--scope",
+    type=click.Choice(["project", "personal"]),
+    default="project",
+    help="This repository, or you across every project",
+)
+@click.option("--project", default=None, help="Project name (uses current directory if omitted)")
+@click.option("--title", default=None, help="Short summary (derived from the body if omitted)")
+@click.option(
+    "--confidence",
+    type=click.Choice(["confirmed", "inferred", "speculative"]),
+    default="confirmed",
+    help="How much this is stood behind",
+)
+@click.option("--ref", "refs", multiple=True, help="What supports it; repeatable")
+@click.option("--by", "created_by", default=None, help="Who is remembering (defaults to you)")
+def mem_remember(
+    content: str,
+    category: str,
+    scope: str,
+    project: str | None,
+    title: str | None,
+    confidence: str,
+    refs: tuple[str, ...],
+    created_by: str | None,
+) -> None:
+    """Save one durable fact
+
+    Reads the body from stdin when CONTENT is `-`, so a long memory does
+    not have to survive shell quoting.
+
+    Examples:
+
+      flanner mem remember "Use UTC-naive timestamps in SQLite" --category decision
+
+      flanner mem remember - --category lesson < note.txt
+    """
+    from . import memory_ops
+
+    body = sys.stdin.read() if content == "-" else content
+    session = _require_session()
+    proj = _mem_project(session, project) if scope == "project" else None
+    if scope == "project" and proj is None:
+        _no_project(project)
+
+    try:
+        memory, created = memory_ops.remember(
+            session,
+            content=body,
+            category=category,
+            scope=scope,
+            project=proj,
+            title=title,
+            confidence=confidence,
+            source_refs=list(refs),
+            created_by=created_by or _whoami(),
+        )
+    except memory_ops.SecretRejected as e:
+        console.print()
+        tui.bad(str(e))
+        tui.hint("  Nothing was written. Remove the credential and try again.")
+        console.print()
+        raise SystemExit(1) from None
+    except (DatabaseError, ValueError) as e:
+        console.print()
+        tui.bad(str(e))
+        console.print()
+        raise SystemExit(1) from None
+
+    console.print()
+    if created:
+        tui.ok(f"Remembered: {memory.title}")
+    else:
+        tui.note(f"Already remembered: {memory.title}")
+    console.print(f"  {tui.code(str(memory.id))}", style="muted")
+    console.print(f"  {tui.code(memory.file_path)}", style="muted")
+    console.print()
+
+
+@mem.command("recall")
+@click.argument("query")
+@click.option("--project", default=None, help="Project name (uses current directory if omitted)")
+@click.option("--no-personal", is_flag=True, help="Search this project only")
+@click.option("--limit", default=8, help="How many results at most")
+@click.option("--full", is_flag=True, help="Whole bodies rather than summaries")
+@click.option("--output", type=click.Choice(["table", "json"]), default="table")
+def mem_recall(
+    query: str, project: str | None, no_personal: bool, limit: int, full: bool, output: str
+) -> None:
+    """Search what earlier sessions knew
+
+    Every result says why it matched and who wrote it, because a memory you
+    cannot judge is one you have to go and verify anyway.
+    """
+    from . import memory_ops
+
+    session = _require_session()
+    proj = _mem_project(session, project)
+    found = memory_ops.recall(
+        session,
+        query=query,
+        project_id=proj.id if proj else None,
+        include_personal=not no_personal,
+        limit=limit,
+        full=full,
+    )
+
+    if output == "json":
+        import json
+
+        click.echo(json.dumps(found, indent=2))
+        return
+
+    console.print()
+    if not found["memories"]:
+        tui.note(f"Nothing remembered about {query!r}.")
+        if found["search"] == "scan":
+            console.print(
+                "  This Python's SQLite has no full-text index, so this was a plain scan.",
+                style="muted",
+            )
+        console.print()
+        return
+
+    for item in found["memories"]:
+        heading = Text()
+        heading.append(item["title"], style="value")
+        heading.append(f"  {item['category']}", style="muted")
+        console.print(heading)
+        console.print(f"  {item.get('body') or item['summary']}", style="white")
+        console.print(
+            f"  {item['scope']} · {item['confidence']} · {item['created_by']} · "
+            f"{item['match_reason']}",
+            style="muted",
+        )
+        console.print(f"  {tui.code(item['id'])}", style="muted")
+        console.print()
+
+    if found["truncated"]:
+        tui.note("More matched than are shown. Narrow the query or raise --limit.")
+        console.print()
+
+
+@mem.command("show")
+@click.argument("memory_id")
+@click.option("--output", type=click.Choice(["table", "json"]), default="table")
+def mem_show(memory_id: str, output: str) -> None:
+    """One memory in full, with everything that happened to it"""
+    from . import memory_ops
+
+    session = _require_session()
+    _mem_or_exit(session, memory_id)
+    detail = memory_ops.describe(session, UUID(memory_id))
+
+    if output == "json":
+        import json
+
+        click.echo(json.dumps(detail, indent=2))
+        return
+
+    console.print()
+    console.print(detail["title"], style="value")
+    console.print()
+    console.print(detail["body"], style="white")
+    console.print()
+    for label, key in (
+        ("Scope", "scope"),
+        ("Category", "category"),
+        ("Status", "status"),
+        ("Confidence", "confidence"),
+        ("Written by", "created_by"),
+        ("Written", "created_at"),
+        ("File", "file_path"),
+    ):
+        console.print(f"{label:<12}{detail[key]}", style="muted")
+    if detail["source_refs"]:
+        console.print(f"{'Sources':<12}{', '.join(detail['source_refs'])}", style="muted")
+    if detail["supersedes"]:
+        console.print(f"{'Replaces':<12}{detail['supersedes']}", style="muted")
+
+    if detail["events"]:
+        console.print()
+        for event in detail["events"]:
+            console.print(f"  {event['at']}  {event['action']} by {event['actor']}", style="muted")
+    console.print()
+
+
+@mem.command("list")
+@click.option("--scope", type=click.Choice(["project", "personal"]), default=None)
+@click.option("--category", default=None, help="One of the seven categories")
+@click.option("--status", default="active", help="active, superseded, forgotten, expired, or all")
+@click.option("--project", default=None, help="Project name (uses current directory if omitted)")
+@click.option("--output", type=click.Choice(["table", "json"]), default="table")
+def mem_list(
+    scope: str | None, category: str | None, status: str, project: str | None, output: str
+) -> None:
+    """Browse memories rather than searching them"""
+    from .database import list_memories
+
+    session = _require_session()
+    proj = _mem_project(session, project) if scope != "personal" else None
+    memories = list_memories(
+        session,
+        scope=scope,
+        project_id=proj.id if proj and scope == "project" else None,
+        category=category,
+        status=None if status == "all" else status,
+    )
+
+    if output == "json":
+        import json
+
+        click.echo(
+            json.dumps(
+                [
+                    {
+                        "id": str(m.id),
+                        "title": m.title,
+                        "category": m.category,
+                        "scope": m.scope,
+                        "status": m.status,
+                        "created_at": m.created_at.isoformat() + "Z" if m.created_at else None,
+                    }
+                    for m in memories
+                ],
+                indent=2,
+            )
+        )
+        return
+
+    console.print()
+    if not memories:
+        tui.note("Nothing remembered here yet.")
+        tui.hint(f"  {tui.command('flanner mem remember')} saves the first one.")
+        console.print()
+        return
+
+    table = tui.table("Memory", "Category", "Scope", "Written")
+    for memory in memories:
+        table.add_row(
+            memory.title[:60],
+            memory.category,
+            memory.scope,
+            memory.created_at.strftime("%Y-%m-%d") if memory.created_at else "",
+        )
+    console.print(table)
+    console.print()
+
+
+@mem.command("supersede")
+@click.argument("memory_id")
+@click.option("--with", "content", required=True, help="What is true instead")
+@click.option("--reason", default="", help="Why it changed")
+def mem_supersede(memory_id: str, content: str, reason: str) -> None:
+    """Correct a memory by replacing it
+
+    The old one stops being recalled and stays readable, pointing at what
+    replaced it. A decision keeps its history that way.
+    """
+    result = _dispatch_or_exit(
+        "memory_supersede",
+        {
+            "memory_id": memory_id,
+            "content": content,
+            "reason": reason,
+            "created_by": _whoami(),
+        },
+    )
+    console.print()
+    tui.ok(result["message"])
+    console.print(f"  {tui.code(result['id'])}", style="muted")
+    console.print()
+
+
+@mem.command("forget")
+@click.argument("memory_id")
+@click.option("--reason", default="", help="Why")
+@click.option(
+    "--purge",
+    is_flag=True,
+    help="Delete the file and every trace of it. Cannot be undone.",
+)
+def mem_forget(memory_id: str, reason: str, purge: bool) -> None:
+    """Stop recalling a memory, or erase it from this machine"""
+    session = _require_session()
+    memory = _mem_or_exit(session, memory_id)
+
+    if purge and not click.confirm(
+        f"Permanently delete {memory.title!r} and its file?", default=False
+    ):
+        tui.note("Nothing was deleted.")
+        return
+
+    result = _dispatch_or_exit(
+        "memory_forget",
+        {"memory_id": memory_id, "reason": reason, "purge": purge, "created_by": _whoami()},
+    )
+    console.print()
+    tui.ok(result["message"])
+    console.print()
+
+
+@mem.command("restore")
+@click.argument("memory_id")
+def mem_restore(memory_id: str) -> None:
+    """Bring a forgotten or expired memory back into recall"""
+    result = _dispatch_or_exit("memory_restore", {"memory_id": memory_id, "created_by": _whoami()})
+    console.print()
+    tui.ok(result["message"])
+    console.print()
+
+
+@mem.command("rebuild")
+def mem_rebuild() -> None:
+    """Rebuild the catalog and search index from the memory files
+
+    The files are the record; this is what makes that true. Run it after
+    restoring a backup, or after losing the database.
+    """
+    result = _dispatch_or_exit("memory_rebuild", {})
+    console.print()
+    tui.ok(f"{result['adopted']} adopted, {result['updated']} updated")
+    if result["skipped"]:
+        console.print(f"  {result['skipped']} file(s) were not memories", style="muted")
+    for failure in result["failed"]:
+        tui.warn(f"  {failure}")
+    console.print(
+        "  Event history is not restored: events have no file of their own.", style="muted"
+    )
+    console.print()
+
+
+def _dispatch_or_exit(op: str, args: dict[str, Any]) -> dict[str, Any]:
+    """Run a memory write, or print why it was refused and stop."""
+    _open_store()
+    from .services import dispatch
+
+    result = dispatch(op, args)
+    if result.get("error"):
+        console.print()
+        tui.bad(result["message"])
+        console.print()
+        raise SystemExit(1)
+    return result
+
+
+def _whoami() -> str:
+    """Who to record as the author of a memory written from the CLI."""
+    import getpass
+
+    try:
+        return getpass.getuser()
+    except Exception:  # noqa: BLE001 - a nameless user is still a user
+        return "you"
 
 
 @cli.group()
@@ -1885,6 +2304,52 @@ def review_status(plan_name: str, project: str | None) -> None:
     _print_external_review(session, plan_file)
 
 
+def _memory_findings(session: Any) -> list[Any]:
+    """Where the memory catalog and the memory files disagree.
+
+    Returned as the same `Finding` the plan reconciler produces, so the
+    doctor's table, its json and its exit code need no second shape. Memory
+    findings are reported, never repaired: a file somebody edited by hand
+    is that person's memory, and `flanner mem rebuild` is the deliberate
+    way to accept it.
+    """
+    from . import database as database_module
+    from . import memory_ops
+    from .database import get_memory
+    from .reconcile import Finding
+
+    findings: list[Any] = []
+
+    if not database_module.SEARCH_INDEX_AVAILABLE:
+        findings.append(
+            Finding(
+                kind="search_index_unavailable",
+                plan="(memory)",
+                detail=(
+                    "this Python's SQLite has no FTS5, so memory search falls back "
+                    "to a slower scan with no ranking"
+                ),
+            )
+        )
+
+    try:
+        drifted = memory_ops.drift(session)
+    except Exception as e:  # noqa: BLE001 - a doctor that crashes diagnoses nothing
+        return [*findings, Finding(kind="mem_unreadable_file", plan="(memory)", detail=str(e))]
+
+    for kind, memory_id, detail in drifted:
+        memory = get_memory(session, memory_id)
+        findings.append(
+            Finding(
+                kind=kind,
+                plan=memory.title[:48] if memory else str(memory_id),
+                detail=detail,
+                path=detail if kind != "mem_unreadable_file" else None,
+            )
+        )
+    return findings
+
+
 _FINDING_STYLES = {
     "missing_file": "red",
     "hash_mismatch": "yellow",
@@ -1896,6 +2361,13 @@ _FINDING_STYLES = {
     "signature_invalid": "red",
     "artifact_missing": "red",
     "unverified_signer": "blue",
+    # Memory. Same shape and the same colours, because a person reading
+    # this table should not have to learn which half of the product a row
+    # came from before knowing how worried to be.
+    "mem_missing_file": "red",
+    "mem_unreadable_file": "red",
+    "mem_hash_mismatch": "yellow",
+    "search_index_unavailable": "yellow",
 }
 
 
@@ -2270,6 +2742,8 @@ def doctor(project: str | None, repair: bool, output: str, report: bool) -> None
 
     with observe.step("reconcile catalog"):
         findings = reconcile_project(session, proj, repair=repair)
+    with observe.step("check memory"):
+        findings += _memory_findings(session)
     with observe.step("check enrollment"):
         enrollment = _enrollment_report(proj)
     observe.count(findings=len(findings))

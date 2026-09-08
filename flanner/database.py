@@ -19,6 +19,7 @@ from sqlalchemy import (
     DateTime,
     Dialect,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -42,7 +43,7 @@ from sqlalchemy.orm import (
 from sqlalchemy.pool import NullPool
 from sqlalchemy.types import CHAR, TypeDecorator, TypeEngine
 
-from .exceptions import DatabaseError, DuplicateError, NotFoundError
+from .exceptions import DatabaseError, DuplicateError, NotFoundError, ValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -225,6 +226,148 @@ class ArtifactModel(Base):
 
     def __repr__(self) -> str:
         return f"<Artifact(id={self.artifact_id[:19]}..., type='{self.artifact_type}')>"
+
+
+# --- memory -----------------------------------------------------------------
+#
+# A separate domain sharing one database. Plans and memories differ in every
+# way that would make a shared table convenient: plans are browsed and
+# versioned, memories are searched and corrected; a plan belongs to one
+# project, a memory may be personal; a memory needs expiry, sensitivity and
+# confidence that would be dead columns on every plan row. What they share
+# is the project registry, the migration mechanism and one backup.
+
+#: Scopes a memory can hold.
+PERSONAL = "personal"
+PROJECT = "project"
+WORKSPACE = "workspace"
+MEMORY_SCOPES = (PERSONAL, PROJECT, WORKSPACE)
+
+#: The project id stored for personal memories.
+#:
+#: A sentinel rather than NULL, and this is the only reason why: SQLite
+#: treats NULLs as distinct in a unique index, so two identical personal
+#: memories would both insert and the deduplication index would do nothing
+#: for exactly the scope with no project to fall back on. Uglier than NULL
+#: and it is what makes the constraint real.
+NO_PROJECT = uuid.UUID("00000000-0000-0000-0000-000000000000")
+
+#: What a memory is about. The vocabulary is closed so that a policy file
+#: can allowlist categories and mean something by it.
+MEMORY_CATEGORIES = (
+    "fact",
+    "decision",
+    "preference",
+    "constraint",
+    "lesson",
+    "relationship",
+    "task_context",
+)
+
+#: Where a memory is in its life. `proposed` exists from the first release
+#: even though nothing proposes yet, because the alternative is a status
+#: column that changes meaning in a later version.
+MEMORY_STATUSES = ("active", "superseded", "expired", "forgotten", "proposed")
+
+#: How much the author stood behind it. Read by ranking, and by the rule
+#: that an inference may not silently replace something a person confirmed.
+MEMORY_CONFIDENCES = ("confirmed", "inferred", "speculative")
+
+#: How freely it may travel. Nothing enforces the difference between these
+#: until sharing exists; they are recorded now so that memories written
+#: before then do not have to be re-classified afterwards.
+MEMORY_SENSITIVITIES = ("normal", "private", "restricted")
+
+#: How it arrived.
+MEMORY_SOURCE_TYPES = ("explicit", "agent_suggested", "tool_observation", "imported")
+
+
+class MemoryModel(Base):
+    """One durable fact, decision, preference, constraint or lesson.
+
+    The row is an index over a Markdown file, not the record itself. `body`
+    is stored so search and recall need not open every file, and
+    `content_hash` is what detects the two drifting apart.
+    """
+
+    __tablename__ = "memories"
+
+    id: Mapped[uuid.UUID] = mapped_column(GUID, primary_key=True, default=uuid.uuid4)
+    scope: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    # NO_PROJECT for personal scope; see that constant for why not NULL.
+    project_id: Mapped[uuid.UUID] = mapped_column(GUID, nullable=False, index=True)
+    # Always NULL until memories can be shared.
+    workspace_id: Mapped[str | None] = mapped_column(String)
+
+    title: Mapped[str] = mapped_column(String, nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    category: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="active", index=True)
+    confidence: Mapped[str] = mapped_column(String, nullable=False, default="confirmed")
+    sensitivity: Mapped[str] = mapped_column(String, nullable=False, default="normal")
+    source_type: Mapped[str] = mapped_column(String, nullable=False, default="explicit")
+    # A JSON list of strings: "plan:name_v4", "file:src/auth.py", a url.
+    source_refs: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+
+    supersedes_id: Mapped[uuid.UUID | None] = mapped_column(GUID, ForeignKey("memories.id"))
+    content_hash: Mapped[str] = mapped_column(String, nullable=False)
+    file_path: Mapped[str] = mapped_column(String, nullable=False)
+
+    created_by: Mapped[str] = mapped_column(String, nullable=False)
+    actor_device_id: Mapped[str | None] = mapped_column(String)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, default=_utcnow)
+    updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime, default=_utcnow, onupdate=_utcnow
+    )
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+    # Diagnostics. Deliberately not read by ranking: a memory recalled often
+    # is not therefore more true, and letting use feed relevance is how a
+    # search quietly stops surfacing anything new.
+    last_recalled_at: Mapped[datetime | None] = mapped_column(DateTime)
+    recall_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    events: Mapped[list["MemoryEventModel"]] = relationship(
+        "MemoryEventModel", back_populates="memory", cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (
+        # The whole of deduplication. `remember` called twice with the same
+        # text returns the first memory rather than making a second, which
+        # is also what makes a retried write safe when the reply was lost.
+        UniqueConstraint("scope", "project_id", "content_hash", name="ux_memories_dedup"),
+        Index("ix_memories_lookup", "scope", "project_id", "status"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<Memory(id={self.id}, title='{self.title[:32]}')>"
+
+
+class MemoryEventModel(Base):
+    """What happened to a memory, appended and never edited.
+
+    Not canonical, and this is the one place in the memory design where the
+    file is not the record: an event has no file, so `flanner mem rebuild`
+    restores every memory and none of this. That is stated rather than
+    hidden because somebody will eventually ask why a rebuilt catalog has
+    no history.
+    """
+
+    __tablename__ = "memory_events"
+
+    id: Mapped[uuid.UUID] = mapped_column(GUID, primary_key=True, default=uuid.uuid4)
+    memory_id: Mapped[uuid.UUID] = mapped_column(
+        GUID, ForeignKey("memories.id"), nullable=False, index=True
+    )
+    action: Mapped[str] = mapped_column(String, nullable=False)
+    actor: Mapped[str] = mapped_column(String, nullable=False)
+    at: Mapped[datetime | None] = mapped_column(DateTime, default=_utcnow)
+    detail: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+
+    memory: Mapped["MemoryModel"] = relationship("MemoryModel", back_populates="events")
+
+    def __repr__(self) -> str:
+        return f"<MemoryEvent({self.action} on {self.memory_id})>"
 
 
 class JiraConfigModel(Base):
@@ -1585,3 +1728,164 @@ def list_all_linear_links(session: Session, project_id: uuid.UUID) -> list[dict[
             )
 
     return results
+
+
+# --- memory ------------------------------------------------------------------
+
+
+def create_memory(
+    session: Session,
+    *,
+    memory_id: uuid.UUID | None = None,
+    scope: str,
+    project_id: uuid.UUID,
+    title: str,
+    body: str,
+    category: str,
+    content_hash: str,
+    file_path: str,
+    created_by: str,
+    confidence: str = "confirmed",
+    sensitivity: str = "normal",
+    source_type: str = "explicit",
+    source_refs: str = "[]",
+    status: str = "active",
+    supersedes_id: uuid.UUID | None = None,
+    expires_at: datetime | None = None,
+) -> MemoryModel:
+    """Insert one memory row. The file is written by `memory_ops`, first.
+
+    Validates the closed vocabularies here rather than at each caller, so a
+    typo in a scope or a category cannot reach the database and quietly
+    make a memory invisible to every filtered query.
+    """
+    for value, allowed, field in (
+        (scope, MEMORY_SCOPES, "scope"),
+        (category, MEMORY_CATEGORIES, "category"),
+        (status, MEMORY_STATUSES, "status"),
+        (confidence, MEMORY_CONFIDENCES, "confidence"),
+        (sensitivity, MEMORY_SENSITIVITIES, "sensitivity"),
+        (source_type, MEMORY_SOURCE_TYPES, "source_type"),
+    ):
+        if value not in allowed:
+            raise ValidationError(f"{field} must be one of {', '.join(allowed)}, not {value!r}")
+
+    memory = MemoryModel(
+        id=memory_id or uuid.uuid4(),
+        scope=scope,
+        project_id=project_id,
+        title=title,
+        body=body,
+        category=category,
+        status=status,
+        confidence=confidence,
+        sensitivity=sensitivity,
+        source_type=source_type,
+        source_refs=source_refs,
+        supersedes_id=supersedes_id,
+        content_hash=content_hash,
+        file_path=file_path,
+        created_by=created_by,
+        expires_at=expires_at,
+    )
+    session.add(memory)
+    _commit(session)
+    session.refresh(memory)
+    return memory
+
+
+def get_memory(session: Session, memory_id: uuid.UUID) -> MemoryModel | None:
+    """One memory by id, whatever its status."""
+    return session.query(MemoryModel).filter_by(id=memory_id).first()
+
+
+def find_memory_by_hash(
+    session: Session, *, scope: str, project_id: uuid.UUID, content_hash: str
+) -> MemoryModel | None:
+    """The memory this text already is, if it is one.
+
+    Matches the unique constraint exactly, so a caller that checks this
+    first and a caller that does not both end up in the same place.
+    """
+    return (
+        session.query(MemoryModel)
+        .filter_by(scope=scope, project_id=project_id, content_hash=content_hash)
+        .first()
+    )
+
+
+def list_memories(
+    session: Session,
+    *,
+    scope: str | None = None,
+    project_id: uuid.UUID | None = None,
+    category: str | None = None,
+    status: str | None = "active",
+    limit: int | None = None,
+) -> list[MemoryModel]:
+    """Memories matching every filter given, newest first.
+
+    `status` defaults to active rather than to everything, because the
+    common question is "what do I believe now" and the uncommon one should
+    be the one that has to ask.
+    """
+    query = session.query(MemoryModel)
+    if scope is not None:
+        query = query.filter_by(scope=scope)
+    if project_id is not None:
+        query = query.filter_by(project_id=project_id)
+    if category is not None:
+        query = query.filter_by(category=category)
+    if status is not None:
+        query = query.filter_by(status=status)
+    query = query.order_by(MemoryModel.created_at.desc())
+    if limit is not None:
+        query = query.limit(limit)
+    return list(query.all())
+
+
+def record_memory_event(
+    session: Session,
+    *,
+    memory_id: uuid.UUID,
+    action: str,
+    actor: str,
+    detail: str = "{}",
+) -> MemoryEventModel:
+    """Append one event. Never updates, never deletes."""
+    event = MemoryEventModel(memory_id=memory_id, action=action, actor=actor, detail=detail)
+    session.add(event)
+    _commit(session)
+    return event
+
+
+def list_memory_events(session: Session, memory_id: uuid.UUID) -> list[MemoryEventModel]:
+    """Everything that happened to one memory, oldest first."""
+    return list(
+        session.query(MemoryEventModel)
+        .filter_by(memory_id=memory_id)
+        .order_by(MemoryEventModel.at.asc())
+        .all()
+    )
+
+
+def count_memories(session: Session, *, status: str | None = "active") -> int:
+    """How many memories there are, for the nav badge."""
+    query = session.query(MemoryModel)
+    if status is not None:
+        query = query.filter_by(status=status)
+    return int(query.count())
+
+
+def delete_memory(session: Session, memory_id: uuid.UUID) -> bool:
+    """Remove a memory and its events entirely.
+
+    The destructive half of forgetting. Kept separate from status changes
+    so that nothing can purge by accident: a caller has to name this.
+    """
+    memory = get_memory(session, memory_id)
+    if memory is None:
+        return False
+    session.delete(memory)
+    _commit(session)
+    return True

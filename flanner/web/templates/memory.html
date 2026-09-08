@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Memory{% endblock %}
+
+{% block topbar_main %}
+<h1>Memory</h1>
+<span class="sub">What later sessions need to know</span>
+{% endblock %}
+
+{% block topbar_actions %}
+<form method="get" action="/memory" class="listctl">
+  <label class="sr-only" for="memq">Search memory</label>
+  <input class="input input-sm" type="search" id="memq" name="q" value="{{ query }}"
+         placeholder="Search memory…" autocomplete="off" spellcheck="false">
+  <button class="btn btn-sm btn-primary">Search</button>
+</form>
+{% endblock %}
+
+{% block content %}
+<div class="pane">
+
+  {% if summary.search == 'scan' %}
+  <div class="notice info" style="margin-bottom:14px">
+    This Python's SQLite has no full-text index, so search is a slower scan
+    with no ranking. Everything still works.
+  </div>
+  {% endif %}
+
+  {% if rows %}
+  <div class="card" data-listgroup>
+    <div class="card-head">
+      {% if query %}Matches for “{{ query }}”{% else %}Everything remembered{% endif %}
+      <span class="note">{{ rows | length }}</span>
+    </div>
+    {% for row in rows %}
+    <div class="grid-row cols-memory" data-list-item>
+      <span><a href="/memory/{{ row.id }}">{{ row.title }}</a>
+        <span class="hint">{{ row.summary }}</span></span>
+      <span><span class="pill pill-{{ row.category }}">{{ row.category }}</span></span>
+      <span class="muted">{{ row.scope }}</span>
+      <span class="muted">{{ row.created_by }}</span>
+      {% if show_reason %}<span class="muted">{{ row.match_reason }}</span>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="card card-pad card-prose">
+    {% if query %}
+    <h2 class="card-title">Nothing remembered about that</h2>
+    <p>No memory in this project or your personal memory matches “{{ query }}”.</p>
+    {% else %}
+    <h2 class="card-title">Nothing remembered yet</h2>
+    <p>Memory holds what a later session would otherwise have to be told again:
+       a decision and why the alternatives lost, a constraint that is not
+       obvious from the code, a lesson from something that failed.</p>
+    <p class="hint">Ask your agent to remember something, or run
+       <code>flanner mem remember "…" --category decision</code>.</p>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <div class="footnote" style="margin-top:18px">
+    <span class="i" aria-hidden="true">i</span>
+    Memory files live on this machine and are never uploaded. Personal memory
+    stays in your flanner home; project memory sits in the repository and is
+    kept out of git.
+  </div>
+
+</div>
+{% endblock %}

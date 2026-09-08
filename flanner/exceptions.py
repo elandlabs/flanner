@@ -28,6 +28,14 @@ class DuplicateError(DatabaseError, ValueError):
     """
 
 
+class ValidationError(FlannerError, ValueError):
+    """A value outside the vocabulary the schema allows.
+
+    Also a ValueError, matching NotFoundError and DuplicateError, so a
+    caller that only knows the stdlib still catches it.
+    """
+
+
 class StorageError(FlannerError):
     """Reading or writing a plan file on disk failed."""
 

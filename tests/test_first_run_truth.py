@@ -15,12 +15,16 @@ made the very first command unusable from a script.
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
 
 import flanner.claude_integration as ci
+from flanner import cli as cli_module
 from flanner.cli import cli
 
 
@@ -158,3 +162,85 @@ def test_a_registration_file_that_is_not_json_reads_as_not_registered(desktop, t
     (tmp_path / ".mcp.json").write_text("{not json either", encoding="utf-8")
 
     assert ci.claude_code_registration(tmp_path) == ""
+
+
+# --- being asked for a project name, with nobody there to answer -------------
+#
+# `init` asks for a name and takes the directory when there is no one to ask.
+# Getting that wrong is not cosmetic: it is the difference between a CI step
+# adopting a repository and a CI step dying with "Aborted!".
+
+
+def _init_unattended(tmp_path, name: str, **popen):
+    """Run `flanner init` in its own process, with the given stdin."""
+    home = tmp_path / f"home-{name}"
+    home.mkdir()
+    repo = tmp_path / name
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)  # noqa: S603,S607
+    env = {**os.environ, "FLANNER_HOME": str(home)}
+    env.pop("FLANNER_DB_PATH", None)
+    return subprocess.run(  # noqa: S603
+        [sys.executable, "-m", "flanner", "init", "--skip-claude", "--project-root", str(repo)],
+        cwd=repo,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=180,
+        **popen,
+    )
+
+
+def test_the_null_device_is_not_a_person_cancelling(tmp_path):
+    """The case this used to get wrong.
+
+    `flanner init < NUL` is a script or a CI step, and it used to die with
+    "Aborted!" because the check for "is anybody there" was `isatty()`, and
+    on Windows the null device says yes.
+    """
+    result = _init_unattended(tmp_path, "nulrepo", stdin=subprocess.DEVNULL)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Created project: nulrepo" in result.stdout
+    assert "Aborted" not in result.stderr
+
+
+def test_a_closed_pipe_takes_the_directory_name(tmp_path):
+    result = _init_unattended(tmp_path, "piperepo", input="")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Created project: piperepo" in result.stdout
+
+
+def test_a_typed_name_is_used(tmp_path):
+    """The fallback must not have swallowed the ordinary case."""
+    result = _init_unattended(tmp_path, "typedrepo", input="chosen\n")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Created project: chosen" in result.stdout
+
+
+def test_pressing_enter_accepts_the_offer(tmp_path):
+    result = _init_unattended(tmp_path, "enterrepo", input="\n")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Created project: enterrepo" in result.stdout
+
+
+def test_nothing_decides_this_by_asking_whether_stdin_is_a_terminal():
+    """The guess that caused it. Reading the line tells end-of-input and
+    Ctrl-C apart directly, so there is nothing left to guess with.
+
+    Checked against the parsed code rather than the text, because the
+    docstring explaining why `isatty` is not used contains the word.
+    """
+    import ast
+
+    tree = ast.parse(Path(cli_module.__file__).read_text(encoding="utf-8"))
+    called = [
+        node.func.attr
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+    ]
+
+    assert "isatty" not in called
