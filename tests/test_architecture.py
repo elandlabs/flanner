@@ -31,11 +31,18 @@ FOUNDATION = {
     # every capture path without one of them arranging a database first.
     "memory_guard",
     "jira_utils",
+    # Where an agent keeps its skills, and which copy of a name wins.
+    # Filesystem and JSON only, so it can be tested against a directory
+    # tree with no database and no project.
+    "skills_adapters",
     "linear_utils",
 }
 ALLOWED = {
     **{m: set() for m in FOUNDATION},
     "database": {"exceptions"},
+    # Reading skill packages: hashes, health findings, and the one report
+    # the CLI, the web UI and MCP all render.
+    "skills_ops": {"database", "frontmatter", "skills_adapters"},
     "storage": {"exceptions", "frontmatter", "utils"},
     "freshness": {"utils"},
     "ipc": set(),
@@ -161,6 +168,9 @@ ALLOWED = {
     "web": FOUNDATION
     | {
         "database",
+        # The Skills page renders the same report the CLI prints, so the
+        # two cannot disagree about what is on disk.
+        "skills_ops",
         "storage",
         "plan_ops",
         # The memory pages read the domain rather than the tables, so
@@ -224,6 +234,7 @@ ALLOWED = {
     "cli": FOUNDATION
     | {
         "tui",
+        "skills_ops",
         # Writes a plan out as a standalone file, and reads back the notes
         # an outside reviewer returned. Both are local reads of local state.
         "packet",

@@ -39,6 +39,7 @@ from starlette.responses import StreamingResponse
 from . import __version__, ipc, services
 from .database import (
     PlanFileModel,
+    SkillModel,
     count_memories,
     create_project,
     delete_project,
@@ -689,6 +690,9 @@ def _nav(session: Any) -> dict[str, Any]:
         # queries and touch no repository, so this one can be here.
         "nav_memory": count_memories(session),
         "nav_memory_pending": count_memories(session, status="proposed"),
+        # From the catalog, not a fresh scan: this is on every page, and a
+        # scan hashes every file in every package. Zero until the first scan.
+        "nav_skills": session.query(SkillModel).filter_by(effective=True).count(),
     }
 
 
@@ -1656,6 +1660,45 @@ async def review_page(request: Request) -> HTMLResponse:
         request,
         "review.html",
         {**_nav(session), "request": request, "rows": rows},
+    )
+
+
+@app.get("/skills", response_class=HTMLResponse)
+async def skills_page(
+    request: Request, scope: str = "", shadowed: str = "", agent: str = "claude-code"
+) -> HTMLResponse:
+    """Every skill this machine's agents would load, and what is wrong with them.
+
+    Scans on request rather than reading the catalog. A skill package is a
+    directory somebody else owns and edits without telling us, so a page
+    served from the last scan would be confidently out of date — which is
+    the one failure this page exists to catch.
+    """
+    ensure_db()
+    session = get_session()
+    from . import skills_ops
+
+    root = find_git_root(str(Path.cwd()))
+    packages = await run_in_threadpool(skills_ops.scan, Path(root) if root else None, agent)
+    await run_in_threadpool(skills_ops.record, session, packages)
+    report = skills_ops.report(Path(root) if root else None, agent, packages=packages)
+
+    rows = [
+        pkg
+        for pkg in report["packages"]
+        if (shadowed or pkg["effective"]) and (not scope or pkg["scope"] == scope)
+    ]
+    return templates.TemplateResponse(
+        request,
+        "skills.html",
+        {
+            **_nav(session),
+            "request": request,
+            "report": report,
+            "rows": rows,
+            "scope": scope,
+            "shadowed": bool(shadowed),
+        },
     )
 
 

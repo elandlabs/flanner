@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}Skills{% endblock %}
+
+{% block topbar_main %}
+<h1>Skills</h1>
+<span class="sub">What your agents load, and where it comes from</span>
+{% endblock %}
+
+{% block topbar_actions %}
+<form method="get" action="/skills" class="listctl">
+  <label class="sr-only" for="skscope">Scope</label>
+  <select class="btn btn-sm" id="skscope" name="scope" onchange="this.form.requestSubmit()">
+    <option value="" {% if not scope %}selected{% endif %}>Every scope</option>
+    <option value="project" {% if scope == 'project' %}selected{% endif %}>This project</option>
+    <option value="user" {% if scope == 'user' %}selected{% endif %}>Yours</option>
+    <option value="plugin" {% if scope == 'plugin' %}selected{% endif %}>Plugins</option>
+  </select>
+  {% if shadowed %}<input type="hidden" name="shadowed" value="1">{% endif %}
+</form>
+<a class="btn btn-sm" href="/skills?scope={{ scope }}{% if not shadowed %}&shadowed=1{% endif %}">
+  {% if shadowed %}Hide shadowed{% else %}Show shadowed{% endif %}</a>
+{% endblock %}
+
+{% block content %}
+<div class="pane">
+
+  {% if report.summary.defects %}
+  <div class="notice bad" style="margin-bottom:14px">
+    {{ report.summary.defects }} defect{{ '' if report.summary.defects == 1 else 's' }}
+    found. Nothing is broken on its own, but an agent may be loading a copy
+    you did not mean it to. The list is at the foot of this page.
+  </div>
+  {% endif %}
+
+  <div class="stat-grid">
+    <div class="stat"><div class="v tnum">{{ report.summary.effective }}</div>
+      <div class="k">In effect</div></div>
+    <div class="stat"><div class="v tnum">{{ report.summary.shadowed }}</div>
+      <div class="k">Shadowed</div></div>
+    <div class="stat"><div class="v tnum">{{ report.summary.by_scope.plugin }}</div>
+      <div class="k">From plugins</div></div>
+    <div class="stat"><div class="v tnum">{{ report.summary.defects }}</div>
+      <div class="k">Defects</div></div>
+  </div>
+
+  {% if rows %}
+  <div class="card" data-listgroup>
+    <div class="card-head">
+      {% if scope %}{{ scope }} skills{% else %}Skills{% endif %}
+      <span class="note">{{ rows | length }} of {{ report.summary.packages }}</span>
+    </div>
+    <div class="grid-row grid-head cols-skills">
+      <span>Skill</span><span>Scope</span><span>From</span>
+      <span>Description</span><span>Files</span>
+    </div>
+    {% for row in rows %}
+    <div class="grid-row cols-skills" data-list-item>
+      <span>{{ row.name }}
+        {% if not row.effective %}<span class="pill pill-quiet">shadowed</span>{% endif %}
+        <span class="path">{{ row.directory }}</span></span>
+      <span class="muted">{{ row.scope }}</span>
+      <span class="muted">{{ row.plugin or row.scope }}</span>
+      <span class="hint clamp2">{{ row.description or '—' }}</span>
+      <span class="when tnum">{{ row.file_count }} files</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="card card-pad card-prose">
+    <h2 class="card-title">Nothing found</h2>
+    <p>No skill package matched. A skill is a directory holding a
+      <code>SKILL.md</code>, under <code>.claude/skills</code> in a project,
+      in your home directory, or inside an installed plugin.</p>
+    <p>Flanner reads those directories and never writes to them. Nothing in a
+      package is executed by a scan.</p>
+  </div>
+  {% endif %}
+
+  {% if report.findings %}
+  <div class="card" style="margin-top:14px">
+    <div class="card-head">What is wrong
+      <span class="note">{{ report.summary.defects }} defect,
+        {{ report.summary.advice }} advisory</span></div>
+    <div class="grid-row grid-head cols-findings">
+      <span>Finding</span><span>Skill</span><span>What to do</span>
+    </div>
+    {% for f in report.findings %}
+    <div class="grid-row cols-findings">
+      <span><span class="pill pill-{{ 'stale' if f.severity == 'defect' else 'aging' }}">{{ f.code }}</span></span>
+      <span>{{ f.skill }}<span class="hint">{{ f.detail }}</span></span>
+      <span class="hint">{{ f.remedy }}</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="card card-pad card-prose" style="margin-top:14px">
+    <h2 class="card-title">Where this was read from</h2>
+    <ul>
+      {% for r in report.coverage.roots %}
+      <li><code>{{ r.path }}</code>
+        <span class="muted">{{ r.scope }}{% if r.revision %} · {{ r.revision }}{% endif %}</span>
+        {% if not r.exists %}<span class="pill pill-quiet">not there</span>{% endif %}
+        {% if not r.active %}<span class="pill pill-quiet">not the installed revision</span>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% for note in report.coverage.notes %}
+    <p class="muted">{{ note }}</p>
+    {% endfor %}
+  </div>
+
+</div>
+{% endblock %}

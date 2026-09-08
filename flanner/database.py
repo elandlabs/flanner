@@ -567,6 +567,67 @@ class SeenNonceModel(Base):
         return f"<SeenNonce(device_id={self.device_id}, expires_at={self.expires_at})>"
 
 
+class SkillModel(Base):
+    """One skill package, as seen at one path.
+
+    An index over a directory somebody else owns, not the record itself.
+    Plugin and user skills stay authoritative where they live; flanner
+    reads them and never edits them in place, so a row going stale is a
+    normal outcome that `scan` corrects rather than a corruption.
+
+    Identity is (name, agent, directory). The same name at two paths is
+    two rows on purpose: that duplication is the thing a reader most
+    often needs told about, and merging them here would hide it.
+    """
+
+    __tablename__ = "skills"
+    __table_args__ = (
+        UniqueConstraint("name", "agent", "directory", name="uq_skill_per_path"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(GUID, primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    agent: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    scope: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    directory: Mapped[str] = mapped_column(String, nullable=False)
+    #: Where it came from: a plugin name, or the scope when it is not one.
+    origin: Mapped[str] = mapped_column(String, nullable=False, default="")
+    #: Whether this copy is the one the agent would load for the name.
+    effective: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    #: For plugin copies: whether the agent's config lists this revision.
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+
+    def __repr__(self) -> str:
+        return f"<Skill(name={self.name}, scope={self.scope})>"
+
+
+class SkillVersionModel(Base):
+    """The bytes a package had when it was last seen changed.
+
+    Appended rather than updated. "This skill changed and my agent started
+    behaving differently" is only answerable if the earlier hash is still
+    here, and a hash is small enough that keeping every one costs nothing.
+    """
+
+    __tablename__ = "skill_versions"
+
+    id: Mapped[uuid.UUID] = mapped_column(GUID, primary_key=True, default=uuid.uuid4)
+    skill_id: Mapped[uuid.UUID] = mapped_column(
+        GUID, ForeignKey("skills.id"), nullable=False, index=True
+    )
+    #: One digest over every file in the package, paths included.
+    manifest_hash: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    file_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)
+
+    def __repr__(self) -> str:
+        return f"<SkillVersion(skill_id={self.skill_id}, hash={self.manifest_hash[:16]})>"
+
+
 # Database session management
 _engine: Engine | None = None
 _SessionLocal: sessionmaker[Session] | None = None

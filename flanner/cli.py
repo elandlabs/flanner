@@ -162,6 +162,10 @@ class Sectioned(click.Group):
             ("mem",),
         ),
         (
+            "Skills on this machine (no account, no network)",
+            ("skills",),
+        ),
+        (
             "Is a plan still true (local, reads your git history)",
             ("freshness", "why"),
         ),
@@ -2518,6 +2522,240 @@ def _note_authorization(authorization: Any) -> None:
         console.print(f"review here is advisory: {authorization.reason}", style="dim")
     elif not authorization.roles:
         console.print(f"WARN cannot authorize review: {authorization.reason}", style="yellow")
+
+
+# --- skills ------------------------------------------------------------------
+
+
+@cli.group()
+def skills() -> None:
+    """Skills your agents load, and what is wrong with them"""
+
+
+def _skills_project() -> Path | None:
+    """The repository a scan is scoped to, or None outside one."""
+    from .git_integration import find_git_root
+
+    found = find_git_root(str(Path.cwd()))
+    return Path(found) if found else None
+
+
+def _skills_scan(project: str | None, agent: str) -> tuple[Path | None, list[Any]]:
+    from . import skills_ops
+
+    root = Path(project).resolve() if project else _skills_project()
+    return root, skills_ops.scan(root, agent)
+
+
+def _skills_report(project: str | None, agent: str) -> dict[str, Any]:
+    from . import skills_ops
+
+    root, packages = _skills_scan(project, agent)
+    return skills_ops.report(root, agent, packages=packages)
+
+
+def _clip(text: str, width: int) -> str:
+    """Text that fits a column, with an ellipsis when it did not."""
+    text = " ".join(text.split())
+    return text if len(text) <= width else text[: width - 1] + "…"
+
+
+def _scope_style(scope: str) -> str:
+    return {"project": "green", "user": "cyan", "plugin": "muted"}.get(scope, "muted")
+
+
+def _print_json(payload: dict[str, Any]) -> None:
+    from . import skills_ops
+
+    # click.echo, not the console: rich wraps to the terminal width, which
+    # puts a newline inside a JSON string and produces a document no parser
+    # will read.
+    click.echo(skills_ops.to_json(payload))
+
+
+@skills.command("scan")
+@click.option("--project", default=None, help="Repository to scan for (uses this one if omitted)")
+@click.option("--agent", default="claude-code", help="Which agent's skills to read")
+@click.option("--json", "as_json", is_flag=True, help="Machine-readable report")
+@click.option("--record/--no-record", default=True, help="Write what was found to the catalog")
+def skills_scan(project: str | None, agent: str, as_json: bool, record: bool) -> None:
+    """Read every skill package this agent would load
+
+    A read, and only a read. Skill packages can carry scripts; none of them
+    run here, and nothing an agent owns is written to.
+    """
+    from . import skills_ops
+
+    root, packages = _skills_scan(project, agent)
+    written: dict[str, int] = {}
+    if record:
+        _open_store()
+        from .database import get_session
+
+        written = skills_ops.record(get_session(), packages)
+
+    report = skills_ops.report(root, agent, packages=packages)
+    if as_json:
+        _print_json(report)
+        return
+
+    summary = report["summary"]
+    roots = report["coverage"]["roots"]
+    console.print()
+    tui.ok(
+        f"{summary['effective']} skills in effect, {summary['shadowed']} shadowed, "
+        f"across {sum(1 for r in roots if r['exists'])} roots"
+    )
+    console.print()
+    counts = tui.table("Scope", ("Packages", {"justify": "right"}))
+    for scope, count in summary["by_scope"].items():
+        counts.add_row(f"[{_scope_style(scope)}]{scope}[/]", str(count))
+    console.print(counts)
+    console.print()
+    console.print(
+        tui.fields(
+            [
+                ("On disk", tui.size(summary["size_bytes"])),
+                ("Defects", str(summary["defects"])),
+                ("Advisory", str(summary["advice"])),
+            ]
+        )
+    )
+    if written.get("versions_recorded"):
+        console.print(
+            f"  Recorded {written['versions_recorded']} new package version(s).", style="muted"
+        )
+    for note in report["coverage"]["notes"]:
+        console.print(f"  {note}", style="muted")
+    console.print()
+    if summary["defects"] or summary["advice"]:
+        tui.hint(f"  {tui.command('flanner skills doctor')} says what is wrong.")
+    else:
+        tui.hint(f"  {tui.command('flanner skills list')} shows what you have.")
+    console.print()
+
+
+@skills.command("list")
+@click.option("--project", default=None, help="Repository to scan for")
+@click.option("--agent", default="claude-code", help="Which agent's skills to read")
+@click.option("--all", "show_all", is_flag=True, help="Include copies that are shadowed")
+@click.option("--scope", default=None, help="Only this scope: project, user or plugin")
+@click.option("--json", "as_json", is_flag=True, help="Machine-readable report")
+def skills_list(
+    project: str | None, agent: str, show_all: bool, scope: str | None, as_json: bool
+) -> None:
+    """Browse the skills this agent would load"""
+    report = _skills_report(project, agent)
+    if as_json:
+        _print_json(report)
+        return
+
+    rows = [
+        pkg
+        for pkg in report["packages"]
+        if (show_all or pkg["effective"]) and (scope is None or pkg["scope"] == scope)
+    ]
+    console.print()
+    if not rows:
+        tui.note("No skill packages found.")
+        tui.hint(f"  {tui.command('flanner skills scan')} looks again.")
+        console.print()
+        return
+
+    listing = tui.table("Skill", "Scope", "From", "Description")
+    for pkg in rows:
+        shadow = "" if pkg["effective"] else " [muted](shadowed)[/]"
+        listing.add_row(
+            f"{pkg['name']}{shadow}",
+            f"[{_scope_style(pkg['scope'])}]{pkg['scope']}[/]",
+            pkg["plugin"] or pkg["scope"],
+            _clip(pkg["description"] or "-", 56),
+        )
+    console.print(listing)
+    console.print(f"  {len(rows)} of {report['summary']['packages']} shown.", style="muted")
+    console.print()
+
+
+@skills.command("doctor")
+@click.option("--project", default=None, help="Repository to scan for")
+@click.option("--agent", default="claude-code", help="Which agent's skills to read")
+@click.option("--json", "as_json", is_flag=True, help="Machine-readable report")
+def skills_doctor(project: str | None, agent: str, as_json: bool) -> None:
+    """What is wrong with this collection of skills
+
+    Exits 1 when there is a defect, so a check can gate on it. Advisory
+    findings never fail the command: they are judgements, and a judgement
+    should not break somebody's build.
+    """
+    report = _skills_report(project, agent)
+    defects = report["summary"]["defects"]
+    if as_json:
+        _print_json(report)
+        raise SystemExit(1 if defects else 0)
+
+    console.print()
+    findings = report["findings"]
+    if not findings:
+        tui.ok("Nothing to report.")
+        console.print()
+        return
+
+    listed = tui.table("Finding", "Skill", "Detail")
+    for finding in findings:
+        style = "red" if finding["severity"] == "defect" else "yellow"
+        listed.add_row(
+            f"[{style}]{finding['code']}[/]", finding["skill"], _clip(finding["detail"], 60)
+        )
+    console.print(listed)
+    console.print()
+    for finding in findings:
+        if finding["severity"] == "defect":
+            console.print(f"  {finding['skill']}: {finding['remedy']}", style="muted")
+    console.print(f"  {defects} defect(s), {report['summary']['advice']} advisory.", style="muted")
+    console.print()
+    raise SystemExit(1 if defects else 0)
+
+
+@skills.command("inspect")
+@click.argument("name")
+@click.option("--project", default=None, help="Repository to scan for")
+@click.option("--agent", default="claude-code", help="Which agent's skills to read")
+def skills_inspect(name: str, project: str | None, agent: str) -> None:
+    """One skill in full, including every copy of it
+
+    Every copy, not only the winning one: "why is this skill not behaving
+    the way the file I edited says" is nearly always a second copy the
+    reader did not know about.
+    """
+    report = _skills_report(project, agent)
+    copies = [pkg for pkg in report["packages"] if pkg["name"] == name]
+    console.print()
+    if not copies:
+        tui.bad(f"No skill named {name}.")
+        tui.hint(f"  {tui.command('flanner skills list')} shows the names.")
+        console.print()
+        raise SystemExit(1)
+
+    for pkg in copies:
+        console.print(
+            tui.fields(
+                [
+                    ("Skill", pkg["name"]),
+                    ("Scope", pkg["scope"]),
+                    ("Loaded", "yes" if pkg["effective"] else "no, shadowed by another copy"),
+                    ("From", pkg["plugin"] or pkg["scope"]),
+                    ("Revision", pkg["revision"] or "-"),
+                    ("Contents", f"{pkg['file_count']} files, {tui.size(pkg['size_bytes'])}"),
+                    ("Hash", pkg["manifest_hash"]),
+                    ("Path", pkg["directory"]),
+                ]
+            )
+        )
+        if pkg["description"]:
+            console.print(f"  {pkg['description']}", style="muted")
+        for problem in pkg["problems"]:
+            tui.warn(f"  {problem}")
+        console.print()
 
 
 @cli.group()

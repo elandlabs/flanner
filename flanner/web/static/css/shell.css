@@ -270,6 +270,17 @@ a:hover { color: var(--accent-hi); }
 .cols-peers { grid-template-columns: 1fr 150px; }
 .cols-wsaccess { grid-template-columns: 1fr 120px; }
 .cols-review { grid-template-columns: 1.4fr 1fr 110px 130px; }
+.cols-skills { grid-template-columns: 1.3fr 90px 150px 1.4fr 80px; }
+
+/* A skill's own description, at whatever length its author wrote it. Two
+   lines, because a handful of 300-character ones otherwise set the row
+   height for the whole list and the list stops being scannable. */
+.clamp2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+          overflow: hidden; }
+.cols-findings { grid-template-columns: 180px 1fr 1.6fr; }
+/* The skill's name and the detail beneath it share one cell, and inline they
+   run together into one unreadable string. */
+.cols-findings .hint { display: block; }
 
 /* ------------------------------------------------------------ freshness */
 
@@ -651,6 +662,7 @@ kbd {
   .pane, .plan-main { padding-left: 16px; padding-right: 16px; }
   .cols-projects, .cols-freshness, .cols-plans, .cols-history,
   .cols-recent, .cols-links, .cols-peers, .cols-wsaccess, .cols-review,
+  .cols-skills, .cols-findings,
   .plan-file-card { grid-template-columns: 1fr; gap: 6px; }
   .grid-head { display: none; }
   .input, .doc, .raw-content { max-width: 100%; }
