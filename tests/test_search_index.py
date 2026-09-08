@@ -154,9 +154,24 @@ def test_this_python_has_fts5_at_all():
 
 
 def test_the_index_is_not_a_migration(tmp_path):
-    """If it ever becomes one, the fresh-database path loses it silently."""
-    assert "memory_search" not in str(db.MIGRATIONS)
-    assert db.SCHEMA_VERSION == 3
+    """If it ever becomes one, the fresh-database path loses it silently.
+
+    `_apply_schema` stamps a fresh database and returns before the ladder
+    runs, so an index created by a migration would exist on every upgraded
+    machine and on no new one -- a bug that only ever appears for people who
+    have never used the product.
+
+    The version this was written against was 3, and asserting that number
+    was a way of saying "adding the index did not bump it". A literal is the
+    wrong way to say that: it fails on the next honest bump and teaches
+    whoever is holding the release to edit the number rather than think.
+    """
+    import inspect as _inspect
+
+    for version, migration in db.MIGRATIONS.items():
+        source = _inspect.getsource(migration)
+        assert "memory_search" not in source, f"migration {version} creates the index"
+        assert "fts5" not in source.lower(), f"migration {version} creates the index"
 
 
 def test_creating_it_is_not_a_schema_bump(tmp_path):

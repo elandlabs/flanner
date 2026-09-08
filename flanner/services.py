@@ -1115,6 +1115,53 @@ def memory_gc() -> dict[str, Any]:
     return outcome
 
 
+def memory_share(
+    memory_id: str, workspace_id: str = "", created_by: str = "claude"
+) -> dict[str, Any]:
+    """Promote one memory to the workspace its project has joined."""
+    from . import memory_ops
+
+    try:
+        ensure_database()
+        session = get_session()
+        memory = get_memory(session, UUID(memory_id))
+        if memory is None:
+            return {"error": True, "message": f"No memory with id {memory_id}"}
+        target: str = workspace_id
+        if not target:
+            project = get_project(session, memory.project_id)
+            target = (project.workspace_id or "") if project else ""
+        if not target:
+            return {
+                "error": True,
+                "message": (
+                    "this project has not joined a workspace, so there is nobody "
+                    "to share with. Run `flanner join <workspace-id>` first."
+                ),
+            }
+        return memory_ops.promote(
+            session, memory_id=UUID(memory_id), workspace_id=target, created_by=created_by
+        )
+    except Exception as e:  # noqa: BLE001 - the seam returns, never raises
+        return {"error": True, "message": str(e)}
+
+
+def memory_withdraw(
+    memory_id: str, reason: str = "", created_by: str = "claude"
+) -> dict[str, Any]:
+    """Ask peers to stop recalling a shared memory."""
+    from . import memory_ops
+
+    try:
+        ensure_database()
+        session = get_session()
+        return memory_ops.withdraw(
+            session, memory_id=UUID(memory_id), reason=reason, created_by=created_by
+        )
+    except Exception as e:  # noqa: BLE001
+        return {"error": True, "message": str(e)}
+
+
 def _memory_time(value: str | None) -> Any:
     """An ISO timestamp from a caller, or nothing."""
     if not value:
@@ -1149,6 +1196,8 @@ REGISTRY: dict[str, Callable[..., Any]] = {
     "memory_attach": memory_attach,
     "memory_detach": memory_detach,
     "memory_gc": memory_gc,
+    "memory_share": memory_share,
+    "memory_withdraw": memory_withdraw,
 }
 
 

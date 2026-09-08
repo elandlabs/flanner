@@ -601,3 +601,59 @@ def test_an_operator_can_serve_elsewhere(client, monkeypatch):
     """`flanner web --host` sets this, and the Host check stands down."""
     monkeypatch.setenv("FLANNER_WEB_HOSTS", "*")
     assert client.get("/", headers={"Host": "flanner.internal"}).status_code == 200
+
+
+# --- sharing a memory from the page ------------------------------------------
+
+
+@pytest.fixture
+def a_memory(client, project_id):
+    from flanner.services import dispatch
+
+    result = dispatch(
+        "memory_remember",
+        {
+            "content": "Use advisory locks; the tool must work offline.",
+            "category": "decision",
+            "project_id": project_id,
+        },
+    )
+    return result["id"]
+
+
+@pytest.fixture
+def a_personal_memory(client, project_id):
+    from flanner.services import dispatch
+
+    result = dispatch(
+        "memory_remember",
+        {
+            "content": "Prefers blockers over nitpicks.",
+            "category": "preference",
+            "scope": "personal",
+        },
+    )
+    return result["id"]
+
+
+def test_a_project_memory_offers_a_share_button(client, a_memory):
+    page = client.get(f"/memory/{a_memory}").text
+
+    assert "Share with the team" in page
+    assert "joining a workspace shares nothing by itself" in page
+
+
+def test_personal_memory_offers_no_button_at_all(client, a_personal_memory):
+    """The refusal lives in the domain. Offering a control that always fails
+    would teach somebody the rule by wasting their time."""
+    page = client.get(f"/memory/{a_personal_memory}").text
+
+    assert "Share with the team" not in page
+    assert "cannot be shared with anybody" in page
+
+
+def test_sharing_without_a_workspace_says_so_rather_than_failing_silently(client, a_memory):
+    response = client.post(f"/memory/{a_memory}/share")
+
+    assert response.status_code == 303
+    assert "has%20not%20joined%20a%20workspace" in response.headers["location"]

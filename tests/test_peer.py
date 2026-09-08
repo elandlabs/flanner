@@ -19,7 +19,13 @@ from flanner import session as cache
 from flanner.artifacts import canonical_bytes
 from flanner.database import ArtifactModel, get_artifact, save_artifact
 from flanner.device_auth import sign_request
-from flanner.entitlements import TEAM_SYNC, Claims, WorkspaceCapability, encode_token
+from flanner.entitlements import (
+    MEM_SYNC,
+    TEAM_SYNC,
+    Claims,
+    WorkspaceCapability,
+    encode_token,
+)
 from flanner.identity import public_key_b64, sign
 from flanner.workflow import MAINTAINER, READER
 
@@ -107,6 +113,22 @@ def test_a_signed_request_with_a_matching_entitlement_is_allowed(issuer_key):
     who = peer.authorize(a_peer_request(issuer_key), WORKSPACE, keyring_of(issuer_key))
     assert who.role == MAINTAINER
     assert who.user_id == "maria"
+
+
+def test_a_plan_entitlement_alone_does_not_carry_memory(issuer_key):
+    """Two separate purchases of trust, and the default is the narrower one.
+    A device that predates memory sharing has no such flag, so it must not
+    be read as holding one."""
+    who = peer.authorize(a_peer_request(issuer_key), WORKSPACE, keyring_of(issuer_key))
+    assert who.may_sync_memory is False
+
+
+def test_memory_travels_only_when_the_entitlement_says_so(issuer_key):
+    request = a_peer_request(issuer_key, features=(TEAM_SYNC, MEM_SYNC))
+
+    who = peer.authorize(request, WORKSPACE, keyring_of(issuer_key))
+
+    assert who.may_sync_memory is True
 
 
 def test_the_public_key_must_hash_to_the_device_id_claimed(issuer_key):

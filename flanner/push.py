@@ -54,7 +54,20 @@ REQUIRED_ROLE: dict[str, frozenset[str]] = {
     artifacts.ISSUE_LINK: workflow.MAY_PROPOSE,
     artifacts.COLLAB_CHECKPOINT: workflow.MAY_PROPOSE,
     artifacts.ATTACHMENT_MANIFEST: workflow.MAY_PROPOSE,
+    # Sharing a memory is not proposing a change to anybody's plan, so it
+    # asks for the same role as a comment rather than the one that can move
+    # what a colleague's tools read. Someone who may say "this is wrong" in
+    # a review may also say "the staging cluster rebuilds on Sundays".
+    artifacts.MEMORY_RECORD: workflow.MAY_COMMENT,
+    artifacts.MEMORY_TOMBSTONE: workflow.MAY_COMMENT,
 }
+
+#: Artifact types that only travel when the entitlement includes memory
+#: sync. Kept apart from the role table because the two questions are
+#: different: the role says who, the feature says whether at all. The list
+#: itself lives in `sync`, which also needs it to decide what to
+#: materialise, and one list is the only way the two stay in step.
+MEMORY_TYPES = sync.MEMORY_TYPES
 
 
 def may_send(artifact_type: str, role: str) -> bool:
@@ -135,6 +148,7 @@ def accept(
     resolve_key: Any,
     refresh_keys: Any = None,
     cooldown: Cooldown | None = None,
+    memory_sync: bool = True,
 ) -> sync.SyncReport:
     """Take in what a peer pushed, artifact by artifact.
 
@@ -175,6 +189,12 @@ def accept(
             continue
 
         artifact_type = str(envelope.get("artifact_type") or "")
+        if artifact_type in MEMORY_TYPES and not memory_sync:
+            # An organization switched this off, or nobody is paying for it.
+            # Refused per artifact so a batch carrying both plans and memory
+            # still delivers the plans.
+            report.rejected.append((artifact_id, "this entitlement does not include memory sync"))
+            continue
         if not may_send(artifact_type, role):
             report.rejected.append((artifact_id, f"a {role} may not push a {artifact_type}"))
             continue

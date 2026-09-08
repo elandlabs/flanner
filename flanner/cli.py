@@ -1375,6 +1375,43 @@ def mem_gc(yes: bool) -> None:
     console.print()
 
 
+@mem.command("share")
+@click.argument("memory_id")
+@click.option("--workspace", default=None, help="Workspace id (uses the project's if omitted)")
+def mem_share(memory_id: str, workspace: str | None) -> None:
+    """Share one memory with the team
+
+    An explicit act, every time. Joining a workspace shares nothing on its
+    own, and personal memory can never be shared at all.
+    """
+    result = _dispatch_or_exit(
+        "memory_share",
+        {"memory_id": memory_id, "workspace_id": workspace or "", "created_by": _whoami()},
+    )
+    console.print()
+    tui.ok(result["message"])
+    console.print(f"  {tui.code(result['artifact_id'])}", style="muted")
+    console.print()
+
+
+@mem.command("withdraw")
+@click.argument("memory_id")
+@click.option("--reason", default="", help="Why")
+def mem_withdraw(memory_id: str, reason: str) -> None:
+    """Ask peers to stop recalling a shared memory
+
+    Not an erasure. A device that was offline when you signed this already
+    holds the text, and no design without a central copy can change that.
+    """
+    result = _dispatch_or_exit(
+        "memory_withdraw",
+        {"memory_id": memory_id, "reason": reason, "created_by": _whoami()},
+    )
+    console.print()
+    tui.ok(result["message"])
+    console.print()
+
+
 def _dispatch_or_exit(op: str, args: dict[str, Any]) -> dict[str, Any]:
     """Run a memory write, or print why it was refused and stop."""
     _open_store()
@@ -4291,6 +4328,15 @@ def _print_entitlement(current: Any) -> None:
         return
 
     console.print(f"Expires {verdict.claims.expires_at}")
+    # Said here because the alternative is finding out at the far end. A
+    # promotion signs locally whatever this says, and a person who shares
+    # something that no peer will accept has been told nothing useful.
+    from . import entitlements
+
+    if verdict.claims.has_feature(entitlements.MEM_SYNC):
+        console.print("Memory sharing is on for your organization")
+    else:
+        console.print("Memory sharing is off for your organization", style="dim")
     capabilities = verdict.claims.workspace_capabilities
     if not capabilities:
         console.print("No workspace access granted yet", style="dim")

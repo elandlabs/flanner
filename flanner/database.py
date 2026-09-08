@@ -59,7 +59,7 @@ class Base(DeclarativeBase):
 
 # Bump when the table layout changes incompatibly; stamped into SQLite's
 # PRAGMA user_version so future releases can detect and migrate old files.
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 class GUID(TypeDecorator[uuid.UUID]):
@@ -211,6 +211,10 @@ class ArtifactModel(Base):
     organization_id: Mapped[str | None] = mapped_column(String)
     workspace_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
     plan_file_id: Mapped[str | None] = mapped_column(String, index=True)
+    # Which memory a `mem.*` artifact is about. Its own column rather than
+    # reusing plan_file_id, because a query for one must never return the
+    # other and a shared column would make that a matter of remembering.
+    memory_id: Mapped[str | None] = mapped_column(String, index=True)
     # JSON array of parent artifact ids; ordering carries no meaning.
     parents: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     # Envelope timestamp, stored verbatim. Descriptive only, never ordering.
@@ -583,7 +587,7 @@ def _migration_2(conn: Connection) -> None:
     Existing rows keep NULL: they predate artifacts and are still valid
     plan versions, they simply carry no signature yet.
     """
-    conn.exec_driver_sql("ALTER TABLE versions ADD COLUMN artifact_id VARCHAR")
+    _add_column(conn, "versions", "artifact_id", "VARCHAR")
     conn.exec_driver_sql(
         "CREATE INDEX IF NOT EXISTS ix_versions_artifact_id ON versions (artifact_id)"
     )
@@ -595,7 +599,7 @@ def _migration_3(conn: Connection) -> None:
     Existing rows keep NULL, which is the solo case and stays correct: the
     workspace id is derived locally and review remains advisory.
     """
-    conn.exec_driver_sql("ALTER TABLE projects ADD COLUMN workspace_id VARCHAR")
+    _add_column(conn, "projects", "workspace_id", "VARCHAR")
 
 
 #: Whether this Python's SQLite was built with FTS5.
@@ -647,10 +651,47 @@ def _ensure_search_index(conn: Connection) -> None:
         logger.warning("This Python's SQLite has no FTS5, so memory search will be slower: %s", e)
 
 
+def _add_column(conn: Connection, table: str, column: str, kind: str) -> None:
+    """Add a column unless the table already has it.
+
+    Not defensiveness. `_apply_schema` runs `create_all` before the ladder,
+    and `create_all` builds any *missing* table in its present-day shape --
+    columns a later migration was written to add included. So a machine
+    upgrading from a version that predates the table gets it complete, and
+    the migration that adds a column to it then fails on a duplicate.
+
+    `artifacts` is where that first bit: it arrives whole on any upgrade
+    from v1, and `_migration_4` alters it. Every migration that adds a
+    column should go through here, because whether its table might have
+    been created by `create_all` is not a question worth re-deciding.
+    """
+    held = {row[1] for row in conn.exec_driver_sql(f"PRAGMA table_info({table})")}
+    if column not in held:
+        conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {column} {kind}")
+
+
+def _migration_4(conn: Connection) -> None:
+    """Point an artifact at a memory.
+
+    Memory artifacts need somewhere to say which memory they carry. The
+    alternative was reusing `plan_file_id`, which would have made every
+    query for one able to return the other, and correctness would then rest
+    on every caller remembering to filter by type.
+
+    Existing rows keep NULL, which is correct: every artifact written
+    before this is about a plan.
+    """
+    _add_column(conn, "artifacts", "memory_id", "VARCHAR")
+    conn.exec_driver_sql(
+        "CREATE INDEX IF NOT EXISTS ix_artifacts_memory_id ON artifacts (memory_id)"
+    )
+
+
 MIGRATIONS: dict[int, Callable[[Connection], None]] = {
     1: _migration_1,
     2: _migration_2,
     3: _migration_3,
+    4: _migration_4,
 }
 
 
@@ -1155,6 +1196,7 @@ def save_envelope(
     envelope: SignedEnvelope,
     *,
     plan_file_id: str | None = None,
+    memory_id: str | None = None,
     payload: str | None = None,
 ) -> ArtifactModel:
     """Store a signed envelope, or return the one already held.
@@ -1168,6 +1210,7 @@ def save_envelope(
     """
     return save_artifact(
         session,
+        memory_id=memory_id or getattr(envelope, "memory_id", None),
         artifact_id=envelope.artifact_id,
         artifact_type=envelope.artifact_type,
         workspace_id=envelope.workspace_id,
@@ -1197,6 +1240,7 @@ def save_artifact(
     protocol_version: int = 1,
     organization_id: str | None = None,
     plan_file_id: str | None = None,
+    memory_id: str | None = None,
     parents: list[str] | tuple[str, ...] = (),
     actor_user_id: str | None = None,
     payload: str | None = None,
@@ -1218,6 +1262,7 @@ def save_artifact(
         organization_id=organization_id,
         workspace_id=workspace_id,
         plan_file_id=plan_file_id,
+        memory_id=memory_id,
         parents=json.dumps(list(parents)),
         created_at=created_at,
         actor_user_id=actor_user_id,

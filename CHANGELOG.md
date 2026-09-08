@@ -6,6 +6,38 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Memory: durable context, as Markdown files you can read.** A plan says
+  what you decided to build; memory is the smaller, longer-lived stuff
+  around it — the constraint that rules out an approach, the reason a
+  library was rejected, the fact that the staging cluster is rebuilt on
+  Sundays. `flanner mem remember` writes one, `flanner mem recall` searches
+  them and says why each result matched, and a later session finds them
+  without being told. Each memory is a file under `.flanner/memory/`; the
+  database is an index over those files, so `flanner mem rebuild` reads
+  everything back if it is lost.
+- **Capture modes, because a tool that stores what it likes is not one you
+  keep.** `off`, `explicit` (the default), `suggest` and `auto-safe`. In
+  `suggest`, an agent proposes and `flanner mem pending` shows what is
+  waiting on you. A project's `.flanner/memory.yml` may only tighten what
+  the machine-wide policy allows, never loosen it.
+- **Nothing that looks like a credential is stored.** Fifteen vendor
+  patterns, a generic assignment catch and an entropy check, run on
+  anything written here — your own writing, an agent's suggestion, and
+  anything a teammate sends. A peer's signature proves who wrote something;
+  it does not make this device store it.
+- **Attachments.** A screenshot, a PDF or a recording kept beside a memory
+  as evidence, stored by content hash outside the database so the same file
+  attached twice is stored once.
+- **Sharing, one memory at a time.** `flanner mem share` signs a memory into
+  the workspace its project joined; `flanner mem withdraw` asks peers to
+  stop recalling it. Joining a workspace shares nothing on its own, and
+  personal memory can never be shared at all. A withdrawal is a request
+  peers honour, not an erasure: a device that was switched off already
+  holds the text, and no design without a central copy can change that.
+  Needs a `mem_sync` entitlement, which an organization admin can switch
+  off for everybody.
+
 ## [0.11.0] - 2026-09-05
 
 ### Changed

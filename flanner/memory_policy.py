@@ -199,7 +199,7 @@ def _dig(data: dict[str, Any], path: tuple[str, ...]) -> Any:
 def _coerce(name: str, value: Any, kind: type) -> Any:
     """One file value as the type the dataclass wants, or an error."""
     if kind is tuple:
-        if isinstance(value, str) or not isinstance(value, (list, tuple)):
+        if isinstance(value, str) or not isinstance(value, list | tuple):
             raise ValidationError(f"{name} should be a list, not {type(value).__name__}")
         return tuple(str(item) for item in value)
     if kind is bool:

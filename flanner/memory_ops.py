@@ -37,7 +37,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from . import blobs, memory_guard, memory_policy
+from . import artifacts, blobs, memory_guard, memory_policy
 from . import database as db
 from .database import (
     MEMORY_CATEGORIES,
@@ -528,6 +528,18 @@ def _visible(session: Session, *, project_id: UUID | None, include_personal: boo
         allowed += [m.id for m in list_memories(session, scope=PROJECT, project_id=project_id)]
     if include_personal:
         allowed += [m.id for m in list_memories(session, scope=PERSONAL)]
+
+    # Memory a teammate shared, but only into the workspace this project is
+    # actually bound to. Received work that is stored and never recalled
+    # would make sharing pointless, and a workspace the current project has
+    # not joined is somebody else's context in this session's answers.
+    project = db.get_project(session, project_id) if project_id is not None else None
+    if project is not None and project.workspace_id:
+        allowed += [
+            m.id
+            for m in list_memories(session, scope=WORKSPACE)
+            if m.workspace_id == project.workspace_id
+        ]
     return allowed
 
 
@@ -1467,6 +1479,257 @@ def _extract(stored: blobs.Stored, *, home: Path) -> tuple[str, str | None]:
     return "ready", text_body
 
 
+# --- sharing ------------------------------------------------------------------
+#
+# Everything above this line stays on one machine. This is the seam where a
+# memory becomes something a teammate's device can hold, and it is the only
+# one, which is what makes "your memory stays here" checkable rather than a
+# claim in a docstring.
+#
+# **Promotion is always an explicit act.** A project joining a workspace
+# does not share its memories, and it never will: somebody wrote those
+# before deciding to work with anybody, and reading a later decision
+# backwards onto them would share things nobody offered.
+#
+# **Personal memory can never be promoted.** Not by policy, not by a flag,
+# not by an admin. It is refused here, in the one function that could do
+# it, so the rule holds however the surfaces above change.
+
+
+def promote(
+    session: Session,
+    *,
+    memory_id: UUID,
+    workspace_id: str,
+    created_by: str = "claude",
+) -> dict[str, Any]:
+    """Sign a memory into a workspace so authorised devices may hold it.
+
+    Signs the body, never the header. The header carries a status and a
+    file path that differ per machine, so a receiving device would compute
+    a different hash for the same memory and reject work it should accept.
+
+    The signature proves who wrote it. It does not decide who may read it:
+    that is the entitlement the receiving device checks, and keeping the
+    two apart is what stops a signature being mistaken for permission.
+    """
+    memory = get_memory(session, memory_id)
+    if memory is None:
+        raise NotFoundError(f"No memory with id {memory_id}")
+
+    if memory.scope == PERSONAL:
+        raise ValidationError(
+            "personal memory cannot be shared. It is about you rather than "
+            "about this project, and nobody agreed to hand it over by joining "
+            "a workspace. Write it as a project memory if the team needs it."
+        )
+    if memory.status != "active":
+        raise ValidationError(
+            f"this memory is {memory.status}; only an active memory can be shared"
+        )
+    if memory.sensitivity == "restricted":
+        raise ValidationError(
+            "this memory is marked restricted, which means it stays on this machine"
+        )
+
+    detections = memory_guard.scan(memory.body)
+    if detections:
+        # Belt and braces. Nothing with a credential should have been
+        # stored, but sharing is the moment where being wrong stops being
+        # recoverable, so the check runs again on the way out.
+        raise SecretRejected(memory_guard.describe(detections))
+
+    artifact = artifacts.make_artifact(
+        artifact_type=artifacts.MEMORY_RECORD,
+        workspace_id=workspace_id,
+        content_hash=artifacts.hash_bytes(memory.body.encode("utf-8")),
+        memory_id=str(memory.id),
+        parents=_memory_parents(session, memory),
+    )
+    db.save_envelope(session, artifact, memory_id=str(memory.id), payload=memory.body)
+
+    memory.workspace_id = workspace_id
+    memory.scope = WORKSPACE
+    session.commit()
+    _reindex(session, memory)
+
+    record_memory_event(
+        session,
+        memory_id=memory.id,
+        action="promoted",
+        actor=created_by,
+        detail=json.dumps({"workspace_id": workspace_id, "artifact": artifact.artifact_id}),
+    )
+    return {
+        "id": str(memory.id),
+        "workspace_id": workspace_id,
+        "artifact_id": artifact.artifact_id,
+        "message": (
+            f"Shared {memory.title!r} with the workspace. Authorised devices "
+            "will pick it up on their next sync."
+        ),
+    }
+
+
+def withdraw(
+    session: Session, *, memory_id: UUID, reason: str = "", created_by: str = "claude"
+) -> dict[str, Any]:
+    """Ask every device to stop recalling a shared memory.
+
+    Not an erasure, and it does not pretend to be one. Artifacts are
+    immutable and a device that was offline when this was signed already
+    holds the bytes. What this produces is a signed claim that peers
+    honour, which is the strongest thing a design with no central copy can
+    offer without lying about reaching into somebody else's disk.
+    """
+    memory = get_memory(session, memory_id)
+    if memory is None:
+        raise NotFoundError(f"No memory with id {memory_id}")
+    if memory.scope != WORKSPACE or not memory.workspace_id:
+        raise ValidationError(
+            "this memory was never shared; `flanner mem forget` removes a local one"
+        )
+
+    artifact = artifacts.make_artifact(
+        artifact_type=artifacts.MEMORY_TOMBSTONE,
+        workspace_id=memory.workspace_id,
+        content_hash=artifacts.hash_bytes(str(memory.id).encode("utf-8")),
+        memory_id=str(memory.id),
+        parents=_memory_parents(session, memory),
+    )
+    db.save_envelope(session, artifact, memory_id=str(memory.id))
+
+    memory.status = "forgotten"
+    session.commit()
+    _reindex(session, memory)
+    record_memory_event(
+        session,
+        memory_id=memory.id,
+        action="withdrawn",
+        actor=created_by,
+        detail=json.dumps({"reason": reason, "artifact": artifact.artifact_id}),
+    )
+    return {
+        "id": str(memory.id),
+        "artifact_id": artifact.artifact_id,
+        "message": (
+            "Withdrawn. Devices that see this will stop recalling it. Devices "
+            "that already hold the text still hold it; this is a request they "
+            "honour, not an erasure."
+        ),
+    }
+
+
+def _memory_parents(session: Session, memory: MemoryModel) -> tuple[str, ...]:
+    """The artifact this one descends from, if this memory has been shared
+    before. Lineage is per memory, so a correction points at what it
+    corrects and a receiver can order them without a clock."""
+    from .database import ArtifactModel
+
+    latest = (
+        session.query(ArtifactModel)
+        .filter(
+            ArtifactModel.memory_id == str(memory.id),
+            ArtifactModel.artifact_type == artifacts.MEMORY_RECORD,
+        )
+        .order_by(ArtifactModel.created_at.desc())
+        .first()
+    )
+    return (str(latest.artifact_id),) if latest is not None else ()
+
+
+def shared_memories(session: Session, workspace_id: str) -> list[MemoryModel]:
+    """Every memory this device has promoted to one workspace."""
+    return [
+        memory
+        for memory in list_memories(session, scope=WORKSPACE, status=None)
+        if memory.workspace_id == workspace_id
+    ]
+
+
+def materialise(
+    session: Session,
+    *,
+    envelope: Any,
+    body: str,
+    workspace_id: str,
+) -> dict[str, Any]:
+    """Turn a received memory artifact into a memory on this device.
+
+    Everything here is somebody else's writing, so it is treated as
+    imported: `source_type` says so, and the confidence the author claimed
+    is kept rather than promoted. A tombstone removes from recall rather
+    than deleting, because the bytes are already here and pretending
+    otherwise would be the one dishonest thing this could do.
+
+    The caller has already verified the signature and the entitlement. This
+    does not re-judge either; it decides what a verified artifact means.
+    """
+    memory_id = UUID(str(envelope.memory_id))
+    existing = get_memory(session, memory_id)
+
+    if envelope.artifact_type == artifacts.MEMORY_TOMBSTONE:
+        if existing is None:
+            return {"outcome": "ignored", "reason": "nothing held for that memory"}
+        existing.status = "forgotten"
+        session.commit()
+        _reindex(session, existing)
+        record_memory_event(
+            session, memory_id=memory_id, action="withdrawn", actor=envelope.actor_device_id
+        )
+        return {"outcome": "withdrawn", "id": str(memory_id)}
+
+    clean = normalise(body)
+    if artifacts.hash_bytes(clean.encode("utf-8")) != envelope.content_hash:
+        return {"outcome": "rejected", "reason": "body does not match the signed hash"}
+
+    detections = memory_guard.scan(clean)
+    if detections:
+        # A peer's device is not this device's judgement. Somebody else's
+        # store may hold something this one refuses, and accepting it
+        # because it arrived signed would make the guard decorative.
+        return {"outcome": "rejected", "reason": memory_guard.describe(detections)}
+
+    directory = flanner_home() / "memory" / "workspaces" / workspace_id
+    path = directory / f"{memory_id}.md"
+
+    if existing is not None:
+        existing.body = clean
+        existing.content_hash = content_hash(clean)
+        existing.status = "active"
+        session.commit()
+        atomic_write_text(path, _render(existing, None))
+        _reindex(session, existing)
+        record_memory_event(
+            session, memory_id=memory_id, action="updated", actor=envelope.actor_device_id
+        )
+        return {"outcome": "updated", "id": str(memory_id)}
+
+    memory = create_memory(
+        session,
+        memory_id=memory_id,
+        scope=WORKSPACE,
+        project_id=NO_PROJECT,
+        title=derive_title(clean),
+        body=clean,
+        category="fact",
+        confidence="confirmed",
+        source_type="imported",
+        content_hash=content_hash(clean),
+        file_path=str(path),
+        created_by=envelope.actor_user_id or envelope.actor_device_id,
+    )
+    memory.workspace_id = workspace_id
+    memory.actor_device_id = envelope.actor_device_id
+    session.commit()
+    atomic_write_text(path, _render(memory, None))
+    _reindex(session, memory)
+    record_memory_event(
+        session, memory_id=memory.id, action="received", actor=envelope.actor_device_id
+    )
+    return {"outcome": "received", "id": str(memory.id)}
+
+
 # --- rebuilding --------------------------------------------------------------
 
 
@@ -1672,8 +1935,12 @@ __all__ = [
     "remember",
     "resolve_project",
     "restore",
+    "materialise",
+    "promote",
+    "shared_memories",
     "similarity",
     "stale_task_context",
     "summary",
+    "withdraw",
     "supersede",
 ]

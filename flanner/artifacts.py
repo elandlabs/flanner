@@ -50,6 +50,23 @@ ISSUE_LINK = "issue.link"
 COLLAB_CHECKPOINT = "collaboration.checkpoint"
 ATTACHMENT_MANIFEST = "attachment.manifest"
 
+#: One memory, promoted to a workspace on purpose.
+#:
+#: A separate type from a plan version, not a flavour of one. A plan
+#: is browsed and versioned; a memory is searched and corrected, and
+#: a receiver that treated one as the other would file somebody's
+#: durable context in a list nobody reads.
+MEMORY_RECORD = "mem.record"
+
+#: A signed request that peers stop recalling a memory.
+#:
+#: The same honesty as a plan tombstone: append-only means the bytes
+#: stay, and a device that was offline when this was signed has them
+#: regardless. It is a claim other devices honour, which is the
+#: strongest thing this design can offer without pretending to reach
+#: into somebody else's disk.
+MEMORY_TOMBSTONE = "mem.tombstone"
+
 ARTIFACT_TYPES = frozenset(
     {
         PLAN_VERSION,
@@ -64,6 +81,8 @@ ARTIFACT_TYPES = frozenset(
         ISSUE_LINK,
         COLLAB_CHECKPOINT,
         ATTACHMENT_MANIFEST,
+        MEMORY_RECORD,
+        MEMORY_TOMBSTONE,
     }
 )
 
@@ -112,6 +131,14 @@ class Artifact:
     protocol_version: int = PROTOCOL_VERSION
     organization_id: str | None = None
     plan_file_id: str | None = None
+    #: Which memory this envelope is about, for the memory artifact types.
+    #:
+    #: Left out of the wire form when absent rather than sent as null.
+    #: `to_dict` is exactly what the id and the signature cover, so a key
+    #: present on every envelope would change the canonical bytes of every
+    #: plan artifact ever signed, and every id derived from them. Omitting
+    #: it leaves those bytes byte-for-byte as they were.
+    memory_id: str | None = None
     actor_user_id: str | None = None
     parents: tuple[str, ...] = field(default_factory=tuple)
 
@@ -120,7 +147,7 @@ class Artifact:
         return {k: v for k, v in self.to_dict().items() if k not in _UNSIGNED_FIELDS}
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        fields: dict[str, Any] = {
             "protocol_version": self.protocol_version,
             "artifact_id": self.artifact_id,
             "artifact_type": self.artifact_type,
@@ -134,6 +161,11 @@ class Artifact:
             "content_hash": self.content_hash,
             "signature": self.signature,
         }
+        # Added only when it says something. See the field's own comment: a
+        # key on every envelope would rewrite every artifact id in existence.
+        if self.memory_id:
+            fields["memory_id"] = self.memory_id
+        return fields
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Artifact:
@@ -146,6 +178,7 @@ class Artifact:
                 organization_id=data.get("organization_id"),
                 workspace_id=str(data["workspace_id"]),
                 plan_file_id=data.get("plan_file_id"),
+                memory_id=data.get("memory_id"),
                 parents=tuple(data.get("parents") or ()),
                 created_at=str(data["created_at"]),
                 actor_user_id=data.get("actor_user_id"),
@@ -168,6 +201,7 @@ def make_artifact(
     workspace_id: str,
     content_hash: str,
     plan_file_id: str | None = None,
+    memory_id: str | None = None,
     parents: tuple[str, ...] | list[str] = (),
     organization_id: str | None = None,
     actor_user_id: str | None = None,
@@ -194,6 +228,7 @@ def make_artifact(
         created_at=stamp.isoformat().replace("+00:00", "Z"),
         organization_id=organization_id,
         plan_file_id=plan_file_id,
+        memory_id=memory_id,
         actor_user_id=actor_user_id,
         parents=tuple(sorted(parents)),
     )

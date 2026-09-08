@@ -1632,6 +1632,48 @@ def memory_detach(attachment_id: str, created_by: str = "claude") -> dict[str, A
     return dispatch("memory_detach", {"attachment_id": attachment_id, "created_by": created_by})
 
 
+@mcp.tool()
+def memory_share(
+    memory_id: str, workspace_id: str = "", created_by: str = "claude"
+) -> dict[str, Any]:
+    """
+    Share one memory with the team, on the user's explicit say-so.
+
+    Only call this when the user has asked for it. Joining a workspace does
+    not mean the memories already written there were offered to anybody,
+    and deciding for them is not a call you get to make.
+
+    Personal memory can never be shared and asking will be refused: it is
+    about the person rather than the project.
+
+    What travels is the memory's text, signed by this device. The signature
+    proves who wrote it; whether a receiving device may read it is decided
+    by that device's entitlement, which is a separate question.
+    """
+    return dispatch(
+        "memory_share",
+        {"memory_id": memory_id, "workspace_id": workspace_id, "created_by": created_by},
+    )
+
+
+@mcp.tool()
+def memory_withdraw(
+    memory_id: str, reason: str = "", created_by: str = "claude"
+) -> dict[str, Any]:
+    """
+    Ask every device to stop recalling a shared memory.
+
+    Not an erasure, and do not describe it as one to the user. A device
+    that was offline when this was signed already holds the text. What this
+    produces is a signed request that peers honour, which is the strongest
+    thing a system with no central copy can offer honestly.
+    """
+    return dispatch(
+        "memory_withdraw",
+        {"memory_id": memory_id, "reason": reason, "created_by": created_by},
+    )
+
+
 def main(argv: list[str] | None = None) -> None:
     """Run the MCP server.
 

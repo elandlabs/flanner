@@ -49,6 +49,72 @@ def test_every_artifact_type_this_build_knows_has_a_rule():
     assert set(push.REQUIRED_ROLE) == set(artifacts.ARTIFACT_TYPES)
 
 
+# --- the feature, as distinct from the role ---------------------------------
+
+
+def a_memory(artifact_type=artifacts.MEMORY_RECORD):
+    return {
+        "envelope": {
+            "artifact_id": "art_mem",
+            "artifact_type": artifact_type,
+            "workspace_id": "ws_1",
+        },
+        "payload": "The staging cluster is rebuilt every Sunday night.",
+    }
+
+
+@pytest.mark.parametrize("artifact_type", [artifacts.MEMORY_RECORD, artifacts.MEMORY_TOMBSTONE])
+def test_memory_is_refused_when_the_entitlement_does_not_cover_it(artifact_type):
+    """An organization switched it off, or nobody is paying. Refused here as
+    well as withheld on the read path, because a gate on one direction only
+    is not a gate."""
+    report = push.accept(
+        None,
+        [a_memory(artifact_type)],
+        workspace_id="ws_1",
+        role=MAINTAINER,
+        resolve_key=None,
+        memory_sync=False,
+    )
+
+    assert report.accepted == []
+    assert report.rejected == [("art_mem", "this entitlement does not include memory sync")]
+
+
+def test_each_artifact_is_refused_for_its_own_reason():
+    """Per artifact, so one over-reaching item does not discard the rest,
+    and so a reader can tell a lapsed feature from a missing role."""
+    plan = {
+        "envelope": {
+            "artifact_id": "art_plan",
+            "artifact_type": artifacts.PLAN_VERSION,
+            "workspace_id": "ws_1",
+        },
+        "payload": "# a plan",
+    }
+
+    report = push.accept(
+        None,
+        [a_memory(), plan],
+        workspace_id="ws_1",
+        role=COMMENTER,
+        resolve_key=None,
+        memory_sync=False,
+    )
+
+    assert report.rejected == [
+        ("art_mem", "this entitlement does not include memory sync"),
+        ("art_plan", "a commenter may not push a plan.version"),
+    ]
+
+
+def test_sharing_a_memory_asks_for_the_role_a_comment_asks_for():
+    """Not the one that can move what a colleague's tools read. Saying the
+    staging cluster rebuilds on Sundays is not proposing a plan change."""
+    assert push.may_send(artifacts.MEMORY_RECORD, COMMENTER) is True
+    assert push.may_send(artifacts.MEMORY_RECORD, READER) is False
+
+
 # --- caps ------------------------------------------------------------------
 
 

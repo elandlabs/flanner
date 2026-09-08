@@ -13,9 +13,44 @@
 {% block content %}
 <div class="pane">
 
+  {% if said %}
+  <div class="notice">{{ said }}</div>
+  {% endif %}
+
   <div class="card card-pad card-prose">
     <p>{{ memory.body }}</p>
   </div>
+
+  {% if memory.scope != "personal" %}
+  <div class="card card-pad">
+    <div class="card-head">Sharing</div>
+    {% if memory.scope == "workspace" %}
+    <p class="hint">Shared with your workspace. A teammate's device holds the
+       text and can recall it.</p>
+    <form method="post" action="/memory/{{ memory.id }}/withdraw" class="form-row">
+      <input class="input" type="text" name="reason" placeholder="Why (optional)">
+      <button class="btn">Ask peers to stop recalling it</button>
+    </form>
+    <p class="hint">Not an erasure. A device that was switched off when you
+       sign this already holds the text, and no design without a central copy
+       can change that.</p>
+    {% else %}
+    <p class="hint">On this machine only. Sharing signs the text so a
+       teammate's device can check who wrote it. It is never automatic:
+       joining a workspace shares nothing by itself.</p>
+    <form method="post" action="/memory/{{ memory.id }}/share">
+      <button class="btn">Share with the team</button>
+    </form>
+    {% endif %}
+  </div>
+  {% else %}
+  <div class="card card-pad">
+    <div class="card-head">Sharing</div>
+    <p class="hint">Personal memory is about you rather than about a project,
+       and cannot be shared with anybody. Write it as a project memory if the
+       team needs it.</p>
+  </div>
+  {% endif %}
 
   <div class="card">
     <div class="card-head">Where this came from</div>

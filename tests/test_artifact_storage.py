@@ -235,6 +235,44 @@ def test_an_existing_v1_database_upgrades(tmp_path):
     assert list_artifacts(session) == []
 
 
+def test_a_migration_survives_create_all_getting_there_first(tmp_path):
+    """Regression: upgrading from v1 crashed on a duplicate column.
+
+    `_apply_schema` runs `create_all` before the ladder, and `create_all`
+    builds any missing table in its present-day shape -- including a column
+    a later migration exists to add. A machine upgrading from a version that
+    predates `artifacts` therefore gets the table complete, and then the
+    migration that adds `memory_id` to it fails.
+
+    Nothing caught this until v4, because it is the first migration to alter
+    a table `create_all` might have just made. It would have broken every
+    existing install on the release that shipped it.
+    """
+    from sqlalchemy import text
+
+    db_path = tmp_path / "v1.db"
+    init_database(str(db_path))
+    session = get_session()
+    session.execute(text("DROP INDEX IF EXISTS ix_versions_artifact_id"))
+    session.execute(text("ALTER TABLE versions DROP COLUMN artifact_id"))
+    session.execute(text("ALTER TABLE projects DROP COLUMN workspace_id"))
+    session.execute(text("DROP TABLE artifacts"))
+    session.execute(text("PRAGMA user_version = 1"))
+    session.commit()
+    session.close()
+
+    init_database(str(db_path))
+
+    session = get_session()
+    columns = {row[1] for row in session.execute(text("PRAGMA table_info(artifacts)"))}
+    assert "memory_id" in columns
+    # Once, not twice, and stamped at the top of the ladder.
+    assert len([c for c in columns if c == "memory_id"]) == 1
+    from flanner.database import SCHEMA_VERSION
+
+    assert int(session.execute(text("PRAGMA user_version")).scalar()) == SCHEMA_VERSION
+
+
 def test_lineage_survives_the_service_path(db, git_repo, tmp_path, monkeypatch):
     """Regression: the artifact id must be written with the version row.
 

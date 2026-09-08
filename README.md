@@ -29,6 +29,7 @@ Flanner is local-first, and stays that way when a team uses it. Plans sync direc
 - **Automatic headers and versioning**: every plan gets YAML frontmatter, and each revision is a new version with a full history.
 - **Git protection**: plans live in `.plans/` and are kept out of commits automatically.
 - **Agent integration**: `flanner init` wires CLAUDE.md, AGENTS.md, and a guard hook so agents save plans through flanner instead of scattering raw markdown.
+- **Memory**: the durable context around a plan — a constraint, a rejected library, a fact about the environment — kept as Markdown files a later session can search. Explicit by default, refuses anything that looks like a credential, and shared with a teammate only when somebody asks for it.
 - **Issue tracker links**: tie a plan to its Linear (or JIRA) issue; with a `LINEAR_API_KEY`, flanner verifies the issue and shows its live state, in the CLI and the dashboard.
 - **Reading view**: a browser dashboard to read, edit, and walk the history of plans (light and dark, fully offline).
 - **Per-project config**: customize the plan directory per repository.
@@ -73,6 +74,10 @@ flanner config NAME [--plan-dir DIR] [...]              # change project setting
 flanner web [--port 8080] [--host 127.0.0.1] [--open-browser]
 flanner start [--port 8765] / flanner stop              # MCP server in the background, over http
 flanner peer start / flanner peer stop                  # serve plans to teammates in the background
+flanner mem remember "..." / flanner mem recall "..."   # durable context for later sessions
+flanner mem list / show ID / supersede ID "..."         # browse, read, and correct
+flanner mem mode [off|explicit|suggest|auto-safe]       # how much this project captures
+flanner mem share ID / flanner mem withdraw ID          # give one to the team, or ask them to stop
 flanner register [--force] / flanner unregister         # MCP registration with Claude Desktop
 flanner claude-info                                     # integration status
 ```

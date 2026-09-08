@@ -15,6 +15,7 @@ from collections import OrderedDict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 from uuid import UUID
 
 import markdown
@@ -1834,8 +1835,46 @@ async def memory_decide_form(
     return RedirectResponse("/memory/pending", status_code=303)
 
 
+@app.post("/memory/{memory_id}/share")
+async def memory_share_form(memory_id: str) -> RedirectResponse:
+    """Share one memory with the workspace this project joined.
+
+    A button rather than a checkbox on the write form, because sharing is a
+    decision taken after the fact and often by somebody rereading what they
+    wrote. Personal memory has no such button: the refusal lives in the
+    domain, and offering a control that always fails would be worse.
+    """
+    ensure_db()
+    from .services import dispatch
+
+    result = await run_in_threadpool(
+        functools.partial(dispatch, "memory_share", {"memory_id": memory_id, "created_by": "web"})
+    )
+    return RedirectResponse(
+        f"/memory/{memory_id}?said={quote(str(result.get('message', '')))}", status_code=303
+    )
+
+
+@app.post("/memory/{memory_id}/withdraw")
+async def memory_withdraw_form(memory_id: str, reason: str = Form("")) -> RedirectResponse:
+    """Ask peers to stop recalling a shared memory."""
+    ensure_db()
+    from .services import dispatch
+
+    result = await run_in_threadpool(
+        functools.partial(
+            dispatch,
+            "memory_withdraw",
+            {"memory_id": memory_id, "reason": reason, "created_by": "web"},
+        )
+    )
+    return RedirectResponse(
+        f"/memory/{memory_id}?said={quote(str(result.get('message', '')))}", status_code=303
+    )
+
+
 @app.get("/memory/{memory_id}", response_class=HTMLResponse)
-async def memory_detail(request: Request, memory_id: str) -> HTMLResponse:
+async def memory_detail(request: Request, memory_id: str, said: str = "") -> HTMLResponse:
     """One memory, its provenance and everything that happened to it."""
     ensure_db()
     session = get_session()
@@ -1853,6 +1892,7 @@ async def memory_detail(request: Request, memory_id: str) -> HTMLResponse:
         "memory_detail.html",
         {
             "memory": detail,
+            "said": said,
             "attachments": await run_in_threadpool(
                 memory_ops.attachments_of, session, UUID(memory_id)
             ),

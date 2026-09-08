@@ -90,6 +90,11 @@ class PeerIdentity:
     # request was signed by this device; spending the nonce proves it is not
     # the same request twice.
     nonce: str = ""
+    # Whether this caller's entitlement covers memory as well as plans. A
+    # separate flag rather than a second authorisation call, because both
+    # answers come from the same verified claims and asking twice is how
+    # they come to disagree.
+    may_sync_memory: bool = False
 
 
 def authorize(
@@ -159,6 +164,7 @@ def authorize(
         user_id=verdict.claims.user_id,
         organization_id=verdict.claims.organization_id,
         role=role,
+        may_sync_memory=verdict.claims.has_feature(entitlements.MEM_SYNC),
     )
 
 
@@ -251,7 +257,12 @@ def _requested(operation: str, body: dict[str, Any]) -> tuple[list[str], list[di
 
 
 def _serve_fetch(
-    session: Any, *, wanted: list[str], workspace_id: str, hidden: Any
+    session: Any,
+    *,
+    wanted: list[str],
+    workspace_id: str,
+    hidden: Any,
+    memory: bool = True,
 ) -> dict[str, Any]:
     """Hand over what was asked for, minus what this caller may not have.
 
@@ -274,6 +285,11 @@ def _serve_fetch(
             and envelope.get("artifact_type") != artifacts.PLAN_TOMBSTONE
         )
         if retired:
+            continue
+        # Withheld for the same reason a push of one is refused: an
+        # organization that switched memory sharing off, or a subscription
+        # that lapsed, has to mean the memory does not travel either way.
+        if not memory and envelope.get("artifact_type") in push_rules.MEMORY_TYPES:
             continue
         payload = blob.decode("utf-8", errors="replace") if blob is not None else None
         out.append({"envelope": envelope, "payload": payload})
@@ -383,7 +399,13 @@ def _serve_request(
                 refresh_keys,
             )
 
-        return _serve_fetch(session, wanted=wanted, workspace_id=workspace_id, hidden=hidden)
+        return _serve_fetch(
+            session,
+            wanted=wanted,
+            workspace_id=workspace_id,
+            hidden=hidden,
+            memory=caller.may_sync_memory,
+        )
 
 
 def _serve_write(
@@ -411,6 +433,7 @@ def _serve_write(
         resolve_key=resolve_key,
         refresh_keys=refresh_keys,
         cooldown=_keyring_cooldown,
+        memory_sync=caller.may_sync_memory,
     )
     return {
         "accepted": report.accepted,

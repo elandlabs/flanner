@@ -169,6 +169,12 @@ def _parents_of(row: Any) -> tuple[str, ...]:
         return ()
 
 
+#: Artifact types that carry a memory rather than a plan. Named here
+#: because both the digest rule and the ingest path need the same list, and
+#: two lists is how they come to disagree.
+MEMORY_TYPES = frozenset({artifacts.MEMORY_RECORD, artifacts.MEMORY_TOMBSTONE})
+
+
 def payload_digest(artifact_type: str, payload: bytes) -> str:
     """The hash an envelope's ``content_hash`` must equal for this payload.
 
@@ -267,11 +273,19 @@ def ingest_artifact(
     ):
         return artifacts.Verdict(False, "payload does not match content_hash")
 
-    save_envelope(
-        session,
-        artifact,
-        payload=payload.decode("utf-8", errors="replace") if payload is not None else None,
-    )
+    body = payload.decode("utf-8", errors="replace") if payload is not None else None
+    save_envelope(session, artifact, payload=body)
+    if artifact.artifact_type in MEMORY_TYPES:
+        # Here rather than in the pull loop, because push goes through this
+        # function too and a memory that arrived by push would otherwise be
+        # a row nobody ever sees. Stored either way: `materialise` can
+        # decline the content — a peer sending a credential, say — and an
+        # artifact that verified is still a verified artifact.
+        from . import memory_ops
+
+        memory_ops.materialise(
+            session, envelope=artifact, body=body or "", workspace_id=artifact.workspace_id
+        )
     return artifacts.Verdict(True)
 
 

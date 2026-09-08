@@ -39,6 +39,11 @@ TOKEN_SEPARATOR = "."  # noqa: S105 - delimiter between claims and signature
 # so that a plan change and the check that enforces it cannot drift apart.
 TEAM_SYNC = "team_sync"
 LIVE_COLLABORATION = "live_collaboration"
+#: Carrying memory between devices, as distinct from carrying plans.
+#: A separate flag so a plan-only tier stays possible, and so a
+#: device that predates memory sharing simply does not have it
+#: rather than being told it does and then refusing.
+MEM_SYNC = "mem_sync"
 
 # How long an expired entitlement keeps working offline before team features
 # stop. Local plan work never depends on this (§18.4).

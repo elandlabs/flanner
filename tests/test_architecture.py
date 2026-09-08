@@ -120,7 +120,10 @@ ALLOWED = {
     # database and storage exactly as sync does, and imports nothing from
     # here, so the cycle test stays quiet. Until this edge existed,
     # "accepted" meant a row in a table and nothing on disk.
-    "sync": FOUNDATION | {"artifacts", "database", "plan_ops"},
+    # `memory_ops` for the same reason `plan_ops` is here: a received
+    # artifact has to become something a person can actually see, and the
+    # module that knows what a memory is, is the one that can do it.
+    "sync": FOUNDATION | {"artifacts", "database", "plan_ops", "memory_ops"},
     "reconcile": FOUNDATION | {"database", "artifacts", "identity"},
     "services": FOUNDATION
     | {
@@ -205,7 +208,18 @@ ALLOWED = {
     "blobs": {"exceptions"},
     "memory_policy": {"exceptions"},
     "memory_ops": FOUNDATION
-    | {"database", "storage", "identity", "memory_guard", "memory_policy", "blobs"},
+    | {
+        "database",
+        "storage",
+        "identity",
+        "memory_guard",
+        "memory_policy",
+        "blobs",
+        # Promotion signs a memory into a workspace. `artifacts` knows
+        # only about envelopes and keys, so this adds no reach toward
+        # the network: the transport is still somebody else's job.
+        "artifacts",
+    },
     "plan_ops": FOUNDATION | {"database", "storage", "artifacts", "identity"},
     "cli": FOUNDATION
     | {
@@ -352,6 +366,6 @@ def test_the_version_is_derived_rather_than_typed():
     guard that fires on correct code gets deleted rather than heeded.
     """
     source = (PACKAGE / "__init__.py").read_text(encoding="utf-8")
-    assert "_installed_version(" in source, (
-        "__version__ is no longer read from package metadata; it will drift again"
-    )
+    assert (
+        "_installed_version(" in source
+    ), "__version__ is no longer read from package metadata; it will drift again"
