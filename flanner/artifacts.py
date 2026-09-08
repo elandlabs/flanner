@@ -67,6 +67,18 @@ MEMORY_RECORD = "mem.record"
 #: into somebody else's disk.
 MEMORY_TOMBSTONE = "mem.tombstone"
 
+#: A complete skill package, sent to a teammate on purpose.
+#:
+#: The bytes of the package and nothing else. No evidence, no recorded
+#: uses, no session references: those are the private half of Flanner
+#: Skills, and a package that carried them would make sharing a skill an
+#: unannounced disclosure of how somebody works.
+#:
+#: Receiving one is not installing one. A verified package sits as a
+#: transfer until somebody on the receiving machine says to install it,
+#: which is the same rule an approval follows locally.
+SKILL_PACKAGE = "skill.package"
+
 ARTIFACT_TYPES = frozenset(
     {
         PLAN_VERSION,
@@ -83,6 +95,7 @@ ARTIFACT_TYPES = frozenset(
         ATTACHMENT_MANIFEST,
         MEMORY_RECORD,
         MEMORY_TOMBSTONE,
+        SKILL_PACKAGE,
     }
 )
 

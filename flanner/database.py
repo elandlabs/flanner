@@ -946,6 +946,67 @@ class SkillTrialModel(Base):
         return f"<SkillTrial(suite={self.suite}, result={self.result})>"
 
 
+class SkillTransferModel(Base):
+    """A skill package that arrived from somewhere else, and what became of it.
+
+    Receiving, verifying and installing are three states rather than one
+    event, because they are three decisions. A package can be verified and
+    still be something this machine never installs, and a row that
+    collapsed the three would make "did I agree to this?" unanswerable.
+    """
+
+    __tablename__ = "skill_transfers"
+
+    id: Mapped[uuid.UUID] = mapped_column(GUID, primary_key=True, default=uuid.uuid4)
+    #: The signed envelope it travelled in.
+    artifact_id: Mapped[str] = mapped_column(String, nullable=False, unique=True, index=True)
+    workspace_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    skill_name: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    manifest_hash: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    #: The agent the package was built for. Installing it for a different
+    #: one is refused rather than attempted.
+    agent: Mapped[str] = mapped_column(String, nullable=False, default="claude-code")
+    from_device: Mapped[str] = mapped_column(String, nullable=False, default="")
+    #: received, verified, installed, rejected.
+    state: Mapped[str] = mapped_column(String, nullable=False, default="received", index=True)
+    #: Why, when it was rejected or could not be installed.
+    detail: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    #: A one-time copy stays on the version that was sent. A subscription
+    #: names the channel it came through; it still does not install.
+    channel: Mapped[str] = mapped_column(String, nullable=False, default="")
+    pinned: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+
+    def __repr__(self) -> str:
+        return f"<SkillTransfer(skill={self.skill_name}, state={self.state})>"
+
+
+class SkillChannelModel(Base):
+    """A subscription to somebody's updates for a named skill.
+
+    Notify and review, never install. A channel that could install would
+    hand whoever publishes it the ability to change what an agent on this
+    machine reads, which is the thing the whole approval chain exists to
+    stop.
+    """
+
+    __tablename__ = "skill_channels"
+    __table_args__ = (UniqueConstraint("workspace_id", "name", name="uq_skill_channel"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(GUID, primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    subscribed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    #: The newest version seen through this channel, installed or not.
+    last_seen_hash: Mapped[str] = mapped_column(String, nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+
+    def __repr__(self) -> str:
+        return f"<SkillChannel(name={self.name}, subscribed={self.subscribed})>"
+
+
 # Database session management
 _engine: Engine | None = None
 _SessionLocal: sessionmaker[Session] | None = None

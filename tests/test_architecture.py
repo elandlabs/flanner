@@ -58,6 +58,11 @@ ALLOWED = {
     # not be able to reach a network, and an import boundary says that
     # better than a promise nobody will.
     "skills_eval": {"database"},
+    # Sending and receiving a package. Signs through the same artifact
+    # machinery everything else uses rather than inventing a second
+    # transport, and installs through skills_manage so a package from a
+    # teammate meets the same ownership check a local install does.
+    "skills_mesh": {"artifacts", "database", "skills_manage", "skills_ops"},
     "storage": {"exceptions", "frontmatter", "utils"},
     "freshness": {"utils"},
     "ipc": set(),
@@ -145,7 +150,10 @@ ALLOWED = {
     # `memory_ops` for the same reason `plan_ops` is here: a received
     # artifact has to become something a person can actually see, and the
     # module that knows what a memory is, is the one that can do it.
-    "sync": FOUNDATION | {"artifacts", "database", "plan_ops", "memory_ops"},
+    # `skills_mesh` for the same reason `memory_ops` is here: ingest is the
+    # one place that knows what a verified artifact means, and a second
+    # place deciding that is how the two come to disagree.
+    "sync": FOUNDATION | {"artifacts", "database", "plan_ops", "memory_ops", "skills_mesh"},
     "reconcile": FOUNDATION | {"database", "artifacts", "identity"},
     "services": FOUNDATION
     | {
@@ -190,6 +198,7 @@ ALLOWED = {
         "skills_manage",
         "skills_learn",
         "skills_eval",
+        "skills_mesh",
         # Turning observation on from the page installs the same hook the
         # command line installs, through the same function.
         "agent_hooks",
@@ -261,6 +270,7 @@ ALLOWED = {
         "skills_manage",
         "skills_learn",
         "skills_eval",
+        "skills_mesh",
         # Writes a plan out as a standalone file, and reads back the notes
         # an outside reviewer returned. Both are local reads of local state.
         "packet",

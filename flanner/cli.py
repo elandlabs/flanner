@@ -3842,6 +3842,244 @@ def skills_eval_matrix(suite: str, as_json: bool) -> None:
     console.print()
 
 
+def _skills_workspace_or_exit() -> str:
+    """The workspace a share belongs to, or a refusal.
+
+    Read off the project, the same place memory sharing reads it. Without
+    one there is nobody to send to, and a command that quietly signed an
+    artifact into a workspace of one would look like it had done something.
+    """
+    project = _skills_project_or_exit()
+    workspace = getattr(project, "workspace_id", "") or ""
+    if not workspace:
+        tui.bad("This project has not joined a workspace, so there is nobody to send to.")
+        tui.hint(f"  {tui.command('flanner join <workspace-id>')} joins one.")
+        raise SystemExit(1)
+    return str(workspace)
+
+
+@skills.command("share")
+@click.argument("manifest_hash")
+@click.option(
+    "--name", default=None, help="Name to send it under (read from the package if omitted)"
+)
+@click.option("--agent", default="claude-code", help="Which agent the package is for")
+def skills_share(manifest_hash: str, name: str | None, agent: str) -> None:
+    """Send a stored package to your workspace
+
+    The package files and nothing else. No recorded uses, no evidence, no
+    session references: those are the private half of Flanner Skills, and
+    sending them alongside a skill would turn sharing a useful procedure
+    into telling everybody how you work.
+
+    Sending is not installing on the other end. A package arrives as a
+    transfer and waits for somebody there to decide.
+    """
+    _open_store()
+    from . import skills_mesh
+
+    folder = name or _name_in_snapshot(manifest_hash)
+    if folder is None:
+        tui.bad("Could not read a skill name out of that snapshot; pass --name.")
+        raise SystemExit(1)
+
+    try:
+        sent = skills_mesh.share(
+            get_session(), manifest_hash, folder, _skills_workspace_or_exit(), agent=agent
+        )
+    except (ValueError, OSError) as error:
+        tui.bad(str(error))
+        raise SystemExit(1) from None
+
+    console.print()
+    tui.ok(f"Signed {folder} for your workspace.")
+    console.print(
+        tui.fields(
+            [
+                ("Artifact", sent["artifact_id"]),
+                ("Package", sent["manifest_hash"]),
+                ("Size", tui.size(sent["bytes"])),
+                ("Carries", sent["carries"]),
+            ]
+        )
+    )
+    console.print()
+    tui.hint(f"  {tui.command('flanner peer sync')} sends it on.")
+    console.print()
+
+
+@skills.command("transfers")
+@click.option("--json", "as_json", is_flag=True, help="Machine-readable listing")
+def skills_transfers(as_json: bool) -> None:
+    """Packages that arrived, and where each one got to
+
+    Received, verified and installed are three states because they are
+    three decisions. A package can be verified and still be something this
+    machine never installs.
+    """
+    _open_store()
+    from . import skills_mesh
+
+    rows = skills_mesh.transfers(get_session())
+    if as_json:
+        import json
+
+        click.echo(json.dumps(rows, indent=2))
+        return
+
+    console.print()
+    if not rows:
+        tui.note("Nothing has arrived.")
+        console.print()
+        return
+
+    listing = tui.table("Skill", "State", "From", "Pinned", "Id")
+    for row in rows:
+        style = {
+            "installed": "green",
+            "verified": "cyan",
+            "rejected": "red",
+        }.get(row["state"], "muted")
+        listing.add_row(
+            row["skill"],
+            f"[{style}]{row['state']}[/]",
+            (row["from_device"] or "-")[:12],
+            "yes" if row["pinned"] else f"channel {row['channel']}",
+            row["id"],
+        )
+    console.print(listing)
+    console.print()
+    for row in rows:
+        if row["state"] == "rejected":
+            console.print(f"  {row['skill']}: {row['detail']}", style="red")
+    console.print()
+
+
+@skills.command("import")
+@click.argument("transfer_id")
+@click.option("--project", default=None, help="Repository to install into")
+@click.option("--agent", default="claude-code", help="Which agent to install for")
+@click.option("--force", is_flag=True, help="Overwrite a directory flanner did not install")
+def skills_import(transfer_id: str, project: str | None, agent: str, force: bool) -> None:
+    """Install a package somebody sent you
+
+    Deliberately a separate step from receiving it. A package that did not
+    verify is never installed; one built for another agent is refused
+    rather than written into a layout it was not made for; and the target
+    goes through the same ownership check a local install does.
+    """
+    _open_store()
+    from . import skills_mesh
+    from .skills_manage import ConflictError
+
+    root = Path(project).resolve() if project else _skills_project()
+    if root is None:
+        tui.bad("Not inside a git repository, so there is nowhere to install to.")
+        raise SystemExit(1)
+
+    session = get_session()
+    try:
+        done = skills_mesh.install_transfer(
+            session,
+            transfer_id,
+            root,
+            agent=agent,
+            project=_skills_project_row(session, root),
+            force=force,
+        )
+    except ConflictError as clash:
+        tui.bad(str(clash))
+        tui.hint("  --force overwrites it; the current bytes are stored first either way.")
+        raise SystemExit(1) from None
+    except (ValueError, OSError) as error:
+        tui.bad(str(error))
+        raise SystemExit(1) from None
+
+    console.print()
+    tui.ok(f"Installed {done['skill']}.")
+    console.print(
+        tui.fields(
+            [
+                ("Where", done["target"]),
+                ("Package", done["manifest_hash"]),
+                ("From", done["from_device"][:16] or "a teammate"),
+                ("Undo with", f"flanner skills rollback {done['installation_id']}"),
+            ]
+        )
+    )
+    console.print()
+
+
+@skills.group("channel")
+def skills_channel() -> None:
+    """Follow a skill's updates (notify and review; never install)"""
+
+
+@skills_channel.command("subscribe")
+@click.argument("name")
+def skills_channel_subscribe(name: str) -> None:
+    """Be told when a new version of this skill arrives
+
+    A subscription notices; it does not install. A channel that installed
+    would hand whoever publishes it the ability to change what your agent
+    reads, which is what every approval here exists to stop.
+    """
+    _open_store()
+    from . import skills_mesh
+
+    done = skills_mesh.subscribe(get_session(), _skills_workspace_or_exit(), name)
+    console.print()
+    tui.ok(f"Following {name}.")
+    console.print(f"  {done['note']}", style="muted")
+    console.print()
+
+
+@skills_channel.command("unsubscribe")
+@click.argument("name")
+def skills_channel_unsubscribe(name: str) -> None:
+    """Stop being told about this skill's updates"""
+    _open_store()
+    from . import skills_mesh
+
+    skills_mesh.unsubscribe(get_session(), _skills_workspace_or_exit(), name)
+    console.print()
+    tui.ok(f"No longer following {name}.")
+    console.print()
+
+
+@skills_channel.command("list")
+@click.option("--json", "as_json", is_flag=True, help="Machine-readable listing")
+def skills_channel_list(as_json: bool) -> None:
+    """Skills you are following"""
+    _open_store()
+    from . import skills_mesh
+
+    rows = skills_mesh.channels(get_session())
+    if as_json:
+        import json
+
+        click.echo(json.dumps(rows, indent=2))
+        return
+
+    console.print()
+    if not rows:
+        tui.note("Not following anything.")
+        console.print()
+        return
+
+    listing = tui.table("Skill", "Following", "Newest seen")
+    for row in rows:
+        listing.add_row(
+            row["name"],
+            "[green]yes[/]" if row["subscribed"] else "[muted]no[/]",
+            (row["last_seen_hash"] or "-")[:23],
+        )
+    console.print(listing)
+    console.print()
+    console.print("  Following notifies you. Nothing installs itself.", style="muted")
+    console.print()
+
+
 @cli.group()
 def review() -> None:
     """Propose plans for review and record decisions"""

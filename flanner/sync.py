@@ -174,6 +174,12 @@ def _parents_of(row: Any) -> tuple[str, ...]:
 #: two lists is how they come to disagree.
 MEMORY_TYPES = frozenset({artifacts.MEMORY_RECORD, artifacts.MEMORY_TOMBSTONE})
 
+#: Artifact types carrying a skill package. Separate from the memory list
+#: because they mean different things on arrival: a memory is materialised
+#: and can be recalled straight away, while a package is only filed as a
+#: transfer and waits for somebody here to install it.
+SKILL_TYPES = frozenset({artifacts.SKILL_PACKAGE})
+
 
 def payload_digest(artifact_type: str, payload: bytes) -> str:
     """The hash an envelope's ``content_hash`` must equal for this payload.
@@ -285,6 +291,16 @@ def ingest_artifact(
 
         memory_ops.materialise(
             session, envelope=artifact, body=body or "", workspace_id=artifact.workspace_id
+        )
+    elif artifact.artifact_type in SKILL_TYPES and payload is not None:
+        # Filed, not installed. The signature and the content hash are
+        # already checked above; what this does is record that a package
+        # arrived and whether it hashes to what its sender claimed, so
+        # somebody here can decide about it.
+        from . import skills_mesh
+
+        skills_mesh.materialise(
+            session, envelope=artifact, payload=payload, workspace_id=artifact.workspace_id
         )
     return artifacts.Verdict(True)
 

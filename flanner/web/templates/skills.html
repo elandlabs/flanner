@@ -175,6 +175,56 @@
     {% endif %}
   </div>
 
+  <div class="card" style="margin-top:14px">
+    <div class="card-head">From your team
+      <span class="note">{{ transfers | length }} arrived ·
+        {{ channels | selectattr('subscribed') | list | length }} followed</span></div>
+    {% if transfers %}
+    <div class="grid-row grid-head cols-transfers">
+      <span>Skill</span><span>State</span><span>From</span><span>How</span><span></span>
+    </div>
+    {% for row in transfers %}
+    <div class="grid-row cols-transfers">
+      <span>{{ row.skill }}{% if row.detail and row.state == 'rejected' %}
+        <span class="hint">{{ row.detail }}</span>{% endif %}</span>
+      <span>{% if row.state == 'installed' %}<span class="pill pill-fresh">installed</span>
+        {% elif row.state == 'verified' %}<span class="pill pill-quiet">verified, not installed</span>
+        {% elif row.state == 'rejected' %}<span class="pill pill-stale">rejected</span>
+        {% else %}<span class="pill pill-aging">{{ row.state }}</span>{% endif %}</span>
+      <span class="path">{{ row.from_device[:12] or '-' }}</span>
+      <span class="muted">{% if row.pinned %}a one-time copy{% else %}channel {{ row.channel }}{% endif %}</span>
+      <span>{% if row.state == 'verified' %}
+        <form method="post" action="/skills/import">
+          <input type="hidden" name="transfer_id" value="{{ row.id }}">
+          <button class="btn btn-sm btn-primary">Install</button>
+        </form>{% endif %}</span>
+    </div>
+    {% endfor %}
+    {% else %}
+    <div class="card-pad card-prose">
+      <p>Nothing has arrived. A package a teammate sends shows up here and
+        waits: receiving one is not installing it.</p>
+    </div>
+    {% endif %}
+
+    {% if channels %}
+    <div class="card-pad">
+      {% for row in channels %}
+      <form method="post" action="/skills/channel" class="listctl" style="margin-bottom:6px">
+        <input type="hidden" name="name" value="{{ row.name }}">
+        <input type="hidden" name="action" value="{{ 'unsubscribe' if row.subscribed else 'subscribe' }}">
+        <span>{{ row.name }}</span>
+        <span class="muted">{% if row.subscribed %}following{% else %}not following{% endif %}</span>
+        <button class="btn btn-sm">{{ 'Stop following' if row.subscribed else 'Follow' }}</button>
+      </form>
+      {% endfor %}
+      <p class="hint">Following tells you about a new version. It never
+        installs one: that would hand whoever publishes it control of what
+        your agent reads.</p>
+    </div>
+    {% endif %}
+  </div>
+
   {% if report.findings %}
   <div class="card" style="margin-top:14px">
     <div class="card-head">What is wrong

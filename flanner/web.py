@@ -1695,7 +1695,7 @@ async def skills_page(
         if (shadowed or pkg["effective"]) and (not scope or pkg["scope"] == scope)
     ]
 
-    from . import skills_manage, skills_observe
+    from . import skills_manage, skills_mesh, skills_observe
 
     here = Path(root) if root else None
     return templates.TemplateResponse(
@@ -1714,6 +1714,8 @@ async def skills_page(
             "days": days,
             "stored": await run_in_threadpool(skills_manage.stored),
             "installs": await run_in_threadpool(skills_manage.installations, session, here),
+            "transfers": await run_in_threadpool(skills_mesh.transfers, session, None),
+            "channels": await run_in_threadpool(skills_mesh.channels, session, None),
         },
     )
 
@@ -1898,6 +1900,68 @@ async def skills_revise_form(
     return RedirectResponse(
         f"/skills/proposals?open_id={proposal_id}&said=revised", status_code=303
     )
+
+
+@app.post("/skills/import")
+async def skills_import_form(
+    request: Request, transfer_id: str = Form(...), force: str = Form("")
+) -> RedirectResponse:
+    """Install a package a teammate sent, from the page that listed it.
+
+    A separate action from receiving it, on this surface as on the other:
+    a verified package sits until somebody here decides, and this is that
+    decision rather than a confirmation of one already taken.
+    """
+    ensure_db()
+    session = get_session()
+    from . import skills_mesh
+    from .database import get_project_by_root
+
+    root = find_git_root(str(Path.cwd()))
+    if root is None:
+        return RedirectResponse("/skills?said=not+a+repository", status_code=303)
+
+    try:
+        await run_in_threadpool(
+            functools.partial(
+                skills_mesh.install_transfer,
+                session,
+                transfer_id,
+                Path(root),
+                project=get_project_by_root(session, root),
+                force=bool(force),
+            )
+        )
+    except Exception as error:  # noqa: BLE001 - every refusal is shown, not raised
+        return RedirectResponse(f"/skills?said={quote(str(error))}", status_code=303)
+    return RedirectResponse("/skills?said=installed", status_code=303)
+
+
+@app.post("/skills/channel")
+async def skills_channel_form(
+    request: Request, name: str = Form(...), action: str = Form("subscribe")
+) -> RedirectResponse:
+    """Follow or stop following a skill's updates. Never installs."""
+    ensure_db()
+    session = get_session()
+    from . import skills_mesh
+    from .database import get_project_by_root
+
+    root = find_git_root(str(Path.cwd()))
+    project = get_project_by_root(session, root) if root else None
+    workspace = getattr(project, "workspace_id", "") if project else ""
+    if not workspace:
+        return RedirectResponse(
+            "/skills?said=this+project+has+not+joined+a+workspace", status_code=303
+        )
+
+    if action == "subscribe":
+        await run_in_threadpool(skills_mesh.subscribe, session, workspace, name)
+        said = "following+" + quote(name)
+    else:
+        await run_in_threadpool(skills_mesh.unsubscribe, session, workspace, name)
+        said = "no+longer+following+" + quote(name)
+    return RedirectResponse(f"/skills?said={said}", status_code=303)
 
 
 @app.get("/settings", response_class=HTMLResponse)

@@ -60,6 +60,11 @@ REQUIRED_ROLE: dict[str, frozenset[str]] = {
     # a review may also say "the staging cluster rebuilds on Sundays".
     artifacts.MEMORY_RECORD: workflow.MAY_COMMENT,
     artifacts.MEMORY_TOMBSTONE: workflow.MAY_COMMENT,
+    # Sending a skill package asks for the same role, on the same
+    # reasoning and one more: receiving is not installing. A package that
+    # arrives sits as a transfer until somebody on that machine installs
+    # it, so sending one cannot change what a colleague's agent loads.
+    artifacts.SKILL_PACKAGE: workflow.MAY_COMMENT,
 }
 
 #: Artifact types that only travel when the entitlement includes memory
