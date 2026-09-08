@@ -260,3 +260,118 @@ def test_ordinary_files_are_left_alone(store):
 
     for target in (repo / "README.md", repo / "src" / "main.py", repo / ".flanner" / "notes.txt"):
         assert _write(session, target, repo) is None, target
+
+
+# --- the pending queue --------------------------------------------------------
+
+
+def _propose(session, project, **kwargs):
+    from flanner.memory_policy import Policy
+
+    return memory_ops.consider(
+        session,
+        [memory_ops.Candidate(**kwargs)],
+        policy=Policy(),
+        project=project,
+    )[0]
+
+
+def test_the_pending_page_shows_what_is_waiting(client, store):
+    session, project, repo = store
+    _propose(
+        session,
+        project,
+        content="Use advisory locks rather than Redis.",
+        category="decision",
+        why_durable="settles how the queue works",
+    )
+
+    page = client.get("/memory/pending")
+
+    assert page.status_code == 200
+    assert "advisory locks" in page.text
+    assert "settles how the queue works" in page.text
+
+
+def test_the_pending_page_says_nothing_is_recalled_yet(client, store):
+    """The distinction the whole mode rests on. A page that showed
+    suggestions as memories would make approving meaningless."""
+    session, project, repo = store
+    _propose(session, project, content="A decision.", category="decision")
+
+    page = client.get("/memory/pending")
+
+    assert "Suggestions, not memories" in page.text
+    assert "None of these is being recalled" in page.text
+
+
+def test_pending_is_read_as_a_page_not_an_id(client, store):
+    """`/memory/pending` and `/memory/{id}` share a shape, so the order
+    they are declared in decides which one answers."""
+    assert client.get("/memory/pending").status_code == 200
+
+
+def test_an_empty_queue_explains_why_it_is_empty(client, store):
+    """Empty because nothing was offered and empty because capture is off
+    are different situations with the same appearance."""
+    page = client.get("/memory/pending")
+
+    assert page.status_code == 200
+    assert "Nothing waiting" in page.text
+    assert "suggest" in page.text
+
+
+def test_the_badge_counts_what_needs_a_decision(client, store):
+    """A number nobody has to act on teaches people to stop reading it."""
+    session, project, repo = store
+    memory_ops.remember(session, content="Already kept.", category="fact", project=project)
+    before = client.get("/memory").text
+
+    _propose(session, project, content="Offered, not kept.", category="decision")
+    after = client.get("/memory").text
+
+    assert "waiting on you" not in before.lower()
+    assert "waiting on you" in after.lower()
+
+
+def test_approving_from_the_page_puts_it_in_recall(store):
+    from fastapi.testclient import TestClient
+
+    from flanner.web import app
+
+    session, project, repo = store
+    outcome = _propose(session, project, content="Use advisory locks.", category="decision")
+    poster = TestClient(app, base_url="http://127.0.0.1", follow_redirects=False)
+
+    answer = poster.post(
+        "/memory/pending/decide", data={"memory_id": outcome["id"], "decision": "approve"}
+    )
+
+    assert answer.status_code == 303
+    assert answer.headers["location"] == "/memory/pending"
+    assert memory_ops.recall(session, query="advisory locks", project_id=project.id)["memories"]
+
+
+def test_discarding_from_the_page_removes_it(store):
+    from fastapi.testclient import TestClient
+
+    from flanner.web import app
+
+    session, project, repo = store
+    outcome = _propose(session, project, content="Use advisory locks.", category="decision")
+    poster = TestClient(app, base_url="http://127.0.0.1", follow_redirects=False)
+
+    poster.post("/memory/pending/decide", data={"memory_id": outcome["id"], "decision": "reject"})
+
+    assert memory_ops.pending(session) == []
+
+
+def test_the_managed_block_tells_an_agent_to_offer_rather_than_save(store):
+    """The distinction that makes suggest mode work. An agent that calls
+    `remember` for its own conclusions has skipped the policy entirely."""
+    session, project, repo = store
+
+    block = agent_hooks.agent_md_block(project)
+
+    assert "memory_consider" in block
+    assert "waits for approval" in block

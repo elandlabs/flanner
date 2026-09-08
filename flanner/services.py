@@ -982,6 +982,90 @@ def memory_rebuild() -> dict[str, Any]:
     }
 
 
+def memory_consider(
+    candidates: list[dict[str, Any]],
+    scope: str = "project",
+    project_id: str | None = None,
+    created_by: str = "claude",
+) -> dict[str, Any]:
+    """Offer candidates for capture and report what happened to each."""
+    from . import memory_ops
+
+    try:
+        ensure_database()
+        session = get_session()
+        resolved_scope, project = _memory_scope(session, scope, project_id)
+        policy = memory_ops.policy_for(project)
+        offered = [
+            memory_ops.Candidate(
+                content=str(item.get("content") or ""),
+                category=str(item.get("category") or ""),
+                confidence=str(item.get("confidence") or "confirmed"),
+                why_durable=str(item.get("why_durable") or ""),
+                source_refs=tuple(item.get("source_refs") or ()),
+                explicit=bool(item.get("explicit")),
+                sensitivity=str(item.get("sensitivity") or "normal"),
+                source_type=str(item.get("source_type") or "agent_suggested"),
+            )
+            for item in candidates
+        ]
+        outcomes = memory_ops.consider(
+            session,
+            offered,
+            policy=policy,
+            project=project,
+            scope=resolved_scope,
+            created_by=created_by,
+        )
+    except Exception as e:  # noqa: BLE001 - the seam returns, never raises
+        return {"error": True, "message": str(e)}
+
+    kept = sum(1 for o in outcomes if o["outcome"] in ("committed", "proposed"))
+    return {
+        "capture_mode": policy.capture_mode,
+        "outcomes": outcomes,
+        "message": (
+            f"{kept} of {len(outcomes)} kept. "
+            + (
+                "Nothing is in recall until it is approved."
+                if any(o["outcome"] == "proposed" for o in outcomes)
+                else "Nothing is waiting on you."
+            )
+        ),
+    }
+
+
+def memory_decide(
+    memory_id: str,
+    decision: str,
+    content: str | None = None,
+    supersede_conflict: bool = False,
+    created_by: str = "claude",
+) -> dict[str, Any]:
+    """Approve, edit or reject one proposal."""
+    from . import memory_ops
+
+    try:
+        ensure_database()
+        session = get_session()
+        outcome = memory_ops.decide(
+            session,
+            memory_id=UUID(memory_id),
+            decision=decision,
+            content=content,
+            supersede_conflict=supersede_conflict,
+            created_by=created_by,
+        )
+    except Exception as e:  # noqa: BLE001
+        return {"error": True, "message": str(e)}
+
+    outcome["message"] = {
+        "approved": "Approved. It will be recalled from now on.",
+        "rejected": "Rejected and removed. It was never in recall.",
+    }.get(outcome["outcome"], "Done.")
+    return outcome
+
+
 def _memory_time(value: str | None) -> Any:
     """An ISO timestamp from a caller, or nothing."""
     if not value:
@@ -1011,6 +1095,8 @@ REGISTRY: dict[str, Callable[..., Any]] = {
     "memory_forget": memory_forget,
     "memory_restore": memory_restore,
     "memory_rebuild": memory_rebuild,
+    "memory_consider": memory_consider,
+    "memory_decide": memory_decide,
 }
 
 

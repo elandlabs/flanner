@@ -38,7 +38,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from . import database as db
-from . import memory_guard
+from . import memory_guard, memory_policy
 from .database import (
     MEMORY_CATEGORIES,
     NO_PROJECT,
@@ -66,6 +66,7 @@ from .frontmatter import (
     validate_memory_frontmatter,
 )
 from .identity import flanner_home
+from .memory_policy import Policy
 from .storage import atomic_write_text, exclusive_lock
 from .utils import utcnow
 
@@ -766,6 +767,452 @@ def expire_due(session: Session, *, now: datetime | None = None) -> int:
     return moved
 
 
+# --- deciding what is worth remembering ---------------------------------------
+#
+# `remember` is what a person asks for. This is what an agent offers, and
+# the difference matters: an offer has to be checked before it is kept.
+#
+# What is checked here is only what a program can check. The agent decides
+# the category and how sure it is; a server that has never seen the
+# conversation cannot second-guess either, and pretending otherwise would
+# put a confident wrong judgement between somebody and their own notes.
+# What this does instead is arithmetic: credentials, duplicates, allowlists,
+# quotas, and a lexical hint that two memories may disagree.
+
+
+#: Why a candidate was not kept. Machine-readable so a client can act on it
+#: and short enough to print.
+REJECTED_NO_SCOPE = "no_scope"
+REJECTED_CAPTURE_OFF = "capture_off"
+REJECTED_EXPLICIT_ONLY = "explicit_only"
+# noqa justified: this is the name of a refusal, not a credential. It is
+# the reason returned when one is found, which is the opposite of storing
+# one, and the rule matches on the word alone.
+REJECTED_SECRET = "secret"  # noqa: S105
+REJECTED_DENIED_SOURCE = "denied_source"
+REJECTED_CATEGORY = "category_not_allowed"
+REJECTED_TOO_LONG = "too_long"
+REJECTED_EMPTY = "empty"
+REJECTED_QUOTA = "quota_reached"
+
+#: Similarity at which two memories are the same claim in different words,
+#: and the band below it where they may be contradicting each other.
+#:
+#: Measured as Jaccard overlap of lowercased words. Crude, and deliberately
+#: so: it is a hint a person resolves, not a judgement, and something a
+#: reader can reason about beats something that is right more often and
+#: cannot be argued with.
+SAME_CLAIM = 0.8
+MAYBE_CONFLICTING = 0.4
+
+#: Words that turn a near-match into a possible disagreement rather than a
+#: restatement. A short list on purpose: every addition widens what gets
+#: flagged, and a flag people learn to dismiss is worse than none.
+_NEGATIONS = ("not", "never", "no longer", "instead", "rather than", "stop", "avoid")
+
+
+def _words(text_body: str) -> set[str]:
+    return {w for w in re.findall(r"[a-z0-9']+", text_body.lower()) if len(w) > 2}
+
+
+def similarity(left: str, right: str) -> float:
+    """How much two bodies overlap, between 0 and 1."""
+    a, b = _words(left), _words(right)
+    if not a or not b:
+        return 0.0
+    return len(a & b) / len(a | b)
+
+
+def _disagrees(left: str, right: str) -> bool:
+    """Whether two similar bodies look like they are contradicting.
+
+    A negation on one side and not the other, or a number that differs.
+    Both are guesses; neither decides anything on its own.
+    """
+    low_left, low_right = left.lower(), right.lower()
+    negated = [word for word in _NEGATIONS if (word in low_left) != (word in low_right)]
+    numbers_left = set(re.findall(r"\d+", left))
+    numbers_right = set(re.findall(r"\d+", right))
+    return bool(negated) or (
+        bool(numbers_left) and bool(numbers_right) and numbers_left != numbers_right
+    )
+
+
+@dataclass(frozen=True)
+class Candidate:
+    """One thing an agent offers to remember."""
+
+    content: str
+    category: str
+    confidence: str = "confirmed"
+    #: Why the agent believes this outlives the conversation. Not checked,
+    #: recorded: it is what a person reads when deciding whether to keep it,
+    #: and asking for it makes an agent think before offering.
+    why_durable: str = ""
+    source_refs: tuple[str, ...] = ()
+    #: True only when the user said to remember this. It raises what modes
+    #: will accept the candidate and never bypasses a safety gate.
+    explicit: bool = False
+    sensitivity: str = "normal"
+    source_type: str = "agent_suggested"
+
+
+def _quota_used_today(session: Session, *, action: str, auto: bool) -> int:
+    """How many automatic commits have already happened today.
+
+    Counted from the events rather than kept as a number, because a counter
+    is a second thing to keep true and this is asked once per candidate.
+    """
+    from .database import MemoryEventModel
+
+    since = utcnow() - timedelta(days=1)
+    rows = (
+        session.query(MemoryEventModel)
+        .filter(MemoryEventModel.action == action, MemoryEventModel.at >= since)
+        .all()
+    )
+    return sum(1 for row in rows if json.loads(row.detail or "{}").get("auto") is auto)
+
+
+def _nearest(
+    session: Session, *, body: str, scope: str, project_id: UUID, category: str
+) -> tuple[MemoryModel | None, float]:
+    """The most similar active memory in the same scope and category."""
+    best: MemoryModel | None = None
+    best_score = 0.0
+    for memory in list_memories(session, scope=scope, project_id=project_id, category=category):
+        score = similarity(body, memory.body)
+        if score > best_score:
+            best, best_score = memory, score
+    return best, best_score
+
+
+def consider(
+    session: Session,
+    candidates: list[Candidate],
+    *,
+    policy: Policy,
+    project: ProjectModel | None = None,
+    scope: str = PROJECT,
+    created_by: str = "claude",
+) -> list[dict[str, Any]]:
+    """Run every candidate through the gates, and say what happened to each.
+
+    Never raises. A bad candidate is an outcome with a reason, because this
+    is called with a list and one unusable item must not cost the rest.
+
+    The order of the gates is the order of the costs. Anything free and
+    disqualifying comes first, so a credential is refused before a database
+    is touched and a category that is not allowed never reaches a search.
+    """
+    outcomes: list[dict[str, Any]] = []
+    committed_today = _quota_used_today(session, action="created", auto=True)
+
+    for index, candidate in enumerate(candidates):
+        outcome = _consider_one(
+            session,
+            candidate,
+            policy=policy,
+            project=project,
+            scope=scope,
+            created_by=created_by,
+            committed_today=committed_today,
+            proposed_so_far=sum(1 for o in outcomes if o["outcome"] == "proposed"),
+        )
+        outcome["index"] = index
+        if outcome["outcome"] == "committed":
+            committed_today += 1
+        outcomes.append(outcome)
+
+    return outcomes
+
+
+def _refused(reason: str, detail: str = "") -> dict[str, Any]:
+    return {"outcome": "rejected", "reason": reason, "detail": detail}
+
+
+def _consider_one(
+    session: Session,
+    candidate: Candidate,
+    *,
+    policy: Policy,
+    project: ProjectModel | None,
+    scope: str,
+    created_by: str,
+    committed_today: int,
+    proposed_so_far: int,
+) -> dict[str, Any]:
+    """One candidate through the gates. The first failure decides."""
+    # 1. Scope. Personal capture is off unless the policy says otherwise,
+    # because a memory filed against the wrong scope is found by the wrong
+    # sessions and nobody goes looking for it in the right one.
+    if scope == PERSONAL and not policy.allow_personal:
+        return _refused(REJECTED_NO_SCOPE, "this policy does not allow personal capture")
+    if scope == PROJECT and project is None:
+        return _refused(REJECTED_NO_SCOPE, "no flanner project here to scope this to")
+    if scope == WORKSPACE:
+        return _refused(REJECTED_NO_SCOPE, "workspace memory is not available yet")
+
+    # 2. Mode.
+    if policy.capture_mode == memory_policy.OFF:
+        return _refused(REJECTED_CAPTURE_OFF, "capture is off for this project")
+    if policy.capture_mode == memory_policy.EXPLICIT and not candidate.explicit:
+        return _refused(REJECTED_EXPLICIT_ONLY, "this project keeps only what somebody asks it to")
+
+    body = normalise(candidate.content)
+    if not body:
+        return _refused(REJECTED_EMPTY, "a memory needs a body")
+
+    # 3. Secrets, before anything reads or writes. A credential must be
+    # refused whatever else is true of the candidate.
+    detections = memory_guard.scan(body)
+    if detections:
+        return _refused(
+            f"{REJECTED_SECRET}:{detections[0].name}", memory_guard.describe(detections)
+        )
+
+    # 4. Where it came from.
+    if candidate.source_type in policy.deny_sources:
+        return _refused(REJECTED_DENIED_SOURCE, f"{candidate.source_type} is not a source to keep")
+
+    # 5. What kind of thing it is.
+    if candidate.category not in MEMORY_CATEGORIES:
+        return _refused(REJECTED_CATEGORY, f"{candidate.category!r} is not a category")
+    if not policy.allows(candidate.category):
+        return _refused(REJECTED_CATEGORY, f"this project does not keep {candidate.category}")
+
+    # 6. Size. One durable claim, not a summary of ten.
+    if len(body) > MAX_BODY_CHARS:
+        return _refused(REJECTED_TOO_LONG, f"{len(body)} characters; a memory is one claim")
+
+    project_id = project.id if scope == PROJECT and project else NO_PROJECT
+
+    # 7. Already known, exactly.
+    digest = content_hash(body)
+    exact = find_memory_by_hash(session, scope=scope, project_id=project_id, content_hash=digest)
+    if exact is not None:
+        return {"outcome": "duplicate", "duplicate_of": str(exact.id), "title": exact.title}
+
+    # 8. Already known, in other words; or disagreeing with something known.
+    nearest, score = _nearest(
+        session, body=body, scope=scope, project_id=project_id, category=candidate.category
+    )
+    #
+    # Disagreement is checked before sameness, not after. Two sentences
+    # differing only in a number are the most similar a contradiction ever
+    # gets -- "20 requests a second" against "50 requests a second" overlaps
+    # almost entirely -- so testing for a duplicate first would file the
+    # clearest possible conflict as a restatement and drop it.
+    conflict: dict[str, Any] | None = None
+    disagrees = nearest is not None and _disagrees(body, nearest.body)
+
+    if nearest is not None and score >= SAME_CLAIM and not disagrees:
+        return {
+            "outcome": "duplicate",
+            "duplicate_of": str(nearest.id),
+            "title": nearest.title,
+            "similarity": round(score, 2),
+        }
+    if nearest is not None and score >= MAYBE_CONFLICTING and disagrees:
+        conflict = {
+            "id": str(nearest.id),
+            "title": nearest.title,
+            "confidence": nearest.confidence,
+            "similarity": round(score, 2),
+        }
+
+    # 9. Quotas. Counted per day for commits and per call for proposals,
+    # which is the closest thing to a session this seam can see.
+    if proposed_so_far >= policy.max_suggestions_per_session:
+        return _refused(REJECTED_QUOTA, f"already suggested {proposed_so_far} this session")
+
+    # 10. Commit, or offer.
+    automatic = (
+        policy.captures_automatically
+        and candidate.confidence == "confirmed"
+        and candidate.sensitivity == "normal"
+        and not policy.needs_approval(candidate.category)
+        and conflict is None
+        and committed_today < policy.max_auto_commits_per_day
+    )
+    status = "active" if automatic else "proposed"
+
+    try:
+        memory, _created = remember(
+            session,
+            content=body,
+            category=candidate.category,
+            scope=scope,
+            project=project,
+            confidence=candidate.confidence,
+            sensitivity=candidate.sensitivity,
+            source_type=candidate.source_type,
+            source_refs=list(candidate.source_refs),
+            created_by=created_by,
+            status=status,
+        )
+    except SecretRejected as e:  # pragma: no cover - gate 3 catches these first
+        return _refused(REJECTED_SECRET, str(e))
+    except ValidationError as e:
+        return _refused("refused", str(e))
+
+    detail: dict[str, Any] = {"auto": automatic, "why_durable": candidate.why_durable}
+    if conflict:
+        detail["possible_conflict_with"] = conflict["id"]
+    record_memory_event(
+        session,
+        memory_id=memory.id,
+        action="created" if automatic else "proposed",
+        actor=created_by,
+        detail=json.dumps(detail),
+    )
+
+    result: dict[str, Any] = {
+        "outcome": "committed" if automatic else "proposed",
+        "id": str(memory.id),
+        "title": memory.title,
+        "category": memory.category,
+        "scope": memory.scope,
+    }
+    if conflict:
+        result["possible_conflict_with"] = conflict
+    return result
+
+
+def pending(
+    session: Session, *, project_id: UUID | None = None, limit: int = 50
+) -> list[dict[str, Any]]:
+    """Proposals waiting on somebody, oldest first.
+
+    Oldest first because a queue that shows the newest is a queue where the
+    bottom is never reached.
+    """
+    rows = [
+        memory
+        for memory in list_memories(session, status="proposed", limit=None)
+        if project_id is None or memory.project_id == project_id or memory.scope == PERSONAL
+    ]
+    rows.sort(key=lambda m: m.created_at or utcnow())
+
+    out: list[dict[str, Any]] = []
+    for memory in rows[:limit]:
+        entry = _as_payload(Recalled(memory, 0.0, "awaiting a decision"), full=True)
+        entry["status"] = memory.status
+        for event in list_memory_events(session, memory.id):
+            detail = json.loads(event.detail or "{}")
+            if event.action == "proposed":
+                entry["why_durable"] = detail.get("why_durable", "")
+                if detail.get("possible_conflict_with"):
+                    entry["possible_conflict_with"] = detail["possible_conflict_with"]
+        out.append(entry)
+    return out
+
+
+def decide(
+    session: Session,
+    *,
+    memory_id: UUID,
+    decision: str,
+    content: str | None = None,
+    supersede_conflict: bool = False,
+    created_by: str = "claude",
+) -> dict[str, Any]:
+    """Approve, edit or reject a proposal.
+
+    Rejecting purges rather than marking. A suggestion somebody turned down
+    is not history anybody wants, and keeping it would mean the queue grows
+    forever with things already decided against.
+    """
+    memory = get_memory(session, memory_id)
+    if memory is None:
+        raise NotFoundError(f"No memory with id {memory_id}")
+    if memory.status != "proposed":
+        raise ValidationError(f"that memory is {memory.status}, not a proposal")
+
+    if decision == "reject":
+        path = Path(memory.file_path)
+        _unindex(session, memory.id)
+        delete_memory(session, memory.id)
+        path.unlink(missing_ok=True)
+        return {"id": str(memory_id), "outcome": "rejected"}
+
+    if decision not in ("approve", "edit"):
+        raise ValidationError("decision must be approve, edit or reject")
+
+    conflict_id = _conflict_of(session, memory)
+    if conflict_id and not supersede_conflict:
+        other = get_memory(session, conflict_id)
+        if other is not None and other.status == "active" and other.confidence == "confirmed":
+            raise ValidationError(
+                f"this may contradict {other.id} ({other.title!r}), which somebody "
+                "confirmed. Approve it as a correction instead, or say to supersede."
+            )
+
+    if decision == "edit":
+        if not content:
+            raise ValidationError("editing a proposal needs the text to keep")
+        project = db.get_project(session, memory.project_id) if memory.scope == PROJECT else None
+        # Rejecting and re-remembering rather than rewriting in place: the
+        # body decides the id's own hash and the file's name, and editing
+        # around that would leave three things to keep in step.
+        decide(session, memory_id=memory.id, decision="reject", created_by=created_by)
+        edited, _ = remember(
+            session,
+            content=content,
+            category=memory.category,
+            scope=memory.scope,
+            project=project,
+            confidence=memory.confidence,
+            sensitivity=memory.sensitivity,
+            source_type=memory.source_type,
+            source_refs=json.loads(memory.source_refs or "[]"),
+            created_by=created_by,
+        )
+        record_memory_event(
+            session,
+            memory_id=edited.id,
+            action="approved",
+            actor=created_by,
+            detail=json.dumps({"edited": True, "from": str(memory_id)}),
+        )
+        return {"id": str(edited.id), "outcome": "approved", "edited": True}
+
+    memory.status = "active"
+    session.commit()
+    _reindex(session, memory)
+    record_memory_event(session, memory_id=memory.id, action="approved", actor=created_by)
+
+    if conflict_id and supersede_conflict:
+        other = get_memory(session, conflict_id)
+        if other is not None and other.status == "active":
+            other.status = "superseded"
+            memory.supersedes_id = other.id
+            session.commit()
+            _reindex(session, other)
+            record_memory_event(
+                session,
+                memory_id=other.id,
+                action="superseded",
+                actor=created_by,
+                detail=json.dumps({"by": str(memory.id), "reason": "approved as a correction"}),
+            )
+    return {"id": str(memory.id), "outcome": "approved"}
+
+
+def _conflict_of(session: Session, memory: MemoryModel) -> UUID | None:
+    """The memory this proposal was flagged as possibly contradicting."""
+    for event in list_memory_events(session, memory.id):
+        found = json.loads(event.detail or "{}").get("possible_conflict_with")
+        if found:
+            return UUID(str(found))
+    return None
+
+
+def policy_for(project: ProjectModel | None) -> Policy:
+    """The effective policy where this project is, or the defaults."""
+    return memory_policy.load(project.project_root if project else None, home=flanner_home())
+
+
 # --- rebuilding --------------------------------------------------------------
 
 
@@ -946,7 +1393,11 @@ __all__ = [
     "Rebuilt",
     "Recalled",
     "SecretRejected",
+    "Candidate",
+    "Policy",
+    "consider",
     "content_hash",
+    "decide",
     "derive_title",
     "describe",
     "drift",
@@ -954,12 +1405,15 @@ __all__ = [
     "forget",
     "memory_dir",
     "normalise",
+    "pending",
+    "policy_for",
     "rebuild",
     "recall",
     "search_all",
     "remember",
     "resolve_project",
     "restore",
+    "similarity",
     "stale_task_context",
     "summary",
     "supersede",

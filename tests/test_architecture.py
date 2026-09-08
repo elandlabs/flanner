@@ -148,6 +148,7 @@ ALLOWED = {
         # rather than reimplementing it here, the same way the plan
         # read tools call into `database` and `storage`.
         "memory_ops",
+        "memory_policy",
     },
     # The web UI reads freshness and MCP registration state so the Freshness
     # and Settings pages cannot disagree with what the CLI prints. Both are
@@ -197,7 +198,11 @@ ALLOWED = {
     # below anything that composes surfaces. It may not reach `account`,
     # `session` or `peer`, which is what "your memory stays on this
     # machine" means when written as a rule rather than a promise.
-    "memory_ops": FOUNDATION | {"database", "storage", "identity", "memory_guard"},
+    # Reading two files and deciding what they mean. Pure, so a policy
+    # can be described in a test without arranging a database.
+    "memory_policy": {"exceptions"},
+    "memory_ops": FOUNDATION
+    | {"database", "storage", "identity", "memory_guard", "memory_policy"},
     "plan_ops": FOUNDATION | {"database", "storage", "artifacts", "identity"},
     "cli": FOUNDATION
     | {
@@ -232,6 +237,7 @@ ALLOWED = {
         # Joining re-roots existing plans, which is a write-path concern.
         "plan_ops",
         "memory_ops",
+        "memory_policy",
         "authz",
         "entitlements",
         "identity",

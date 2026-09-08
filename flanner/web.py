@@ -687,6 +687,7 @@ def _nav(session: Any) -> dict[str, Any]:
         # Cheap, unlike freshness: memory counts are two indexed
         # queries and touch no repository, so this one can be here.
         "nav_memory": count_memories(session),
+        "nav_memory_pending": count_memories(session, status="proposed"),
     }
 
 
@@ -1777,6 +1778,60 @@ async def memory_page(request: Request, q: str = "", status: str = "active") -> 
             **_nav(session),
         },
     )
+
+
+@app.get("/memory/pending", response_class=HTMLResponse)
+async def memory_pending_page(request: Request) -> HTMLResponse:
+    """Suggestions waiting on a decision.
+
+    Declared before `/memory/{memory_id}` so "pending" is read as the page
+    it is rather than as an id that does not parse.
+    """
+    ensure_db()
+    session = get_session()
+    from . import memory_ops
+
+    project = await run_in_threadpool(memory_ops.resolve_project, session)
+    waiting = await run_in_threadpool(
+        functools.partial(memory_ops.pending, session, project_id=project.id if project else None)
+    )
+    policy = await run_in_threadpool(memory_ops.policy_for, project)
+
+    return templates.TemplateResponse(
+        request,
+        "memory_pending.html",
+        {
+            "rows": waiting,
+            "capture_mode": policy.capture_mode,
+            **_nav(session),
+        },
+    )
+
+
+@app.post("/memory/pending/decide")
+async def memory_decide_form(
+    request: Request,
+    memory_id: str = Form(...),
+    decision: str = Form(...),
+    supersede: str = Form(""),
+) -> RedirectResponse:
+    """Approve or reject one suggestion from the page."""
+    ensure_db()
+    from .services import dispatch
+
+    await run_in_threadpool(
+        functools.partial(
+            dispatch,
+            "memory_decide",
+            {
+                "memory_id": memory_id,
+                "decision": decision,
+                "supersede_conflict": bool(supersede),
+                "created_by": "web",
+            },
+        )
+    )
+    return RedirectResponse("/memory/pending", status_code=303)
 
 
 @app.get("/memory/{memory_id}", response_class=HTMLResponse)

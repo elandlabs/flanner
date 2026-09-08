@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Waiting on you{% endblock %}
+
+{% block topbar_back %}
+<a class="btn back" href="/memory" aria-label="Back to memory" title="Back to memory"><span aria-hidden="true">←</span></a>
+{% endblock %}
+
+{% block topbar_main %}
+<h1>Waiting on you</h1>
+<span class="sub">Suggestions, not memories. None of these is being recalled.</span>
+{% endblock %}
+
+{% block content %}
+<div class="pane">
+
+  {% if rows %}
+  {% for row in rows %}
+  <div class="card card-pad">
+    <h2 class="card-title">{{ row.title }}</h2>
+    <p>{{ row.body }}</p>
+
+    {% if row.why_durable %}
+    <p class="hint" style="margin:0">Offered because: {{ row.why_durable }}</p>
+    {% endif %}
+
+    {% if row.possible_conflict_with %}
+    <div class="notice bad" style="margin:10px 0">
+      This may contradict
+      <a href="/memory/{{ row.possible_conflict_with }}">something already remembered</a>.
+      Read both before keeping this one.
+    </div>
+    {% endif %}
+
+    <p class="hint" style="margin:0">
+      {{ row.category }} · {{ row.confidence }} · offered by {{ row.created_by }}
+      · {{ row.created_at }}
+    </p>
+
+    <div style="display:flex;gap:8px;margin-top:12px">
+      <form method="post" action="/memory/pending/decide">
+        <input type="hidden" name="memory_id" value="{{ row.id }}">
+        <input type="hidden" name="decision" value="approve">
+        {% if row.possible_conflict_with %}
+        <input type="hidden" name="supersede" value="1">
+        <button class="btn btn-primary">Keep, replacing the other</button>
+        {% else %}
+        <button class="btn btn-primary">Keep it</button>
+        {% endif %}
+      </form>
+      <form method="post" action="/memory/pending/decide">
+        <input type="hidden" name="memory_id" value="{{ row.id }}">
+        <input type="hidden" name="decision" value="reject">
+        <button class="btn">Discard</button>
+      </form>
+    </div>
+  </div>
+  {% endfor %}
+
+  {% else %}
+  <div class="card card-pad card-prose">
+    <h2 class="card-title">Nothing waiting</h2>
+    <p>Capture is set to <b>{{ capture_mode }}</b> for this project.</p>
+    {% if capture_mode == 'off' %}
+    <p class="hint">Nothing is being captured or suggested. Change it with
+       <code>flanner mem mode suggest</code>.</p>
+    {% elif capture_mode == 'explicit' %}
+    <p class="hint">Only what somebody asks to remember is kept, so nothing
+       will ever appear here.</p>
+    {% else %}
+    <p class="hint">Suggestions appear here when an agent offers something
+       worth remembering.</p>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <div class="footnote" style="margin-top:18px">
+    <span class="i" aria-hidden="true">i</span>
+    Discarding removes a suggestion entirely. A queue that remembers
+    everything anybody turned down stops being a queue.
+  </div>
+
+</div>
+{% endblock %}

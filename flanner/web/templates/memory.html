@@ -18,6 +18,14 @@
 {% block content %}
 <div class="pane">
 
+  {% if nav_memory_pending %}
+  <div class="notice info" style="margin-bottom:14px">
+    {{ nav_memory_pending }} suggestion{{ '' if nav_memory_pending == 1 else 's' }}
+    waiting on you. <a href="/memory/pending">Review</a> them; nothing is
+    recalled until you do.
+  </div>
+  {% endif %}
+
   {% if summary.search == 'scan' %}
   <div class="notice info" style="margin-bottom:14px">
     This Python's SQLite has no full-text index, so search is a slower scan

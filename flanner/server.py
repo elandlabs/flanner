@@ -1434,6 +1434,157 @@ def memory_forget(
     )
 
 
+@mcp.tool()
+def memory_consider(
+    candidates: list[dict[str, Any]],
+    scope: str = "project",
+    project_id: str = "",
+    created_by: str = "claude",
+) -> dict[str, Any]:
+    """
+    Offer things worth remembering, and let the project's policy decide.
+
+    Use this rather than `memory_remember` when YOU noticed something
+    durable and the user did not ask you to save it. The difference
+    matters: `memory_remember` is somebody's instruction, this is your
+    suggestion, and a suggestion gets checked before it is kept.
+
+    Call it at a natural checkpoint: after a decision is settled, after a
+    failed approach is understood, at the end of a piece of work. Not after
+    every message.
+
+    Each candidate is a dict:
+      content       one atomic claim, in your own words, under 2000 chars
+      category      fact | decision | preference | constraint | lesson |
+                    relationship | task_context
+      confidence    confirmed (the user said it) | inferred (you concluded
+                    it) | speculative (a guess). Be honest here; it decides
+                    what may be kept without asking.
+      why_durable   one sentence on why this outlives the conversation.
+                    Nobody checks it; it is what a person reads when
+                    deciding, and writing it makes you consider whether the
+                    thing is worth offering at all.
+      source_refs   optional, e.g. ["plan:architecture_v4", "file:auth.py"]
+      explicit      true only if the user asked for this to be remembered
+
+    Each outcome is one of:
+      committed  saved and searchable now (only under auto_safe policy)
+      proposed   waiting for the user to approve; NOT in recall yet
+      duplicate  already remembered; `duplicate_of` names it
+      rejected   `reason` says why: a credential, a category this project
+                 does not keep, too long, capture switched off
+
+    A proposal may carry `possible_conflict_with`, meaning it looks like it
+    disagrees with something already remembered. Tell the user; do not
+    approve over a confirmed memory on your own.
+
+    Nothing here is stored in recall until it is approved, so offering
+    something and having it refused costs nothing.
+    """
+    return dispatch(
+        "memory_consider",
+        {
+            "candidates": candidates,
+            "scope": scope,
+            "project_id": project_id or None,
+            "created_by": created_by,
+        },
+    )
+
+
+@mcp.tool()
+def memory_pending(project_id: str = "", limit: int = 50) -> dict[str, Any]:
+    """
+    Suggestions waiting for the user to approve, oldest first.
+
+    These are not in recall and will not be returned by `memory_recall`
+    until somebody approves them. Show them to the user when they ask what
+    is waiting, or before offering more of the same kind.
+    """
+    ensure_database()
+    session = get_session()
+    from . import memory_ops
+
+    project = get_project(session, UUID(project_id)) if project_id else None
+    if project is None and not project_id:
+        project = memory_ops.resolve_project(session)
+
+    waiting = memory_ops.pending(session, project_id=project.id if project else None, limit=limit)
+    return {
+        "handling": memory_ops.HANDLING,
+        "count": len(waiting),
+        "pending": waiting,
+    }
+
+
+@mcp.tool()
+def memory_decide(
+    memory_id: str,
+    decision: str,
+    content: str = "",
+    supersede_conflict: bool = False,
+    created_by: str = "claude",
+) -> dict[str, Any]:
+    """
+    Approve, edit or reject one suggestion.
+
+    Only call this when the user has told you what they decided. A
+    suggestion the user has not seen is not one you may approve on their
+    behalf; that would make the whole proposal step decorative.
+
+    decision: "approve" keeps it as written, "edit" keeps `content`
+    instead, "reject" removes it entirely.
+
+    If the suggestion may contradict something already remembered and
+    confirmed, approving is refused. Show the user both, and pass
+    supersede_conflict=true only if they say the new one replaces the old.
+    """
+    return dispatch(
+        "memory_decide",
+        {
+            "memory_id": memory_id,
+            "decision": decision,
+            "content": content or None,
+            "supersede_conflict": supersede_conflict,
+            "created_by": created_by,
+        },
+    )
+
+
+@mcp.tool()
+def memory_policy(project_id: str = "") -> dict[str, Any]:
+    """
+    What this project will let be remembered, and where each rule came from.
+
+    Read it before offering candidates if you want to know whether they
+    will be kept. `capture_mode` is the one that decides: "off" keeps
+    nothing, "explicit" keeps only what the user asks for, "suggest"
+    proposes, "auto_safe" may commit confirmed low-sensitivity categories
+    without asking.
+    """
+    ensure_database()
+    session = get_session()
+    from . import memory_ops
+    from .memory_policy import explain
+
+    project = get_project(session, UUID(project_id)) if project_id else None
+    if project is None and not project_id:
+        project = memory_ops.resolve_project(session)
+
+    policy = memory_ops.policy_for(project)
+    return {
+        "capture_mode": policy.capture_mode,
+        "allow_categories": list(policy.allow_categories),
+        "require_approval": list(policy.require_approval),
+        "allow_personal": policy.allow_personal,
+        "settings": [
+            {"name": name, "value": value, "from": source}
+            for name, value, source in explain(policy)
+        ],
+        "refused": list(policy.refused),
+    }
+
+
 def main(argv: list[str] | None = None) -> None:
     """Run the MCP server.
 

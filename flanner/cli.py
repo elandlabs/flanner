@@ -959,6 +959,282 @@ def mem_rebuild() -> None:
     console.print()
 
 
+@mem.command("pending")
+@click.option("--project", default=None, help="Project name (uses current directory if omitted)")
+@click.option("--output", type=click.Choice(["table", "json"]), default="table")
+def mem_pending(project: str | None, output: str) -> None:
+    """Suggestions waiting on you
+
+    Nothing here is being recalled. A suggestion sits out of the way until
+    somebody decides on it, which is the whole point of proposing rather
+    than saving.
+    """
+    from . import memory_ops
+
+    session = _require_session()
+    proj = _mem_project(session, project)
+    waiting = memory_ops.pending(session, project_id=proj.id if proj else None)
+
+    if output == "json":
+        import json
+
+        click.echo(json.dumps(waiting, indent=2))
+        return
+
+    console.print()
+    if not waiting:
+        tui.note("Nothing waiting.")
+        console.print()
+        return
+
+    for item in waiting:
+        console.print(item["title"], style="value")
+        console.print(f"  {item['body']}", style="white")
+        if item.get("why_durable"):
+            console.print(f"  why: {item['why_durable']}", style="muted")
+        if item.get("possible_conflict_with"):
+            tui.warn(f"  may contradict {item['possible_conflict_with']}")
+        console.print(
+            f"  {item['category']} · {item['confidence']} · {item['created_by']}", style="muted"
+        )
+        console.print(f"  {tui.code(item['id'])}", style="muted")
+        console.print()
+
+    tui.hint(
+        f"  {tui.command('flanner mem approve <id>')} or {tui.command('flanner mem reject <id>')}"
+    )
+    console.print()
+
+
+@mem.command("approve")
+@click.argument("memory_id")
+@click.option("--edit", "content", default=None, help="Keep this text instead of what was offered")
+@click.option(
+    "--supersede",
+    is_flag=True,
+    help="This replaces the memory it was flagged as contradicting",
+)
+def mem_approve(memory_id: str, content: str | None, supersede: bool) -> None:
+    """Keep a suggestion, and start recalling it"""
+    result = _dispatch_or_exit(
+        "memory_decide",
+        {
+            "memory_id": memory_id,
+            "decision": "edit" if content else "approve",
+            "content": content,
+            "supersede_conflict": supersede,
+            "created_by": _whoami(),
+        },
+    )
+    console.print()
+    tui.ok(result["message"])
+    console.print(f"  {tui.code(result['id'])}", style="muted")
+    console.print()
+
+
+@mem.command("reject")
+@click.argument("memory_id")
+def mem_reject(memory_id: str) -> None:
+    """Turn down a suggestion and remove it
+
+    Rejected suggestions are deleted rather than kept as history. A queue
+    that remembers everything anybody declined stops being a queue.
+    """
+    result = _dispatch_or_exit(
+        "memory_decide",
+        {"memory_id": memory_id, "decision": "reject", "created_by": _whoami()},
+    )
+    console.print()
+    tui.ok(result["message"])
+    console.print()
+
+
+@mem.command("mode")
+@click.argument(
+    "capture_mode",
+    required=False,
+    type=click.Choice(["off", "explicit", "suggest", "auto_safe"]),
+)
+@click.option("--project", default=None, help="Project name (uses current directory if omitted)")
+def mem_mode(capture_mode: str | None, project: str | None) -> None:
+    """Show or set how much this project captures
+
+    With no argument, says what the current mode is and where it came from.
+    With one, writes it into this project's policy file.
+    """
+    from . import memory_ops
+    from .memory_policy import POLICY_FILENAME
+
+    session = _require_session()
+    proj = _mem_project(session, project)
+    if proj is None or not proj.project_root:
+        _no_project(project)
+
+    policy = memory_ops.policy_for(proj)
+    if capture_mode is None:
+        console.print()
+        console.print(f"Capture mode  {policy.capture_mode}", style="value")
+        console.print(f"  from {policy.provenance.get('capture_mode', 'default')}", style="muted")
+        console.print()
+        return
+
+    path = Path(proj.project_root) / ".flanner" / POLICY_FILENAME
+    _set_capture_mode(path, capture_mode)
+
+    after = memory_ops.policy_for(proj)
+    console.print()
+    if after.capture_mode != capture_mode:
+        # The merge refuses anything that would loosen the global policy,
+        # so saying "set" here would be a lie the next run exposes.
+        tui.warn(
+            f"Written, but the effective mode is still {after.capture_mode}: "
+            "a project may only tighten what the global policy allows."
+        )
+    else:
+        tui.ok(f"Capture mode is now {capture_mode} for {proj.name}")
+    console.print(f"  {tui.code(str(path))}", style="muted")
+    console.print()
+
+
+def _set_capture_mode(path: Path, capture_mode: str) -> None:
+    """Write one key into a project policy file, keeping the rest.
+
+    Rewritten with yaml rather than edited as text, because a hand-edited
+    file may have comments in places no line-based edit can predict, and
+    losing somebody's comments is a worse outcome than losing formatting.
+    """
+    import yaml
+
+    from .memory_policy import read_file
+    from .storage import atomic_write_text
+
+    data = read_file(path)
+    data.setdefault("version", 1)
+    data["capture_mode"] = capture_mode
+    path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_text(path, yaml.dump(data, default_flow_style=False, sort_keys=False))
+
+
+@mem.group("policy")
+def mem_policy() -> None:
+    """What this project will let be remembered"""
+
+
+@mem_policy.command("show")
+@click.option("--project", default=None, help="Project name (uses current directory if omitted)")
+@click.option("--output", type=click.Choice(["table", "json"]), default="table")
+def mem_policy_show(project: str | None, output: str) -> None:
+    """Every setting, and which file decided it"""
+    from . import memory_ops
+    from .memory_policy import explain
+
+    session = _require_session()
+    proj = _mem_project(session, project)
+    policy = memory_ops.policy_for(proj)
+    rows = explain(policy)
+
+    if output == "json":
+        import json
+
+        click.echo(
+            json.dumps(
+                {
+                    "settings": [
+                        {"name": n, "value": list(v) if isinstance(v, tuple) else v, "from": src}
+                        for n, v, src in rows
+                    ],
+                    "refused": list(policy.refused),
+                },
+                indent=2,
+            )
+        )
+        return
+
+    console.print()
+    table = tui.table("Setting", "Value", "From")
+    for name, value, source in rows:
+        shown = ", ".join(value) if isinstance(value, tuple) else str(value)
+        table.add_row(name, shown or "—", source)
+    console.print(table)
+
+    for refusal in policy.refused:
+        console.print()
+        tui.warn(refusal)
+    console.print()
+
+
+@mem_policy.command("validate")
+@click.option("--project", default=None, help="Project name (uses current directory if omitted)")
+def mem_policy_validate(project: str | None) -> None:
+    """Check both policy files, and say everything wrong with them"""
+    from . import memory_ops
+    from .memory_policy import POLICY_FILENAME, read_file, validate
+
+    session = _require_session()
+    proj = _mem_project(session, project)
+
+    problems: list[str] = []
+    for label, path in (
+        ("global policy", get_mcp_dir() / POLICY_FILENAME),
+        (
+            "project policy",
+            Path(proj.project_root) / ".flanner" / POLICY_FILENAME
+            if proj and proj.project_root
+            else None,
+        ),
+    ):
+        if path is None:
+            continue
+        try:
+            problems += validate(read_file(path), where=label)
+        except (DatabaseError, ValueError) as e:
+            problems.append(str(e))
+
+    console.print()
+    if problems:
+        for problem in problems:
+            tui.bad(problem)
+        console.print()
+        raise SystemExit(1)
+
+    policy = memory_ops.policy_for(proj)
+    tui.ok("Both policy files are valid.")
+    console.print(f"  Capture mode is {policy.capture_mode}.", style="muted")
+    for refusal in policy.refused:
+        tui.warn(f"  {refusal}")
+    console.print()
+
+
+@mem_policy.command("init")
+@click.option("--project", default=None, help="Project name (uses current directory if omitted)")
+@click.option("--force", is_flag=True, help="Overwrite an existing policy file")
+def mem_policy_init(project: str | None, force: bool) -> None:
+    """Write a commented policy file with every setting at its default"""
+    from .memory_policy import POLICY_FILENAME, example
+    from .storage import atomic_write_text
+
+    session = _require_session()
+    proj = _mem_project(session, project)
+    if proj is None or not proj.project_root:
+        _no_project(project)
+
+    path = Path(proj.project_root) / ".flanner" / POLICY_FILENAME
+    if path.exists() and not force:
+        console.print()
+        tui.bad(f"{path} already exists.")
+        tui.hint("  Pass --force to replace it.")
+        console.print()
+        raise SystemExit(1)
+
+    atomic_write_text(path, example())
+    console.print()
+    tui.ok(f"Wrote {path}")
+    console.print(
+        "  Every value in it is the default; delete what you do not change.", style="muted"
+    )
+    console.print()
+
+
 def _dispatch_or_exit(op: str, args: dict[str, Any]) -> dict[str, Any]:
     """Run a memory write, or print why it was refused and stop."""
     _open_store()
