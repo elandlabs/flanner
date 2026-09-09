@@ -141,6 +141,26 @@
         rather than "unused".{% endif %}</p>
     </div>
     {% endif %}
+    {# The coverage, spelled out. A closed window still counts as coverage —
+       correctly, something was watching for part of the period — but a
+       reader seeing "nothing was invoked" while the switch reads off needs
+       telling which of those two facts they are looking at. #}
+    <div class="card-pad" style="padding-top:0">
+      <p class="hint">
+        {% if usage.coverage.watching %}
+          Watched during {{ usage.coverage.windows }}
+          period{{ '' if usage.coverage.windows == 1 else 's' }} of these
+          {{ usage.window_days }} days{% if not (scope_row and scope_row.observing) %},
+          and not watching now{% endif %}.
+        {% else %}
+          Nothing watched any part of these {{ usage.window_days }} days.
+        {% endif %}
+        {% if usage.coverage.dropped %}
+          {{ usage.coverage.dropped }} event(s) arrived and could not be stored,
+          so the counts are short by at least that.
+        {% endif %}
+      </p>
+    </div>
   </div>
 
   <div class="card" style="margin-top:14px">

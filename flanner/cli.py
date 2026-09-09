@@ -2579,6 +2579,11 @@ def _clip(text: str, width: int) -> str:
     return text if len(text) <= width else text[: width - 1] + "…"
 
 
+#: How many advisory findings `doctor` prints before summarising the rest.
+#: Enough to see the shape of them without burying the defects above.
+ADVICE_SHOWN = 8
+
+
 def _scope_style(scope: str) -> str:
     return {"project": "green", "user": "cyan", "plugin": "muted"}.get(scope, "muted")
 
@@ -2719,17 +2724,43 @@ def skills_doctor(project: str | None, agent: str, as_json: bool) -> None:
         console.print()
         return
 
-    listed = tui.table("Finding", "Skill", "Detail")
-    for finding in findings:
-        style = "red" if finding["severity"] == "defect" else "yellow"
-        listed.add_row(
-            f"[{style}]{finding['code']}[/]", finding["skill"], _clip(finding["detail"], 60)
-        )
-    console.print(listed)
-    console.print()
-    for finding in findings:
-        if finding["severity"] == "defect":
-            console.print(f"  {finding['skill']}: {finding['remedy']}", style="muted")
+    # Defects first, and never the same list. Clipping every detail to fit
+    # one table produced rows reading "from 1 place(s). The plug…", which is
+    # a sentence cut where it happened to run out rather than where it
+    # stopped meaning something.
+    defective = [f for f in findings if f["severity"] == "defect"]
+    advisory = [f for f in findings if f["severity"] != "defect"]
+
+    if defective:
+        console.print("  Wrong:", style="muted")
+        console.print()
+        for finding in defective:
+            console.print(f"  {finding['skill']}  [red]{finding['code']}[/]")
+            console.print(f"    {finding['detail']}", style="muted")
+            console.print(f"    {finding['remedy']}", style="muted")
+            console.print(f"    {finding['evidence']}", style="dim")
+            console.print()
+
+    if advisory:
+        # A table, because advice is skimmed rather than read: the reader is
+        # deciding whether any of it is worth opening, not acting on each.
+        #
+        # Capped, because a healthy machine has a lot of it. Measured here:
+        # 47 findings and 254 lines of output for two real defects, which is
+        # how somebody learns to stop reading this command.
+        listed = tui.table("Worth a look", "Skill", "Detail")
+        for finding in advisory[:ADVICE_SHOWN]:
+            listed.add_row(f"[yellow]{finding['code']}[/]", finding["skill"], finding["detail"])
+        console.print(listed)
+        if len(advisory) > ADVICE_SHOWN:
+            kinds = sorted({f["code"] for f in advisory[ADVICE_SHOWN:]})
+            console.print(
+                f"  and {len(advisory) - ADVICE_SHOWN} more ({', '.join(kinds)}); "
+                f"{tui.command('--json')} lists every one.",
+                style="muted",
+            )
+        console.print()
+
     console.print(f"  {defects} defect(s), {report['summary']['advice']} advisory.", style="muted")
     console.print()
     raise SystemExit(1 if defects else 0)

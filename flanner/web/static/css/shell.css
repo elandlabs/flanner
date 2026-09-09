@@ -277,6 +277,10 @@ a:hover { color: var(--accent-hi); }
 .cols-wsaccess { grid-template-columns: 1fr 120px; }
 .cols-review { grid-template-columns: 1.4fr 1fr 110px 130px; }
 .cols-skills { grid-template-columns: 1.3fr 90px 150px 1.4fr 80px; }
+/* The path sits under the name, always. Inline, a short name like `pg` left
+   it on the same line while a long one wrapped it to the next, so the column
+   read as two different layouts depending on the skill. */
+.cols-skills .path { display: block; }
 
 /* A skill's own description, at whatever length its author wrote it. Two
    lines, because a handful of 300-character ones otherwise set the row

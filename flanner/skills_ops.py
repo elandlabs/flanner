@@ -208,6 +208,15 @@ def roots_status(project_root: Path | None = None, agent: str = "claude-code") -
 # --- diagnostics --------------------------------------------------------------
 
 
+def _places(count: int) -> str:
+    """ "one place" or "3 places".
+
+    Written out because `place(s)` in a sentence a person reads is the
+    tell that nobody read it back.
+    """
+    return "one place" if count == 1 else f"{count} places"
+
+
 def diagnose(packages: list[Package]) -> list[Finding]:
     """What is wrong, and what is merely worth a look.
 
@@ -272,9 +281,8 @@ def diagnose(packages: list[Package]) -> list[Finding]:
                     severity=DEFECT if len(origins) > 1 else ADVICE,
                     skill=name,
                     detail=(
-                        f"{len(copies)} copies with different contents, from "
-                        f"{len(origins)} place(s). The {winner.scope} copy wins, so edits "
-                        "to the others have no effect."
+                        f"{len(copies)} copies differ, from {_places(len(origins))}. "
+                        f"The {winner.scope} copy wins."
                     ),
                     evidence="; ".join(f"{c.scope}: {c.directory}" for c in copies),
                     remedy=(
