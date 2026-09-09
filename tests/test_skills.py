@@ -67,6 +67,27 @@ def project(tmp_path):
     return where
 
 
+@pytest.fixture
+def codex_machine(tmp_path, monkeypatch):
+    """The same home, with Codex's own layout beside Claude Code's.
+
+    `.agents/skills` rather than `.claude/skills`, and no plugin cache:
+    Codex has no equivalent, which is why its adapter is three
+    directories rather than a walk.
+    """
+    home = tmp_path / "home"
+    monkeypatch.setenv("FLANNER_SKILLS_HOME", str(home))
+    write_skill(home / ".agents" / "skills", "review", description="Yours, for Codex")
+    return tmp_path
+
+
+@pytest.fixture
+def codex_project(tmp_path):
+    where = tmp_path / "repo"
+    write_skill(where / ".agents" / "skills", "deploy", description="This project's, for Codex")
+    return where
+
+
 # --- discovery ----------------------------------------------------------------
 
 
@@ -122,10 +143,75 @@ def test_the_adapter_says_what_it_cannot_do(machine):
     assert capability.notes
 
 
-def test_there_is_no_adapter_for_an_agent_we_have_not_verified():
-    """Codex reads AGENTS.md but has no verified skills layout. Guessing one
-    would produce an inventory nobody can trust."""
-    assert adapters.adapter_for("codex") is None
+def test_codex_declares_that_it_resolves_nothing():
+    """Its docs say two skills sharing a name are not merged, so an
+    inventory that named a winner would be describing a rule Codex does
+    not have."""
+    capability = adapters.adapter_for("codex").capability()
+    assert capability.discover and not capability.resolve_precedence
+    assert any("share a name" in note for note in capability.notes)
+    # The two places it deliberately does not look are on the record.
+    assert any("bundled" in note for note in capability.notes)
+
+
+def test_codex_skills_are_found_and_carry_their_agent(codex_machine, codex_project):
+    packages = skills_ops.scan(codex_project)
+    codex = {(p.name, p.scope) for p in packages if p.agent == "codex"}
+    assert codex == {("deploy", "project"), ("review", "user")}
+    assert all(
+        p.agent == "codex" for p in packages if "deploy" in p.name and ".agents" in p.directory
+    )
+
+
+def test_codex_offers_every_copy_rather_than_shadowing(codex_machine, codex_project):
+    """Both copies of a name are in effect, because both reach the selector."""
+    write_skill(codex_project / ".agents" / "skills", "review", description="This project's")
+
+    copies = [
+        p for p in skills_ops.scan(codex_project) if p.agent == "codex" and p.name == "review"
+    ]
+    assert len(copies) == 2
+    assert all(p.effective for p in copies)
+
+    codes = {f.code for f in skills_ops.diagnose(copies)}
+    assert "ambiguous_package" in codes and "shadowed_package" not in codes
+
+
+def test_one_name_under_two_agents_is_not_a_collision(machine, project, codex_machine):
+    """Claude Code and Codex each loading an `alpha` is two skills that
+    share a name, not two copies of one.
+
+    The fixture's `alpha` already sits in two Claude Code roots, so there
+    is a genuine collision to report. What must not happen is Codex's copy
+    being counted into it and somebody being sent to delete a file the
+    other agent needs.
+    """
+    codex_copy = write_skill(project / ".agents" / "skills", "alpha", description="Codex's own")
+
+    packages = skills_ops.scan(project)
+    assert {p.agent for p in packages if p.name == "alpha"} == {"claude-code", "codex"}
+    # Codex's copy loads, whatever Claude Code's copies do to each other.
+    assert next(p for p in packages if p.name == "alpha" and p.agent == "codex").effective
+
+    collisions = [f for f in skills_ops.diagnose(packages) if f.skill == "alpha"]
+    assert [f.code for f in collisions] == ["shadowed_package"]
+    assert "2 copies differ" in collisions[0].detail
+    assert str(codex_copy) not in collisions[0].evidence
+
+
+def test_a_scan_covers_every_agent_and_says_which(machine, codex_machine, project):
+    report = skills_ops.report(project)
+    assert report["agents"] == ["claude-code", "codex"]
+    assert report["summary"]["by_agent"]["codex"] >= 1
+    assert report["summary"]["by_agent"]["claude-code"] >= 1
+    # Every root says whose it is, and each note names its agent.
+    assert {r["agent"] for r in report["coverage"]["roots"]} == {"claude-code", "codex"}
+    assert all(note.split(":")[0] in adapters.ADAPTERS for note in report["coverage"]["notes"])
+
+
+def test_asking_for_one_agent_leaves_the_other_out(machine, codex_machine, project):
+    only = skills_ops.scan(project, agent="codex")
+    assert only and {p.agent for p in only} == {"codex"}
 
 
 def test_the_narrowest_scope_wins(machine, project):

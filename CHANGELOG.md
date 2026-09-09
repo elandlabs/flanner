@@ -7,6 +7,14 @@ versioning follows [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Codex skills are read too, and every skill says which agent it belongs
+  to.** `.agents/skills` in the repository, in your home directory, and the
+  machine-wide directory an administrator deploys. Codex does not merge two
+  skills that share a name — its own docs say both can be offered — so
+  flanner reports every copy as loaded rather than inventing a winner, and
+  says plainly that nothing on disk decides which one runs. A name held by
+  both agents is two skills, not a collision. `--agent` narrows a listing to
+  one; every agent is the default.
 - **Every list in the web UI is paged.** Projects, plans, freshness, memory,
   skills and review show fifteen rows at a time, with Previous and Next and
   a rows-per-page menu of 15, 30, 50 or 100. The choice is remembered, and

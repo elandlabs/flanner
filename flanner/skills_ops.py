@@ -184,25 +184,47 @@ def read_package(found: Discovered, effective: bool) -> Package:
     )
 
 
-def scan(project_root: Path | None = None, agent: str = "claude-code") -> list[Package]:
-    """Every skill package a given agent would see for this project."""
-    adapter = adapters.adapter_for(agent)
-    if adapter is None:
-        return []
-    found: list[Discovered] = []
-    for root in adapter.roots(project_root):
-        found.extend(adapter.discover(root))
-    winners = adapters.resolve_precedence(found)
-    return [
-        read_package(item, effective=winners.get(item.name) is item)
-        for item in sorted(found, key=lambda d: (d.name, str(d.directory)))
-    ]
+def _agents(agent: str | None) -> list[str]:
+    """Which adapters a caller asked for. `None` means every one of them."""
+    if agent is None:
+        return list(adapters.ADAPTERS)
+    return [agent] if agent in adapters.ADAPTERS else []
 
 
-def roots_status(project_root: Path | None = None, agent: str = "claude-code") -> list[Root]:
+def scan(project_root: Path | None = None, agent: str | None = None) -> list[Package]:
+    """Every skill package the agents would see for this project.
+
+    Precedence is resolved per agent, never across them. Claude Code and
+    Codex both loading a `deploy` is two skills that happen to share a
+    name, not a collision — and an adapter whose agent offers both copies
+    of a name (Codex does) has every copy reported as in effect, because
+    that is what the agent will do with them.
+    """
+    out: list[Package] = []
+    for name in _agents(agent):
+        adapter = adapters.adapter_for(name)
+        if adapter is None:
+            continue
+        found: list[Discovered] = []
+        for root in adapter.roots(project_root):
+            found.extend(adapter.discover(root))
+        if adapter.capability().resolve_precedence:
+            winners = adapters.resolve_precedence(found)
+            in_effect = {id(w) for w in winners.values()}
+        else:
+            in_effect = {id(item) for item in found}
+        out.extend(read_package(item, effective=id(item) in in_effect) for item in found)
+    return sorted(out, key=lambda p: (p.name, p.agent, p.directory))
+
+
+def roots_status(project_root: Path | None = None, agent: str | None = None) -> list[Root]:
     """The roots that were looked at, so a reader can see the scan's reach."""
-    adapter = adapters.adapter_for(agent)
-    return adapter.roots(project_root) if adapter else []
+    out: list[Root] = []
+    for name in _agents(agent):
+        adapter = adapters.adapter_for(name)
+        if adapter is not None:
+            out.extend(adapter.roots(project_root))
+    return out
 
 
 # --- diagnostics --------------------------------------------------------------
@@ -242,14 +264,20 @@ def diagnose(packages: list[Package]) -> list[Finding]:
                 )
             )
 
-    by_name: dict[str, list[Package]] = {}
+    # Keyed by agent as well as name. Claude Code and Codex both holding a
+    # `deploy` is two skills that share a name, not two copies of one: they
+    # are read from different directories by different programs, and
+    # reporting them as a collision would send somebody to delete a file
+    # the other agent needs.
+    by_name: dict[tuple[str, str], list[Package]] = {}
     for pkg in packages:
-        by_name.setdefault(pkg.name, []).append(pkg)
+        by_name.setdefault((pkg.name, pkg.agent), []).append(pkg)
 
-    for name, copies in sorted(by_name.items()):
+    for (name, agent), copies in sorted(by_name.items()):
         if len(copies) < 2:
             continue
         hashes = {c.manifest_hash for c in copies}
+        shadows = adapters.shadows(agent)
         winner = next((c for c in copies if c.effective), copies[0])
         others = [c for c in copies if c is not winner]
 
@@ -262,12 +290,15 @@ def diagnose(packages: list[Package]) -> list[Finding]:
                     detail=(
                         f"{len(copies)} identical copies. The {winner.scope} copy is the one "
                         "that loads; the rest are dead weight."
+                        if shadows
+                        else f"{len(copies)} identical copies, and {agent} offers each of them. "
+                        "The same skill appears several times on the menu."
                     ),
                     evidence="; ".join(c.directory for c in others),
                     remedy="Remove the copies you did not mean to keep.",
                 )
             )
-        else:
+        elif shadows:
             # Where the copies came from decides how bad this is. Several
             # revisions of one plugin, all differing, is how an agent stores
             # a plugin it has updated — normal, and worth no more than a
@@ -288,6 +319,27 @@ def diagnose(packages: list[Package]) -> list[Finding]:
                     remedy=(
                         "Decide which one is real. Editing a shadowed copy is the usual "
                         "cause of 'my change did nothing'."
+                    ),
+                )
+            )
+        else:
+            # An agent that offers every copy has no shadow to resolve, and
+            # that makes differing copies worse rather than better: nothing
+            # on disk decides which one runs, so the model picks by name
+            # alone and the answer can change between turns.
+            findings.append(
+                Finding(
+                    code="ambiguous_package",
+                    severity=DEFECT,
+                    skill=name,
+                    detail=(
+                        f"{len(copies)} copies differ and {agent} offers all of them. "
+                        "Nothing here decides which one runs."
+                    ),
+                    evidence="; ".join(f"{c.scope}: {c.directory}" for c in copies),
+                    remedy=(
+                        "Give them different names, or delete the copies you did not "
+                        "mean to keep. There is no precedence rule to fall back on."
                     ),
                 )
             )
@@ -321,6 +373,12 @@ def summarise(packages: list[Package], findings: list[Finding]) -> dict[str, Any
         "by_scope": {
             scope: sum(1 for p in packages if p.scope == scope) for scope in adapters.SCOPE_ORDER
         },
+        # Which agent each skill belongs to. Every adapter appears, a zero
+        # included: "Codex has none here" is an answer, and leaving the key
+        # out would make it look like the question was never asked.
+        "by_agent": {
+            agent: sum(1 for p in packages if p.agent == agent) for agent in adapters.ADAPTERS
+        },
         "defects": sum(1 for f in findings if f.severity == DEFECT),
         "advice": sum(1 for f in findings if f.severity == ADVICE),
         "size_bytes": sum(p.size_bytes for p in effective),
@@ -329,7 +387,7 @@ def summarise(packages: list[Package], findings: list[Finding]) -> dict[str, Any
 
 def report(
     project_root: Path | None = None,
-    agent: str = "claude-code",
+    agent: str | None = None,
     packages: list[Package] | None = None,
 ) -> dict[str, Any]:
     """One machine-readable answer for the CLI, the web UI and MCP.
@@ -345,10 +403,20 @@ def report(
     if packages is None:
         packages = scan(project_root, agent)
     findings = diagnose(packages)
-    adapter = adapters.adapter_for(agent)
-    capability = adapter.capability() if adapter else None
+    asked = _agents(agent)
+    notes: list[str] = []
+    for name in asked:
+        adapter = adapters.adapter_for(name)
+        capability = adapter.capability() if adapter else None
+        # Prefixed with the agent, because two adapters answer at once and
+        # a note about Codex's bundled skills means nothing beside one
+        # about Claude Code's plugin cache.
+        notes.extend(f"{name}: {note}" for note in (capability.notes if capability else []))
+    if not asked:
+        notes.append(f"no adapter for {agent!r}")
     return {
         "agent": agent,
+        "agents": asked,
         "project_root": str(project_root) if project_root else None,
         "scanned_at": utcnow().isoformat().replace("+00:00", "Z"),
         "coverage": {
@@ -356,6 +424,7 @@ def report(
                 {
                     "path": str(r.path),
                     "scope": r.scope,
+                    "agent": r.agent,
                     "exists": r.path.is_dir(),
                     "plugin": r.plugin,
                     "revision": r.revision,
@@ -364,7 +433,7 @@ def report(
                 for r in roots_status(project_root, agent)
             ],
             "observation": "unsupported",
-            "notes": capability.notes if capability else ["no adapter for this agent"],
+            "notes": notes,
         },
         "summary": summarise(packages, findings),
         "packages": [asdict(p) for p in packages],

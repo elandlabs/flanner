@@ -2595,14 +2595,14 @@ def _skills_project() -> Path | None:
     return Path(found) if found else None
 
 
-def _skills_scan(project: str | None, agent: str) -> tuple[Path | None, list[Any]]:
+def _skills_scan(project: str | None, agent: str | None) -> tuple[Path | None, list[Any]]:
     from . import skills_ops
 
     root = Path(project).resolve() if project else _skills_project()
     return root, skills_ops.scan(root, agent)
 
 
-def _skills_report(project: str | None, agent: str) -> dict[str, Any]:
+def _skills_report(project: str | None, agent: str | None) -> dict[str, Any]:
     from . import skills_ops
 
     root, packages = _skills_scan(project, agent)
@@ -2635,11 +2635,11 @@ def _print_json(payload: dict[str, Any]) -> None:
 
 @skills.command("scan")
 @click.option("--project", default=None, help="Repository to scan for (uses this one if omitted)")
-@click.option("--agent", default="claude-code", help="Which agent's skills to read")
+@click.option("--agent", default=None, help="Only this agent's skills. Every agent by default")
 @click.option("--json", "as_json", is_flag=True, help="Machine-readable report")
 @click.option("--record/--no-record", default=True, help="Write what was found to the catalog")
-def skills_scan(project: str | None, agent: str, as_json: bool, record: bool) -> None:
-    """Read every skill package this agent would load
+def skills_scan(project: str | None, agent: str | None, as_json: bool, record: bool) -> None:
+    """Read every skill package your agents would load
 
     A read, and only a read. Skill packages can carry scripts; none of them
     run here, and nothing an agent owns is written to.
@@ -2697,20 +2697,20 @@ def skills_scan(project: str | None, agent: str, as_json: bool, record: bool) ->
 
 @skills.command("list")
 @click.option("--project", default=None, help="Repository to scan for")
-@click.option("--agent", default="claude-code", help="Which agent's skills to read")
+@click.option("--agent", default=None, help="Only this agent's skills. Every agent by default")
 @click.option("--all", "show_all", is_flag=True, help="Include copies that are shadowed")
 @click.option("--scope", default=None, help="Only this scope: project, user or plugin")
 @click.option("--json", "as_json", is_flag=True, help="Machine-readable report")
 @click.option("--limit", default=50, show_default=True, help="Rows to show; 0 for all")
 def skills_list(
     project: str | None,
-    agent: str,
+    agent: str | None,
     show_all: bool,
     scope: str | None,
     as_json: bool,
     limit: int,
 ) -> None:
-    """Browse the skills this agent would load"""
+    """Browse the skills your agents would load"""
     report = _skills_report(project, agent)
     if as_json:
         _print_json(report)
@@ -2729,15 +2729,24 @@ def skills_list(
         return
 
     shown = rows[:limit] if limit else rows
-    listing = tui.table("Skill", "Scope", "From", "Description")
+    # The agent column appears only when more than one has packages here:
+    # a column repeating one value down the page is furniture.
+    agents = sorted({pkg["agent"] for pkg in rows})
+    columns = ["Skill", "Scope", "From", "Description"]
+    if len(agents) > 1:
+        columns.insert(1, "Agent")
+    listing = tui.table(*columns)
     for pkg in shown:
         shadow = "" if pkg["effective"] else " [muted](shadowed)[/]"
-        listing.add_row(
+        row = [
             f"{pkg['name']}{shadow}",
             f"[{_scope_style(pkg['scope'])}]{pkg['scope']}[/]",
             pkg["plugin"] or pkg["scope"],
             _clip(pkg["description"] or "-", 56),
-        )
+        ]
+        if len(agents) > 1:
+            row.insert(1, pkg["agent"])
+        listing.add_row(*row)
     footer = (
         f"  {len(shown)} of {len(rows)} listed, {report['summary']['packages']} on this machine."
     )
@@ -2748,9 +2757,9 @@ def skills_list(
 
 @skills.command("doctor")
 @click.option("--project", default=None, help="Repository to scan for")
-@click.option("--agent", default="claude-code", help="Which agent's skills to read")
+@click.option("--agent", default=None, help="Only this agent's skills. Every agent by default")
 @click.option("--json", "as_json", is_flag=True, help="Machine-readable report")
-def skills_doctor(project: str | None, agent: str, as_json: bool) -> None:
+def skills_doctor(project: str | None, agent: str | None, as_json: bool) -> None:
     """What is wrong with this collection of skills
 
     Exits 1 when there is a defect, so a check can gate on it. Advisory
@@ -2815,8 +2824,8 @@ def skills_doctor(project: str | None, agent: str, as_json: bool) -> None:
 @skills.command("inspect")
 @click.argument("name")
 @click.option("--project", default=None, help="Repository to scan for")
-@click.option("--agent", default="claude-code", help="Which agent's skills to read")
-def skills_inspect(name: str, project: str | None, agent: str) -> None:
+@click.option("--agent", default=None, help="Only this agent's skills. Every agent by default")
+def skills_inspect(name: str, project: str | None, agent: str | None) -> None:
     """One skill in full, including every copy of it
 
     Every copy, not only the winning one: "why is this skill not behaving
@@ -2837,6 +2846,7 @@ def skills_inspect(name: str, project: str | None, agent: str) -> None:
             tui.fields(
                 [
                     ("Skill", pkg["name"]),
+                    ("Agent", pkg["agent"]),
                     ("Scope", pkg["scope"]),
                     ("Loaded", "yes" if pkg["effective"] else "no, shadowed by another copy"),
                     ("From", pkg["plugin"] or pkg["scope"]),

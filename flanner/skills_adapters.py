@@ -34,10 +34,17 @@ MANIFEST = "SKILL.md"
 #: Scopes, widest last. Order matters: `resolve_precedence` prefers the
 #: narrowest scope, on the same reasoning every tool with layered config
 #: uses — the setting closest to the work wins.
+#:
+#: `admin` is a machine-wide directory an administrator deploys, which
+#: Codex reads and Claude Code has no equivalent of. It sits below `user`
+#: because a person's own skills are closer to their work than the
+#: machine's are, and above `plugin` because a plugin is something
+#: installed rather than something placed deliberately.
 PLUGIN = "plugin"
+ADMIN = "admin"
 USER = "user"
 PROJECT = "project"
-SCOPE_ORDER = (PROJECT, USER, PLUGIN)
+SCOPE_ORDER = (PROJECT, USER, ADMIN, PLUGIN)
 
 #: Why a root could not be read. Kept as values rather than exceptions so
 #: one unreadable directory does not abort a scan of nine good ones.
@@ -95,7 +102,57 @@ def _home() -> Path:
     return Path(override) if override else Path.home()
 
 
-class ClaudeCodeAdapter:
+class Adapter:
+    """What every agent's layout has in common.
+
+    A skill is a directory holding a manifest, whatever the agent. Only
+    two things differ between agents and both are left to the subclass:
+    which directories to look in, and whether two copies of a name
+    compete or are simply both offered.
+    """
+
+    agent = ""
+
+    def capability(self) -> Capability:  # pragma: no cover - subclasses answer
+        raise NotImplementedError
+
+    def roots(self, project_root: Path | None = None) -> list[Root]:  # pragma: no cover
+        raise NotImplementedError
+
+    def discover(self, root: Root) -> list[Discovered]:
+        """Skill directories under one root, at most two levels down.
+
+        Usually `skills/<name>/SKILL.md`. Some plugins interpose a version
+        directory — `skills/v1/<name>/SKILL.md` — so a directory with no
+        manifest of its own is opened once more. On the machine this was
+        first run against that second level held 49 of 146 packages, so
+        stopping at one level would have silently under-reported a third
+        of the collection.
+
+        Two levels and no further. Walking arbitrarily deep turns a stray
+        `node_modules` into a minutes-long scan, and no supported agent
+        nests a skill inside another skill.
+        """
+        if not root.path.is_dir():
+            return []
+        out = []
+        for entry in _subdirs(root.path):
+            manifest = entry / MANIFEST
+            if manifest.is_file():
+                out.append(
+                    Discovered(name=entry.name, directory=entry, manifest=manifest, root=root)
+                )
+                continue
+            for nested in _subdirs(entry):
+                deeper = nested / MANIFEST
+                if deeper.is_file():
+                    out.append(
+                        Discovered(name=nested.name, directory=nested, manifest=deeper, root=root)
+                    )
+        return out
+
+
+class ClaudeCodeAdapter(Adapter):
     """Claude Code: user skills, project skills, and installed plugins.
 
     Three roots, and the third is the interesting one. Plugins are cached
@@ -209,39 +266,58 @@ class ClaudeCodeAdapter:
                     installed[(plugin, revision)] = True
         return installed
 
-    # --- packages ------------------------------------------------------------
 
-    def discover(self, root: Root) -> list[Discovered]:
-        """Skill directories under one root, at most two levels down.
+class CodexAdapter(Adapter):
+    """Codex: `.agents/skills` in the repository, your home, and /etc.
 
-        Usually `skills/<name>/SKILL.md`. Some plugins interpose a version
-        directory — `skills/v1/<name>/SKILL.md` — so a directory with no
-        manifest of its own is opened once more. On the machine this was
-        first run against that second level held 49 of 146 packages, so
-        stopping at one level would have silently under-reported a third
-        of the collection.
+    Simpler than Claude Code in one way and harder in another. There is no
+    plugin cache to reconcile, so a scan is three directories. But Codex
+    does not resolve a name collision: its documentation says two skills
+    sharing a name are not merged and both can appear in the selector. So
+    this adapter declares `resolve_precedence=False`, and everything above
+    it reports every copy as offered rather than inventing a winner Codex
+    would not honour.
 
-        Two levels and no further. Walking arbitrarily deep turns a stray
-        `node_modules` into a minutes-long scan, and no supported agent
-        nests a skill inside another skill.
-        """
-        if not root.path.is_dir():
-            return []
-        out = []
-        for entry in _subdirs(root.path):
-            manifest = entry / MANIFEST
-            if manifest.is_file():
-                out.append(
-                    Discovered(name=entry.name, directory=entry, manifest=manifest, root=root)
-                )
-                continue
-            for nested in _subdirs(entry):
-                deeper = nested / MANIFEST
-                if deeper.is_file():
-                    out.append(
-                        Discovered(name=nested.name, directory=nested, manifest=deeper, root=root)
-                    )
-        return out
+    Two roots are deliberately missing. Codex also reads `.agents/skills`
+    from directories between where it was launched and the repository
+    root, which a scan taking a project cannot see; and the skills bundled
+    with Codex itself are on no documented path. Both are named in the
+    capability notes rather than guessed at, because a skill this reports
+    from the wrong place is worse than one it admits to missing.
+    """
+
+    agent = "codex"
+
+    def capability(self) -> Capability:
+        return Capability(
+            agent=self.agent,
+            discover=True,
+            resolve_precedence=False,
+            observe=False,
+            install=False,
+            notes=[
+                "Codex does not merge two skills that share a name; both can be "
+                "offered, so no copy is reported as shadowing another.",
+                "Skills bundled with Codex are on no documented path and are not scanned.",
+                "`.agents/skills` between the launch directory and the repository "
+                "root is not scanned; the repository root is.",
+                "Observation is not implemented for Codex; usage is unknown rather than zero.",
+            ],
+        )
+
+    def roots(self, project_root: Path | None = None) -> list[Root]:
+        """Every root to scan, narrowest scope first."""
+        found: list[Root] = []
+        if project_root is not None:
+            found.append(
+                Root(path=project_root / ".agents" / "skills", scope=PROJECT, agent=self.agent)
+            )
+        found.append(Root(path=_home() / ".agents" / "skills", scope=USER, agent=self.agent))
+        # A machine-wide directory an administrator deploys. Absent on
+        # Windows, and reported as absent rather than skipped: "we looked
+        # and it was not there" is what the coverage list is for.
+        found.append(Root(path=Path("/etc/codex/skills"), scope=ADMIN, agent=self.agent))
+        return found
 
 
 def _subdirs(path: Path) -> list[Path]:
@@ -252,14 +328,26 @@ def _subdirs(path: Path) -> list[Path]:
         return []
 
 
-#: The adapters this build knows about. Codex is deliberately absent: it
-#: reads AGENTS.md but has no verified skills directory layout, and
-#: guessing one would produce an inventory nobody can trust.
-ADAPTERS: dict[str, ClaudeCodeAdapter] = {ClaudeCodeAdapter.agent: ClaudeCodeAdapter()}
+#: The adapters this build knows about, in the order a listing shows them.
+ADAPTERS: dict[str, Adapter] = {
+    ClaudeCodeAdapter.agent: ClaudeCodeAdapter(),
+    CodexAdapter.agent: CodexAdapter(),
+}
 
 
-def adapter_for(agent: str) -> ClaudeCodeAdapter | None:
+def adapter_for(agent: str) -> Adapter | None:
     return ADAPTERS.get(agent)
+
+
+def shadows(agent: str) -> bool:
+    """Whether this agent picks one copy of a name and ignores the rest.
+
+    Claude Code does; Codex offers both. The difference decides whether a
+    second copy is a shadow to be resolved or simply another thing on the
+    menu, so nothing above may assume one answer.
+    """
+    adapter = adapter_for(agent)
+    return bool(adapter and adapter.capability().resolve_precedence)
 
 
 def resolve_precedence(found: list[Discovered]) -> dict[str, Discovered]:
