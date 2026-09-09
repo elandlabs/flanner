@@ -38,11 +38,17 @@ Flanner is local-first, and stays that way when a team uses it. Plans sync direc
 ## Quick start
 
 ```bash
-pip install flanner
+uv tool install flanner   # or: pipx install flanner, or: pip install flanner
 
 cd your-project      # a git repo where plans should live
 flanner init         # sets up the database, MCP registration, and a project
 ```
+
+`uv tool install` gives flanner an environment of its own and puts both
+`flanner` and `flanner-mcp` on your PATH. Both matter: your agent spawns
+`flanner-mcp` by name, so a project virtualenv can hide it from an agent
+started outside that environment. `pip install flanner` works, with that
+caveat.
 
 Then ask your agent to work with plans:
 
@@ -200,7 +206,7 @@ network, which needs `flanner peer serve --http` on the other side.
 **Platforms.** Reaching a peer that has no address needs the `iroh`
 transport, which publishes builds for macOS on Apple Silicon, Linux on
 x86-64 and arm64, and Windows on x86-64. It is declared only for those, so
-`pip install flanner` works everywhere; elsewhere it is simply absent and
+installing flanner works everywhere; elsewhere it is simply absent and
 `flanner peer status` says so. Everything else in flanner is unaffected,
 and peers on a shared network still sync over an address.
 
