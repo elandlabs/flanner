@@ -6,7 +6,51 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-09-09
+
 ### Added
+- **Skills: see what your agents actually load.** A skill is a directory
+  holding a `SKILL.md`, and they arrive from three places at once — the
+  project, your home directory, and every installed plugin. Nothing on the
+  machine could say which copy an agent loads when two share a name.
+  `flanner skills scan` reads them all and `flanner skills doctor` says
+  what is wrong: a frontmatter name that disagrees with its directory,
+  copies that differ and shadow each other, a plugin revision the agent no
+  longer lists. On the machine this was built against, 110 packages were
+  installed and 57 were in effect. It is a read: packages stay where their
+  owner put them, and nothing inside one is executed by a scan.
+- **Watching which skills get used, if you turn it on.** Off until you do,
+  per agent and per repository. What is recorded is that a named skill was
+  invoked, when, and by which local session — not your prompts, not the
+  agent's replies. Only explicit invocations are visible: Claude Code shows
+  every skill's description to the model without reporting it, so a "loads"
+  number would be invented and there is not one. Every report carries the
+  window it covers and whether anything was watching during it, because
+  zero uses and zero coverage are different facts.
+- **Changing a skill without breaking it.** `flanner skills adopt` keeps a
+  copy where flanner can put it back; an install snapshots whatever it
+  replaces, so `flanner skills rollback` always has something to restore. A
+  directory flanner did not install, or one edited by hand since, is
+  refused rather than overwritten.
+- **Proposing a skill from work you hand over.** Nothing is harvested and
+  no conversation history is read; evidence exists because somebody
+  submitted it. Three related pieces across two sessions with something
+  saying the work succeeded opens a proposal — a product default, not a
+  discovered threshold, and the wording says so. An approval covers the
+  exact draft that was read: editing it afterwards sends it back for
+  another look rather than shipping the edit under the old approval.
+- **Comparing a candidate against a baseline.** Recorded, never run:
+  nothing here calls a model provider. The matrix walks the full grid, so a
+  combination nobody ran reads as not run rather than as a zero, and every
+  cell names its fixture, its model and its harness — an endpoint result
+  says nothing about behaviour inside an agent.
+- **Sending a skill to a teammate.** `flanner skills share` signs the
+  package files and nothing else: no recorded uses, no evidence, no session
+  references. Receiving is not installing — a package arrives as a transfer
+  and waits. A package that does not hash to what its sender claimed, or
+  one built for another agent, is refused. Following a skill tells you
+  about a new version and never installs one. Needs a `skill_sync`
+  entitlement, which an organization admin can switch off for everybody.
 - **Memory: durable context, as Markdown files you can read.** A plan says
   what you decided to build; memory is the smaller, longer-lived stuff
   around it — the constraint that rules out an approach, the reason a
@@ -37,6 +81,13 @@ versioning follows [SemVer](https://semver.org/).
   holds the text, and no design without a central copy can change that.
   Needs a `mem_sync` entitlement, which an organization admin can switch
   off for everybody.
+
+### Fixed
+- The memory list's grid was never defined in the stylesheet, so every row
+  collapsed to one column and each memory appeared to be listed twice.
+- A long path in a table held its column open and squeezed the flexible
+  column beside it to nothing, which is why skill descriptions rendered as
+  a few stray pixels.
 
 ## [0.11.0] - 2026-09-05
 
