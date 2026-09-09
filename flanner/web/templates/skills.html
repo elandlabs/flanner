@@ -248,7 +248,8 @@
   {% if report.findings %}
   <div class="card" style="margin-top:14px">
     <div class="card-head">What is wrong
-      <span class="note">{{ report.summary.defects }} defect,
+      <span class="note">{{ report.summary.defects }}
+        defect{{ '' if report.summary.defects == 1 else 's' }},
         {{ report.summary.advice }} advisory</span></div>
     <div class="grid-row grid-head cols-findings">
       <span>Finding</span><span>Skill</span><span>What to do</span>
