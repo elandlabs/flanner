@@ -522,7 +522,7 @@ function copyToClipboard(text) {
 }
 
 // Toasts: client-side notifications in a bottom-right, aria-live region.
-// Styling and motion live in styles.css (.toast*); this only builds the nodes.
+// Styling and motion live in shell.css (.toast*); this only builds the nodes.
 function showNotification(message, type = 'info') {
     let region = document.querySelector('.toast-region');
     if (!region) {

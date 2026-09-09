@@ -29,7 +29,8 @@ All components of the web interface have been successfully implemented:
    - `plan_history.html` - Version history timeline
 
 3. **Static Assets**
-   - `styles.css` (850+ lines) - Comprehensive CSS with modern design
+   - `tokens.css` - Colour, type and radius tokens for both themes
+   - `shell.css` - Every component, written against the tokens
    - `app.js` - Interactive features and keyboard shortcuts
 
 4. **CLI Integration**
@@ -155,7 +156,8 @@ web/
 │   └── plan_history.html   # Version history
 ├── static/
 │   ├── css/
-│   │   └── styles.css      # All styles (850+ lines)
+│   │   ├── tokens.css      # Both themes, at token level
+│   │   └── shell.css       # All components
 │   └── js/
 │       └── app.js          # Interactive features
 ```
@@ -214,7 +216,7 @@ Tests verify:
 - Check file permissions
 
 ### CSS not applying
-- Verify `web/static/css/styles.css` exists
+- Verify `web/static/css/shell.css` and `tokens.css` exist
 - Check browser console for 404 errors
 - Hard refresh browser (Ctrl+Shift+R)
 
@@ -232,7 +234,7 @@ Tests verify:
 ## 🎨 Customization
 
 ### Changing Colors
-Edit `web/static/css/styles.css`:
+Edit `web/static/css/shell.css` (components) or `tokens.css` (colours):
 ```css
 :root {
     --primary-color: #4f46e5; /* Change to your color */

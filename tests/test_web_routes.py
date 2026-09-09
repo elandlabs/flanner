@@ -202,8 +202,9 @@ def test_codemirror_asset_is_served(client, plan_id):
 
 
 def test_design_tokens_and_toast_shipped(client):
-    css = client.get("/static/css/styles.css").text
-    assert "--space-4:" in css and "--shadow-md:" in css  # spacing + elevation tokens
+    tokens = client.get("/static/css/tokens.css").text
+    assert "--r-md:" in tokens and "--shadow-pop:" in tokens  # radius + elevation tokens
+    css = client.get("/static/css/shell.css").text
     assert ".toast-region" in css and ".toast--success" in css  # toast component
     js = client.get("/static/js/app.js").text
     assert "toast-region" in js and "aria-live" in js  # toast built with a live region
@@ -214,7 +215,7 @@ def test_theme_toggle_and_skip_link(client):
     assert 'id="theme-toggle"' in html
     assert 'class="skip-link"' in html and 'href="#main"' in html
     assert 'aria-current="page"' in html  # active nav item marked
-    css = client.get("/static/css/styles.css").text
+    css = client.get("/static/css/tokens.css").text
     assert ':root[data-theme="dark"]' in css  # manual dark overrides the OS setting
 
 
@@ -303,14 +304,14 @@ def test_tier3_craft_signals(client, plan_id):
     assert 'name="theme-color"' in home.text and "prefers-color-scheme: dark" in home.text
     # dashboard shows a real "updated this week" count, not the capped-list length
     assert "Updated this week" in home.text
-    css = client.get("/static/css/styles.css").text
+    css = client.get("/static/css/shell.css").text
     assert "@media print" in css  # print a plan as a document
     assert "tabular-nums" in css  # aligned numeric figures
     assert "::selection" in css and "scrollbar-color" in css
 
 
 def test_tier2_polish_shipped(client, project_id):
-    css = client.get("/static/css/styles.css").text
+    css = client.get("/static/css/shell.css").text
     assert "@view-transition" in css  # smooth cross-page transitions
     js = client.get("/static/js/app.js").text
     assert "rel = 'prefetch'" in js or "'prefetch'" in js  # hover prefetch
