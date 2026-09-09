@@ -46,9 +46,13 @@
   --text-2:      #4b4c53;
   --text-3:      #6b6c72;
   --text-4:      #6f7078;
+  /* Small text sitting on a tinted chip or the amber note, where --text-4
+     drops under 4.5:1. Measured against those tints in both themes. */
+  --text-on-tint: #6a6b73;
 
   /* Accent */
   --accent:      #17805a;
+  --on-accent:   #ffffff;   /* text and knobs on the accent surface, both themes */
   --accent-hi:   #0e5c3f;
   --accent-ink:  #157e58;   /* accent as text: 4.9:1 on white */
   --accent-ink-hi: #0e5c3f;
@@ -107,6 +111,7 @@
     --text-2:      #b6b7bd;
     --text-3:      #9a9ba3;
     --text-4:      #85868c;
+    --text-on-tint: #999aa0;
 
     --accent-ink:  #39a27c;   /* 4.6:1 on the dark card */
     --accent-ink-hi: #45b489;
@@ -150,6 +155,7 @@
   --text-2:      #b6b7bd;
   --text-3:      #9a9ba3;
   --text-4:      #85868c;
+  --text-on-tint: #999aa0;
 
   --accent-ink:  #39a27c;   /* 4.6:1 on the dark card */
   --accent-ink-hi: #45b489;
