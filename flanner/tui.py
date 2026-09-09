@@ -113,6 +113,38 @@ def table(*columns: str | tuple[str, dict[str, Any]], **kwargs: Any) -> Table:
     return built
 
 
+def listing(table: Table, *, footer: str | None = None) -> None:
+    """Print a listing, through the pager when it would not fit the screen.
+
+    A list longer than the terminal scrolls off the top before anybody reads
+    its first row. When stdout is a terminal and the table is taller than
+    it, this pipes the output through the system pager, the way git does
+    with a log. Piped or redirected output is printed straight through, so
+    scripts see exactly what they always did. ``footer`` is the line that
+    says the list was cut short and which flag lifts the cap.
+    """
+    # Header, the blank lines around the table, the footer, and a line
+    # for the prompt: what the terminal has to hold beyond the rows.
+    chrome = 6
+    fits = not console.is_terminal or table.row_count + chrome <= (console.height or 0)
+
+    def emit() -> None:
+        console.print()
+        console.print(table)
+        if footer:
+            console.print(footer, style="muted")
+        console.print()
+
+    if fits:
+        emit()
+        return
+    # Plain text in the pager: `more` on Windows and a bare `less` both print
+    # escape codes literally, and a listing is read for its rows, not its
+    # colours.
+    with console.pager(styles=False):
+        emit()
+
+
 def fields(pairs: list[tuple[str, Any]], *, width: int = 14) -> Table:
     """A block of label/value rows, for the status-style screens.
 

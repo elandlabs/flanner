@@ -833,21 +833,32 @@ def mem_show(memory_id: str, output: str) -> None:
 @click.option("--status", default="active", help="active, superseded, forgotten, expired, or all")
 @click.option("--project", default=None, help="Project name (uses current directory if omitted)")
 @click.option("--output", type=click.Choice(["table", "json"]), default="table")
+@click.option("--limit", default=50, show_default=True, help="Rows to show; 0 for all")
 def mem_list(
-    scope: str | None, category: str | None, status: str, project: str | None, output: str
+    scope: str | None,
+    category: str | None,
+    status: str,
+    project: str | None,
+    output: str,
+    limit: int,
 ) -> None:
     """Browse memories rather than searching them"""
     from .database import list_memories
 
     session = _require_session()
     proj = _mem_project(session, project) if scope != "personal" else None
+    # One more than the cap, so the footer can say there is more without a
+    # second query to count everything the filters match.
     memories = list_memories(
         session,
         scope=scope,
         project_id=proj.id if proj and scope == "project" else None,
         category=category,
         status=None if status == "all" else status,
+        limit=limit + 1 if limit else None,
     )
+    more = bool(limit) and len(memories) > limit
+    memories = memories[:limit] if limit else memories
 
     if output == "json":
         import json
@@ -885,8 +896,10 @@ def mem_list(
             memory.scope,
             memory.created_at.strftime("%Y-%m-%d") if memory.created_at else "",
         )
-    console.print(table)
-    console.print()
+    tui.listing(
+        table,
+        footer=f"  First {limit} shown; more match. --limit 0 shows all." if more else None,
+    )
 
 
 @mem.command("supersede")
@@ -975,7 +988,8 @@ def mem_rebuild() -> None:
 @mem.command("pending")
 @click.option("--project", default=None, help="Project name (uses current directory if omitted)")
 @click.option("--output", type=click.Choice(["table", "json"]), default="table")
-def mem_pending(project: str | None, output: str) -> None:
+@click.option("--limit", default=50, show_default=True, help="Rows to show; 0 for all")
+def mem_pending(project: str | None, output: str, limit: int) -> None:
     """Suggestions waiting on you
 
     Nothing here is being recalled. A suggestion sits out of the way until
@@ -987,6 +1001,9 @@ def mem_pending(project: str | None, output: str) -> None:
     session = _require_session()
     proj = _mem_project(session, project)
     waiting = memory_ops.pending(session, project_id=proj.id if proj else None)
+    total = len(waiting)
+    if limit:
+        waiting = waiting[:limit]
 
     if output == "json":
         import json
@@ -1013,6 +1030,8 @@ def mem_pending(project: str | None, output: str) -> None:
         console.print(f"  {tui.code(item['id'])}", style="muted")
         console.print()
 
+    if limit and total > limit:
+        tui.note(f"{limit} of {total} shown. --limit 0 shows all.")
     tui.hint(
         f"  {tui.command('flanner mem approve <id>')} or {tui.command('flanner mem reject <id>')}"
     )
@@ -1806,7 +1825,14 @@ def status() -> None:
     console.print()
 
 
-def _print_plans(proj: ProjectModel, project: str, output: str) -> None:
+def _cut_footer(shown: int, total: int | None, noun: str) -> str | None:
+    """The line under a listing that was cut short, or nothing."""
+    if total is None or shown >= total:
+        return None
+    return f"  {shown} of {total} {noun} shown. --limit 0 shows all."
+
+
+def _print_plans(proj: ProjectModel, project: str, output: str, *, limit: int = 0) -> None:
     """One project's plans, as a table or as json.
 
     Plans with a teammate's version waiting sort to the top. The pointer
@@ -1823,6 +1849,9 @@ def _print_plans(proj: ProjectModel, project: str, output: str) -> None:
         ((pf, standing(session, pf)) for pf in proj.plan_files),
         key=lambda pair: (pair[1].waiting is None, pair[0].name),
     )
+    total = len(ordered)
+    if limit:
+        ordered = ordered[:limit]
 
     if output == "json":
         click.echo(
@@ -1869,9 +1898,7 @@ def _print_plans(proj: ProjectModel, project: str, output: str) -> None:
         if pending:
             row.append(Text(f"v{how.waiting}", style="warn") if how.has_incoming else Text(""))
         listing.add_row(*row)
-    console.print()
-    console.print(listing)
-    console.print()
+    tui.listing(listing, footer=_cut_footer(len(ordered), total, "plans"))
     count = len(proj.plan_files)
     tui.note(f"{count} plan{'' if count == 1 else 's'} in {project}")
     if pending:
@@ -1882,8 +1909,14 @@ def _print_plans(proj: ProjectModel, project: str, output: str) -> None:
     console.print()
 
 
-def _print_projects(projects: list[ProjectModel], output: str) -> None:
-    """Every project on this device, as a table or as json."""
+def _print_projects(
+    projects: list[ProjectModel], output: str, *, total: int | None = None
+) -> None:
+    """Every project on this device, as a table or as json.
+
+    ``total`` is how many there are altogether; when more than were passed
+    in, the footer says so and names the flag.
+    """
     import json
 
     if output == "json":
@@ -1915,9 +1948,7 @@ def _print_projects(projects: list[ProjectModel], output: str) -> None:
             Text(p.plan_directory, style="code"),
             Text(p.created_at.strftime("%Y-%m-%d") if p.created_at else "never", style="muted"),
         )
-    console.print()
-    console.print(listing)
-    console.print()
+    tui.listing(listing, footer=_cut_footer(len(projects), total, "projects"))
 
 
 @cli.command("list")
@@ -1928,18 +1959,23 @@ def _print_projects(projects: list[ProjectModel], output: str) -> None:
     default="table",
     help="Output format",
 )
-def list_cmd(project: str | None, output: str) -> None:
+@click.option("--limit", default=50, show_default=True, help="Rows to show; 0 for all")
+def list_cmd(project: str | None, output: str, limit: int) -> None:
     """List all projects or plan files"""
+    from .database import count_projects
+    from .database import list_projects as list_projects_page
+
     session = _require_session()
     if not project:
-        _print_projects(db_list_projects(session), output)
+        projects = list_projects_page(session, limit=limit or None)
+        _print_projects(projects, output, total=count_projects(session))
         return
 
     proj = get_project_by_name(session, project)
     if not proj:
         console.print(f"ERROR Project '{project}' not found", style="red")
         raise SystemExit(1)
-    _print_plans(proj, project, output)
+    _print_plans(proj, project, output, limit=limit)
 
 
 @cli.command()
@@ -2665,8 +2701,14 @@ def skills_scan(project: str | None, agent: str, as_json: bool, record: bool) ->
 @click.option("--all", "show_all", is_flag=True, help="Include copies that are shadowed")
 @click.option("--scope", default=None, help="Only this scope: project, user or plugin")
 @click.option("--json", "as_json", is_flag=True, help="Machine-readable report")
+@click.option("--limit", default=50, show_default=True, help="Rows to show; 0 for all")
 def skills_list(
-    project: str | None, agent: str, show_all: bool, scope: str | None, as_json: bool
+    project: str | None,
+    agent: str,
+    show_all: bool,
+    scope: str | None,
+    as_json: bool,
+    limit: int,
 ) -> None:
     """Browse the skills this agent would load"""
     report = _skills_report(project, agent)
@@ -2686,8 +2728,9 @@ def skills_list(
         console.print()
         return
 
+    shown = rows[:limit] if limit else rows
     listing = tui.table("Skill", "Scope", "From", "Description")
-    for pkg in rows:
+    for pkg in shown:
         shadow = "" if pkg["effective"] else " [muted](shadowed)[/]"
         listing.add_row(
             f"{pkg['name']}{shadow}",
@@ -2695,9 +2738,12 @@ def skills_list(
             pkg["plugin"] or pkg["scope"],
             _clip(pkg["description"] or "-", 56),
         )
-    console.print(listing)
-    console.print(f"  {len(rows)} of {report['summary']['packages']} shown.", style="muted")
-    console.print()
+    footer = (
+        f"  {len(shown)} of {len(rows)} listed, {report['summary']['packages']} on this machine."
+    )
+    if len(shown) < len(rows):
+        footer += " --limit 0 shows all."
+    tui.listing(listing, footer=footer)
 
 
 @skills.command("doctor")
@@ -3202,13 +3248,17 @@ def skills_rollback(installation_id: str, to_hash: str | None) -> None:
 @skills.command("installs")
 @click.option("--project", default=None, help="Repository to list installs for")
 @click.option("--json", "as_json", is_flag=True, help="Machine-readable listing")
-def skills_installs(project: str | None, as_json: bool) -> None:
+@click.option("--limit", default=50, show_default=True, help="Rows to show; 0 for all")
+def skills_installs(project: str | None, as_json: bool, limit: int) -> None:
     """What flanner has installed, and whether it is still intact"""
     _open_store()
     from . import skills_manage
 
     root = Path(project).resolve() if project else None
     rows = skills_manage.installations(get_session(), root)
+    total = len(rows)
+    if limit:
+        rows = rows[:limit]
     if as_json:
         import json
 
@@ -3234,8 +3284,7 @@ def skills_installs(project: str | None, as_json: bool) -> None:
             state,
             row["id"],
         )
-    console.print(table)
-    console.print()
+    tui.listing(table, footer=_cut_footer(len(rows), total, "installs"))
 
 
 def _name_in_snapshot(manifest_hash: str) -> str | None:
@@ -3355,7 +3404,8 @@ def skills_evidence_submit(
 @skills_evidence.command("list")
 @click.option("--session-ref", default="", help="Only from this session")
 @click.option("--json", "as_json", is_flag=True, help="Machine-readable listing")
-def skills_evidence_list(session_ref: str, as_json: bool) -> None:
+@click.option("--limit", default=50, show_default=True, help="Rows to show; 0 for all")
+def skills_evidence_list(session_ref: str, as_json: bool, limit: int) -> None:
     """What has been handed over, and what it adds up to so far"""
     _open_store()
     from . import skills_learn
@@ -3363,7 +3413,12 @@ def skills_evidence_list(session_ref: str, as_json: bool) -> None:
     session = get_session()
     project = _skills_project_or_exit(session)
     rows = skills_learn.evidence(session, project, session_ref=session_ref)
+    # Clusters are built over everything: a cap on what is printed should
+    # not change what the evidence adds up to.
     groups = skills_learn.cluster(rows)
+    total = len(rows)
+    if limit:
+        rows = rows[:limit]
 
     if as_json:
         import json
@@ -3414,8 +3469,7 @@ def skills_evidence_list(session_ref: str, as_json: bool) -> None:
             row.outcome,
             row.session_ref or "-",
         )
-    console.print(listing)
-    console.print()
+    tui.listing(listing, footer=_cut_footer(len(rows), total, "records"))
 
     if groups:
         console.print("  Repeated work:", style="muted")

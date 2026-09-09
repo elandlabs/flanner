@@ -1659,3 +1659,28 @@ def test_whoami_table_still_shows_the_device(runner, initialized):
     """The human default is unchanged by adding a machine one."""
     result = runner.invoke(cli, ["whoami"])
     assert "Device" in result.output
+
+
+# --- listing caps -------------------------------------------------------------
+
+
+def test_list_limit_cuts_a_projects_plans_and_says_so(runner, project, git_repo):
+    import json
+
+    session = get_session()
+    for name in ("alpha", "beta", "gamma"):
+        pf = create_plan_file(session, project, name)
+        create_version(session, pf.id, 1, str(git_repo / ".plans" / f"{name}_v1.md"), "h")
+
+    cut = runner.invoke(cli, ["list", "--project", "proj", "--limit", "2", "--output", "json"])
+    assert cut.exit_code == 0, cut.output
+    assert len(json.loads(cut.output)) == 2
+
+    shown = runner.invoke(cli, ["list", "--project", "proj", "--limit", "2"])
+    assert shown.exit_code == 0, shown.output
+    assert "2 of 3 plans shown" in shown.output
+
+    everything = runner.invoke(
+        cli, ["list", "--project", "proj", "--limit", "0", "--output", "json"]
+    )
+    assert len(json.loads(everything.output)) == 3
