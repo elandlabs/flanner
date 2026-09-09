@@ -438,3 +438,66 @@ def test_the_page_shows_a_refusal_rather_than_failing(two_devices):
     assert "Mine" in (
         receiver.repo / ".claude" / "skills" / "rebuild-staging" / "SKILL.md"
     ).read_text(encoding="utf-8")
+
+
+# --- over the wire ------------------------------------------------------------
+
+
+def test_a_package_survives_a_real_sync(two_devices):
+    """The whole protocol, not just the ingest hook.
+
+    `LocalPeer` is the same code path a networked peer runs: manifest,
+    missing-id diff, fetch, verify, ingest. If a package cannot cross that,
+    everything above it is a local feature wearing a mesh label.
+    """
+    from flanner import sync
+
+    sender, receiver = two_devices
+    sent, _ = a_shared_package(sender)
+    sender_session = sender.session()
+    sender_key = _device_key()
+
+    receiver.use().adopt()
+    report = sync.sync_from_peer(
+        receiver.session(),
+        sync.LocalPeer(sender_session),
+        WORKSPACE,
+        lambda device_id: sender_key,
+    )
+
+    assert not report.rejected, report.rejected
+    assert sent["artifact_id"] in [str(a) for a in report.accepted]
+
+    rows = skills_mesh.transfers(receiver.session())
+    assert len(rows) == 1
+    assert rows[0]["state"] == "verified"
+    assert rows[0]["skill"] == "rebuild-staging"
+    # Received, and only received.
+    assert not (receiver.repo / ".claude" / "skills" / "rebuild-staging").exists()
+
+
+def test_syncing_twice_does_not_duplicate_the_transfer(two_devices):
+    from flanner import sync
+
+    sender, receiver = two_devices
+    a_shared_package(sender)
+    sender_session = sender.session()
+    sender_key = _device_key()
+
+    receiver.use().adopt()
+    for _ in range(2):
+        sync.sync_from_peer(
+            receiver.session(),
+            sync.LocalPeer(sender_session),
+            WORKSPACE,
+            lambda device_id: sender_key,
+        )
+    assert len(skills_mesh.transfers(receiver.session())) == 1
+
+
+def _device_key() -> str:
+    """This machine's public key, in the form a resolver returns."""
+    from flanner import identity
+
+    key = identity.load_or_create_device_key()
+    return identity.public_key_b64(key.public_key())
