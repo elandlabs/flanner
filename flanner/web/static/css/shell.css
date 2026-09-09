@@ -427,7 +427,9 @@ a:hover { color: var(--accent-hi); }
 .doc ul, .doc ol { margin: 8px 0 0; padding-left: 20px; display: flex;
                    flex-direction: column; gap: 5px; }
 .doc code {
-  font: 500 11.5px var(--font-mono); background: var(--chip);
+  /* Its own colour, not the paragraph's: the third text tier measured
+     4.3:1 on the chip. */
+  font: 500 11.5px var(--font-mono); background: var(--chip); color: var(--text-2);
   border-radius: var(--r-xs); padding: 1px 5px;
 }
 .doc pre {
