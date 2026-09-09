@@ -276,6 +276,15 @@ a:hover { color: var(--accent-hi); }
 .cols-peers { grid-template-columns: 1fr 150px; }
 .cols-wsaccess { grid-template-columns: 1fr 120px; }
 .cols-review { grid-template-columns: 1.4fr 1fr 110px 130px; }
+/* The memory list. Named in the template since it was written and never
+   defined here, so every row fell back to a single 1122px column with its
+   four cells stacked on top of each other. Search adds a fifth column for
+   why a result matched. */
+.cols-memory { grid-template-columns: 1.6fr 110px 90px 110px; }
+.cols-memory-reasoned { grid-template-columns: 1.6fr 110px 90px 110px 1fr; }
+/* The summary belongs under the title, not beside it: inline, the two ran
+   together into one sentence that read as the title repeating itself. */
+.cols-memory .hint, .cols-memory-reasoned .hint { display: block; }
 .cols-skills { grid-template-columns: 1.3fr 90px 150px 1.4fr 80px; }
 /* The path sits under the name, always. Inline, a short name like `pg` left
    it on the same line while a long one wrapped it to the next, so the column
@@ -678,6 +687,7 @@ kbd {
   .pane, .plan-main { padding-left: 16px; padding-right: 16px; }
   .cols-projects, .cols-freshness, .cols-plans, .cols-history,
   .cols-recent, .cols-links, .cols-peers, .cols-wsaccess, .cols-review,
+  .cols-memory, .cols-memory-reasoned,
   .cols-skills, .cols-findings, .cols-usage, .cols-installs,
   .cols-proposals, .cols-clusters, .cols-matrix, .cols-transfers,
   .plan-file-card { grid-template-columns: 1fr; gap: 6px; }

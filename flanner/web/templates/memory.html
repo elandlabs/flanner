@@ -40,7 +40,7 @@
       <span class="note">{{ rows | length }}</span>
     </div>
     {% for row in rows %}
-    <div class="grid-row cols-memory" data-list-item>
+    <div class="grid-row {{ 'cols-memory-reasoned' if show_reason else 'cols-memory' }}" data-list-item>
       <span><a href="/memory/{{ row.id }}">{{ row.title }}</a>
         <span class="hint">{{ row.summary }}</span></span>
       <span><span class="pill pill-{{ row.category }}">{{ row.category }}</span></span>
