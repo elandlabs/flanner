@@ -429,6 +429,74 @@ onPage(function () {
         const empty = group.querySelector('[data-list-empty]');
         const items = function () { return Array.from(list.querySelectorAll('[data-list-item]')); };
 
+        // A list that arrives in pieces (the freshness stream) cannot be
+        // paged by the server, so a [data-list-pager] inside the group pages
+        // it here: the same window, Previous/Next and rows-per-page menu as
+        // _pager.html, over whatever the filter let through. The size is the
+        // cookie the server-side pager sets, so one choice covers both.
+        const pager = group.querySelector('[data-list-pager]');
+        const SIZES = [15, 30, 50, 100];
+        let pageNo = 1;
+
+        function perPage() {
+            const m = document.cookie.match(/(?:^|; )flanner_per_page=(\d+)/);
+            const n = m ? Number(m[1]) : 15;
+            return SIZES.indexOf(n) === -1 ? 15 : n;
+        }
+
+        function applyPage() {
+            if (!pager) return;
+            const hits = items().filter(function (it) { return it.dataset.hit !== '0'; });
+            const per = perPage();
+            const pages = Math.max(1, Math.ceil(hits.length / per));
+            pageNo = Math.min(Math.max(1, pageNo), pages);
+            const start = (pageNo - 1) * per;
+            hits.forEach(function (it, i) { it.hidden = !(i >= start && i < start + per); });
+            pager.hidden = hits.length <= SIZES[0];
+            if (pager.hidden) return;
+            const first = hits.length ? start + 1 : 0;
+            const last = Math.min(start + per, hits.length);
+            pager.innerHTML = '';
+            const range = document.createElement('span');
+            range.className = 'pager-range tnum';
+            range.textContent = first + '–' + last + ' of ' + hits.length;
+            const nav = document.createElement('span');
+            nav.className = 'pager-nav';
+            if (pageNo > 1) {
+                const prev = document.createElement('button');
+                prev.type = 'button'; prev.className = 'btn btn-sm'; prev.textContent = 'Previous';
+                prev.addEventListener('click', function () { pageNo -= 1; applyPage(); });
+                nav.appendChild(prev);
+            }
+            const where = document.createElement('span');
+            where.className = 'tnum';
+            where.textContent = 'page ' + pageNo + ' of ' + pages;
+            nav.appendChild(where);
+            if (pageNo < pages) {
+                const next = document.createElement('button');
+                next.type = 'button'; next.className = 'btn btn-sm'; next.textContent = 'Next';
+                next.addEventListener('click', function () { pageNo += 1; applyPage(); });
+                nav.appendChild(next);
+            }
+            const label = document.createElement('label');
+            label.className = 'pager-per';
+            label.textContent = 'Rows per page ';
+            const select = document.createElement('select');
+            select.className = 'btn btn-sm';
+            SIZES.forEach(function (n) {
+                const opt = document.createElement('option');
+                opt.value = String(n); opt.textContent = String(n); opt.selected = n === per;
+                select.appendChild(opt);
+            });
+            select.addEventListener('change', function () {
+                document.cookie = 'flanner_per_page=' + select.value + '; path=/; max-age=31536000; samesite=lax';
+                pageNo = 1;
+                applyPage();
+            });
+            label.appendChild(select);
+            pager.append(range, nav, label);
+        }
+
         function applyFilter() {
             const q = (filter ? filter.value : '').toLowerCase().trim();
             let shown = 0;
@@ -436,9 +504,11 @@ onPage(function () {
                 const hay = (it.dataset.name || it.textContent).toLowerCase();
                 const hit = !q || hay.indexOf(q) !== -1;
                 it.hidden = !hit;
+                it.dataset.hit = hit ? '1' : '0';
                 if (hit) shown++;
             });
             if (empty) empty.hidden = shown !== 0;
+            applyPage();
         }
 
         function applySort() {
@@ -458,8 +528,19 @@ onPage(function () {
 
         if (filter) filter.addEventListener('input', applyFilter);
         if (sort) sort.addEventListener('change', function () { applySort(); applyFilter(); });
+        if (pager) document.addEventListener('flanner:list-changed', function () { applySort(); applyFilter(); });
         applySort();
+        if (pager) applyFilter();
     });
+});
+
+// A select that submits its form when it changes, for the rows-per-page menu:
+// a separate button would be a second click for nothing. Without JavaScript
+// the <noscript> button beside it does the same job.
+document.addEventListener('change', function (e) {
+    const el = e.target.closest('[data-auto-submit]');
+    if (!el || !el.form) return;
+    if (el.form.requestSubmit) el.form.requestSubmit(); else el.form.submit();
 });
 
 // Prefetch internal pages on hover, so a click feels instant.
@@ -1147,7 +1228,13 @@ onPage(function () {
                 const holder = document.createElement('div');
                 holder.innerHTML = msg.html.trim();
                 const row = holder.firstElementChild;
-                if (row) { insertByDrift(list, row); shown += 1; }
+                if (row) {
+                    insertByDrift(list, row);
+                    shown += 1;
+                    // The list pager windows whatever is there, so it has to
+                    // hear about each arrival, not only the end.
+                    document.dispatchEvent(new CustomEvent('flanner:list-changed'));
+                }
                 if (count) count.textContent = shown;
             }
             if (progress && !msg.done) {

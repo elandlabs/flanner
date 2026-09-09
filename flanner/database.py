@@ -1383,12 +1383,17 @@ def plan_file_counts_by_project(
 
 
 def recent_plan_files(
-    session: Session, limit: int = 10, exclude: Collection[str] = ()
+    session: Session, limit: int = 10, exclude: Collection[str] = (), offset: int = 0
 ) -> list[PlanFileModel]:
-    """Most recently updated plan files across all projects (SQL ORDER BY ... LIMIT)."""
+    """Most recently updated plan files across all projects (SQL ORDER BY ... LIMIT).
+
+    ``offset`` pages through them: the plans page asks for one page at a
+    time rather than the two hundred it used to load and mostly not show.
+    """
     rows: list[PlanFileModel] = (
         _without(session.query(PlanFileModel), exclude)
-        .order_by(PlanFileModel.updated_at.desc())
+        .order_by(PlanFileModel.updated_at.desc(), PlanFileModel.id)
+        .offset(offset)
         .limit(limit)
         .all()
     )
@@ -2359,8 +2364,9 @@ def list_memories(
     category: str | None = None,
     status: str | None = "active",
     limit: int | None = None,
+    offset: int = 0,
 ) -> list[MemoryModel]:
-    """Memories matching every filter given, newest first.
+    """Memories matching every filter given, newest first; optionally a page.
 
     `status` defaults to active rather than to everything, because the
     common question is "what do I believe now" and the uncommon one should
@@ -2375,7 +2381,9 @@ def list_memories(
         query = query.filter_by(category=category)
     if status is not None:
         query = query.filter_by(status=status)
-    query = query.order_by(MemoryModel.created_at.desc())
+    query = query.order_by(MemoryModel.created_at.desc(), MemoryModel.id)
+    if offset:
+        query = query.offset(offset)
     if limit is not None:
         query = query.limit(limit)
     return list(query.all())

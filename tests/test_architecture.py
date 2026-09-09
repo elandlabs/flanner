@@ -73,6 +73,9 @@ ALLOWED = {
     # so it imports nothing from the package and nothing may import it
     # except the surfaces that print.
     "tui": set(),
+    # One page of a longer list: the arithmetic the web UI's lists share.
+    # Pure, so it imports nothing; a surface that pages imports it.
+    "paging": set(),
     # A plan rendered as one standalone file. Pure: it is handed the text
     # and returns a string, so it reads no database and touches no network.
     "packet": set(),
@@ -191,6 +194,7 @@ ALLOWED = {
     "web": FOUNDATION
     | {
         "database",
+        "paging",
         # The Skills page renders the same report the CLI prints, so the
         # two cannot disagree about what is on disk.
         "skills_ops",

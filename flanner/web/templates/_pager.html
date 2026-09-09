@@ -1,0 +1,24 @@
+{#
+  One page of a longer list: where you are, Previous and Next, and how many
+  rows a page holds. Every other query parameter is carried through, so a
+  sort or a filter survives the page turn. The size is a menu rather than a
+  field (paging.PER_PAGE_CHOICES) and is remembered once chosen. Hidden
+  when the whole list fits the smallest page: nothing to turn.
+#}
+{% if pager.total > per_choices[0] %}
+<form class="pager" method="get" action="{{ request.url.path }}" aria-label="Pages">
+  {% for key, value in pager_query.items() %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
+  <span class="pager-range tnum">{{ pager.first }}–{{ pager.last }} of {{ pager.total }}</span>
+  <span class="pager-nav">
+    {% if pager.has_prev %}<a class="btn btn-sm" rel="prev" href="?{{ pager_qs }}page={{ pager.page - 1 }}&amp;per={{ pager.per_page }}">Previous</a>{% endif %}
+    <span class="tnum">page {{ pager.page }} of {{ pager.pages }}</span>
+    {% if pager.has_next %}<a class="btn btn-sm" rel="next" href="?{{ pager_qs }}page={{ pager.page + 1 }}&amp;per={{ pager.per_page }}">Next</a>{% endif %}
+  </span>
+  <label class="pager-per">Rows per page
+    <select name="per" class="btn btn-sm" data-auto-submit>
+      {% for n in per_choices %}<option value="{{ n }}"{% if n == pager.per_page %} selected{% endif %}>{{ n }}</option>{% endfor %}
+    </select>
+  </label>
+  <noscript><button class="btn btn-sm" type="submit">Apply</button></noscript>
+</form>
+{% endif %}

@@ -49,6 +49,7 @@
       {% if show_reason %}<span class="muted">{{ row.match_reason }}</span>{% endif %}
     </div>
     {% endfor %}
+    {% if not query %}{% include "_pager.html" %}{% endif %}
   </div>
   {% else %}
   <div class="card card-pad card-prose">

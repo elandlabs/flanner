@@ -39,7 +39,7 @@
   <div class="card" data-listgroup{% if streaming %} data-freshness-stream{% endif %}>
     <div class="card-head">
       Needs attention
-      <span class="pill pill-suspect tnum" data-drift-count>{{ attention | length }}</span>
+      <span class="pill pill-suspect tnum" data-drift-count>{{ pager.total }}</span>
       <span class="note">ordered by evidence, not by date</span>
       {# Judging one plan is several git processes. The page arrives first
          and this says how far along the rest is, rather than leaving a
@@ -54,6 +54,7 @@
       {% for row in attention %}{% include "_freshness_row.html" %}{% endfor %}
       </div>
       <div class="empty-filter" data-list-empty hidden>Nothing matches that filter.</div>
+      {% if streaming %}<div class="pager" data-list-pager hidden></div>{% else %}{% include "_pager.html" %}{% endif %}
       {% if streaming %}
       <div class="empty-filter" data-scan-clean hidden>Nothing has drifted. Every plan
         still lines up with the code it describes.</div>

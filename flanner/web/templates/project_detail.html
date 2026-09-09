@@ -84,6 +84,7 @@
       {% endfor %}
       </div>
       <div class="empty-filter" data-list-empty hidden>Nothing matches that filter.</div>
+      {% include "_pager.html" %}
     </div>
   </div>
   {% else %}
@@ -94,15 +95,6 @@
   </div>
   {% endif %}
 
-  {% if pages and pages > 1 %}
-  <div class="footnote" style="justify-content:center">
-    {% if page > 1 %}
-    <a class="btn btn-sm" href="/projects/{{ project.id }}?page={{ page - 1 }}">Previous</a>{% endif %}
-    <span>page {{ page }} / {{ pages }} ({{ total }} total)</span>
-    {% if page < pages %}
-    <a class="btn btn-sm" href="/projects/{{ project.id }}?page={{ page + 1 }}">Next</a>{% endif %}
-  </div>
-  {% endif %}
 
 </div>
 {% endblock %}

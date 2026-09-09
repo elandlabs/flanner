@@ -1176,3 +1176,14 @@ select.btn-sm { padding-right: 8px; }
 /* A path or a command in inline code has nowhere natural to break, so it
    may break anywhere rather than widen the page. */
 code { overflow-wrap: anywhere; }
+
+/* One page of a longer list: the range shown, Previous and Next, and the
+   rows-per-page menu. Sits under a list as its footer row. */
+.pager {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px;
+  padding: 10px 18px; border-top: 1px solid var(--divider);
+  font-size: 12px; color: var(--text-4);
+}
+.pager-nav { display: inline-flex; align-items: center; gap: 8px; }
+.pager-per { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; }
+.pager select { font: inherit; }

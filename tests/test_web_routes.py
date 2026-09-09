@@ -658,3 +658,41 @@ def test_sharing_without_a_workspace_says_so_rather_than_failing_silently(client
 
     assert response.status_code == 303
     assert "has%20not%20joined%20a%20workspace" in response.headers["location"]
+
+
+# --- paging -------------------------------------------------------------------
+
+
+def _rows(html: str) -> int:
+    return html.count("data-list-item")
+
+
+def test_plans_page_pages_fifteen_at_a_time_and_remembers_the_size(client, project_id):
+    for n in range(17):
+        made = client.post(
+            f"/projects/{project_id}/plans/new",
+            data={"name": f"plan{n:02d}", "description": "d", "content": "# P\n"},
+        )
+        assert made.status_code == 303
+
+    first = client.get("/plans")
+    assert first.status_code == 200
+    assert _rows(first.text) == 15
+    assert "1–15 of 17" in first.text
+
+    second = client.get("/plans?page=2")
+    assert _rows(second.text) == 2
+    assert "16–17 of 17" in second.text
+    # Past the end lands on the last page; junk falls back rather than erroring.
+    assert _rows(client.get("/plans?page=99").text) == 2
+    assert client.get("/plans?page=x&per=999").status_code == 200
+
+    wide = client.get("/plans?per=30")
+    assert _rows(wide.text) == 17
+    assert wide.cookies.get("flanner_per_page") == "30"
+
+    # The choice sticks without the parameter, and covers every list.
+    client.cookies.set("flanner_per_page", "30")
+    assert _rows(client.get("/plans").text) == 17
+    project = client.get(f"/projects/{project_id}")
+    assert project.status_code == 200 and "1–17 of 17" in project.text

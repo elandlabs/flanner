@@ -15,7 +15,7 @@ from collections import OrderedDict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 from uuid import UUID
 
 import markdown
@@ -70,6 +70,7 @@ from .freshness import peek as freshness_peek
 from .frontmatter import read_managed
 from .git_integration import find_git_root, update_gitignore, validate_git_repo
 from .linear_utils import generate_linear_issue_url
+from .paging import PER_PAGE_CHOICES, Page, per_page_or_default, window
 from .plan_ops import create_plan, record_new_version
 from .storage import ensure_plan_directory_exists, load_plan_file
 from .utils import format_relative_time, hash_content
@@ -80,6 +81,22 @@ logger = logging.getLogger(__name__)
 app = FastAPI(
     title="Flanner", description="Manage plan files with automatic versioning", version=__version__
 )
+
+
+@app.middleware("http")
+async def remember_per_page(request: Request, call_next: Any) -> Any:
+    """Keep a chosen page size for a year, so one choice covers every list."""
+    response = await call_next(request)
+    chosen = request.query_params.get("per")
+    if chosen is not None and chosen.isdigit():
+        response.set_cookie(
+            PER_PAGE_COOKIE,
+            str(per_page_or_default(chosen)),
+            max_age=365 * 24 * 3600,
+            samesite="lax",
+        )
+    return response
+
 
 # Get paths
 BASE_DIR = Path(__file__).resolve().parent
@@ -351,7 +368,42 @@ async def html_crash_page(request: Request, exc: Exception) -> Response:
 # Rendering guard: markdown.convert on multi-MB documents takes seconds and,
 # called from an async route, would freeze the event loop for every client.
 MAX_RENDER_CHARS = 1_000_000
-PAGE_SIZE = 50
+
+# --- paging --------------------------------------------------------------------
+#
+# Every list pages the same way: ?page= and ?per= from the query string,
+# clamped by flanner.paging, and the chosen size kept in a cookie so one
+# choice covers every list. `_pager.html` renders the controls; a query
+# fetches only the page it shows.
+
+PER_PAGE_COOKIE = "flanner_per_page"
+
+
+def _paging(request: Request, total: int) -> tuple[int, int, int]:
+    """``(page, per_page, offset)`` for a query, from the request."""
+    params = request.query_params
+    per = params.get("per") or request.cookies.get(PER_PAGE_COOKIE)
+    return window(total, params.get("page"), per)
+
+
+def _paginate(request: Request, items: list[Any]) -> Page[Any]:
+    """A page of rows already in memory: a scan, a walk, a filtered list."""
+    page, per, offset = _paging(request, len(items))
+    return Page(items[offset : offset + per], page, per, len(items))
+
+
+def _pager_context(request: Request, page: Page[Any]) -> dict[str, Any]:
+    """What _pager.html needs, with the other query parameters carried so a
+    sort or a filter survives the page turn."""
+    rest = {k: v for k, v in request.query_params.items() if k not in ("page", "per")}
+    qs = urlencode(rest)
+    return {
+        "pager": page,
+        "pager_query": rest,
+        "pager_qs": qs + "&" if qs else "",
+        "per_choices": PER_PAGE_CHOICES,
+    }
+
 
 # Rendered-HTML cache keyed by content hash; versions are immutable so a
 # hash hit can never be stale. The in-process OrderedDict LRU is the decided
@@ -864,7 +916,7 @@ async def dashboard(request: Request) -> HTMLResponse:
 
 @app.get("/projects", response_class=HTMLResponse)
 async def projects_list(
-    request: Request, page: int = 1, message: str | None = None, sort: str = "updated"
+    request: Request, message: str | None = None, sort: str = "updated"
 ) -> HTMLResponse:
     """List projects, a page at a time"""
     ensure_db()
@@ -875,9 +927,8 @@ async def projects_list(
     sort = sort if sort in ("updated", "name") else "updated"
 
     total = db_count_projects(session)
-    pages = max(1, -(-total // PAGE_SIZE))
-    page = min(max(1, page), pages)
-    projects = db_list_projects(session, limit=PAGE_SIZE, offset=(page - 1) * PAGE_SIZE, sort=sort)
+    page, per, offset = _paging(request, total)
+    projects = db_list_projects(session, limit=per, offset=offset, sort=sort)
     plan_counts = plan_file_counts_by_project(session, exclude=_hidden(session))
 
     # Not computed here. See _nav's attention badge: this is the same walk,
@@ -906,9 +957,7 @@ async def projects_list(
                 {"plan_file": pf, "project": pf.project, "updated_at": pf.updated_at}
                 for pf in recent_plan_files(session, limit=5, exclude=_hidden(session))
             ],
-            "page": page,
-            "pages": pages,
-            "total_pages": pages,
+            **_pager_context(request, Page(projects, page, per, total)),
             "total": total,
             "sort": sort,
             "success": success,
@@ -987,7 +1036,7 @@ async def create_project_post(
 
 
 @app.get("/projects/{project_id}", response_class=HTMLResponse)
-async def project_detail(request: Request, project_id: str, page: int = 1) -> HTMLResponse:
+async def project_detail(request: Request, project_id: str) -> HTMLResponse:
     """Show project detail with a page of plan files"""
     ensure_db()
     session = get_session()
@@ -1001,11 +1050,13 @@ async def project_detail(request: Request, project_id: str, page: int = 1) -> HT
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    total = db_count_plan_files(session, project_uuid, exclude=_hidden(session))
-    pages = max(1, -(-total // PAGE_SIZE))
-    page = min(max(1, page), pages)
+    hidden = _hidden(session)
+    total = db_count_plan_files(session, project_uuid, exclude=hidden)
+    page, per, offset = _paging(request, total)
+    # `exclude` on both, where the count used to hide what the list still
+    # showed: a page's rows and its total now agree.
     plan_files = db_list_plan_files(
-        session, project_uuid, limit=PAGE_SIZE, offset=(page - 1) * PAGE_SIZE
+        session, project_uuid, limit=per, offset=offset, exclude=hidden
     )
 
     # Count Linear links per plan so the list can mark linked plans.
@@ -1022,8 +1073,7 @@ async def project_detail(request: Request, project_id: str, page: int = 1) -> HT
             "request": request,
             "project": project,
             "plan_files": plan_files,
-            "page": page,
-            "pages": pages,
+            **_pager_context(request, Page(plan_files, page, per, total)),
             "total": total,
             "linear_counts": linear_counts,
         },
@@ -1617,18 +1667,22 @@ async def freshness_page(request: Request, full: int = 0) -> HTMLResponse:
             if record:
                 tally[record["status"]] = tally.get(record["status"], 0) + 1
 
+    # Streaming leaves `attention` empty and the page's own script pages the
+    # rows as they arrive; ?full=1 pages here like every other list.
+    listed = _paginate(request, attention)
     return templates.TemplateResponse(
         request,
         "freshness.html",
         {
             "streaming": not full,
+            **_pager_context(request, listed),
             # `_nav` rather than three hand-picked counts: this page was
             # supplying its own subset, so the peer count and the signed-in
             # flag fell back to their defaults and the sidebar quietly lost
             # entries whenever somebody opened it.
             **_nav(session),
             "request": request,
-            "attention": attention,
+            "attention": listed.items,
             "tally": tally,
         },
     )
@@ -1656,11 +1710,16 @@ async def review_page(request: Request) -> HTMLResponse:
     """Plans with a proposal waiting on somebody."""
     ensure_db()
     session = get_session()
-    rows = await run_in_threadpool(_review_rows, session)
+    listed = _paginate(request, await run_in_threadpool(_review_rows, session))
     return templates.TemplateResponse(
         request,
         "review.html",
-        {**_nav(session), "request": request, "rows": rows},
+        {
+            **_nav(session),
+            "request": request,
+            "rows": listed.items,
+            **_pager_context(request, listed),
+        },
     )
 
 
@@ -1694,6 +1753,7 @@ async def skills_page(
         for pkg in report["packages"]
         if (shadowed or pkg["effective"]) and (not scope or pkg["scope"] == scope)
     ]
+    listed = _paginate(request, rows)
 
     from . import skills_manage, skills_mesh, skills_observe
 
@@ -1705,7 +1765,8 @@ async def skills_page(
             **_nav(session),
             "request": request,
             "report": report,
-            "rows": rows,
+            "rows": listed.items,
+            **_pager_context(request, listed),
             "scope": scope,
             "shadowed": bool(shadowed),
             "said": said,
@@ -2040,6 +2101,7 @@ async def memory_page(request: Request, q: str = "", status: str = "active") -> 
     ensure_db()
     session = get_session()
     from . import memory_ops
+    from .database import count_memories as db_count_memories
     from .database import list_memories as db_list_memories
 
     if q:
@@ -2051,7 +2113,13 @@ async def memory_page(request: Request, q: str = "", status: str = "active") -> 
             functools.partial(memory_ops.search_all, session, query=q, limit=50)
         )
         reason = True
+        pager_extra: dict[str, Any] = {}
     else:
+        shown_status = None if status == "all" else status
+        total = await run_in_threadpool(
+            functools.partial(db_count_memories, session, status=shown_status)
+        )
+        page, per, offset = _paging(request, total)
         rows = [
             {
                 "id": str(m.id),
@@ -2066,11 +2134,12 @@ async def memory_page(request: Request, q: str = "", status: str = "active") -> 
             }
             for m in await run_in_threadpool(
                 functools.partial(
-                    db_list_memories, session, status=None if status == "all" else status
+                    db_list_memories, session, status=shown_status, limit=per, offset=offset
                 )
             )
         ]
         reason = False
+        pager_extra = _pager_context(request, Page(rows, page, per, total))
 
     return templates.TemplateResponse(
         request,
@@ -2080,6 +2149,7 @@ async def memory_page(request: Request, q: str = "", status: str = "active") -> 
             "query": q,
             "status": status,
             "show_reason": reason,
+            **pager_extra,
             "summary": await run_in_threadpool(memory_ops.summary, session),
             **_nav(session),
         },
@@ -2242,10 +2312,18 @@ async def plans_page(request: Request) -> HTMLResponse:
     """Every plan across every project, newest first."""
     ensure_db()
     session = get_session()
-    rows = []
-    for plan_file in recent_plan_files(session, limit=200, exclude=_hidden(session)):
-        rows.append({"plan_file": plan_file, "project": plan_file.project})
-    return templates.TemplateResponse(request, "plans.html", {"rows": rows, **_nav(session)})
+    hidden = _hidden(session)
+    total = db_count_plan_files(session, exclude=hidden)
+    page, per, offset = _paging(request, total)
+    rows = [
+        {"plan_file": plan_file, "project": plan_file.project}
+        for plan_file in recent_plan_files(session, limit=per, offset=offset, exclude=hidden)
+    ]
+    return templates.TemplateResponse(
+        request,
+        "plans.html",
+        {"rows": rows, **_pager_context(request, Page(rows, page, per, total)), **_nav(session)},
+    )
 
 
 @app.get("/api/projects")

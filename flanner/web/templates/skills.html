@@ -69,6 +69,7 @@
       <span class="when tnum">{{ row.file_count }} files</span>
     </div>
     {% endfor %}
+    {% include "_pager.html" %}
   </div>
   {% else %}
   <div class="card card-pad card-prose">

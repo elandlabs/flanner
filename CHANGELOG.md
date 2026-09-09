@@ -6,6 +6,22 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Every list in the web UI is paged.** Projects, plans, freshness, memory,
+  skills and review show fifteen rows at a time, with Previous and Next and
+  a rows-per-page menu of 15, 30, 50 or 100. The choice is remembered, and
+  a page fetches only the rows it shows. The freshness table, which fills in
+  as each plan is judged, pages in the browser as rows arrive.
+- **`--limit` on the listing commands.** `list`, `mem list`, `mem pending`,
+  `skills list`, `skills installs` and `skills evidence list` show fifty rows
+  unless told otherwise (`--limit 0` for everything) and say when the list
+  was cut. A table taller than the terminal is shown through the system
+  pager when stdout is a terminal; piped output is unchanged.
+
+### Fixed
+- A project's plan list counted hidden plans out and listed them anyway; the
+  count and the rows now agree.
+
 ## [0.12.0] - 2026-09-09
 
 ### Added
