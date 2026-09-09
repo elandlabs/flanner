@@ -1,3 +1,4 @@
+# ruff: noqa: E501 -- the page scripts are JavaScript, kept readable as one block
 """Walk the local web UI and fail on text that cannot be read or a page that
 scrolls sideways.
 
