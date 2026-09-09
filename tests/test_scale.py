@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 import flanner.web as webmod
 from flanner.database import PlanFileModel, ProjectModel, VersionModel, get_session
+from flanner.paging import DEFAULT_PER_PAGE
 from flanner.server import (
     create_plan_file_tool,
     create_project_tool,
@@ -57,16 +58,20 @@ def test_project_detail_paginates(client):
 
     page1 = client.get(f"/projects/{project.id}")
     assert page1.status_code == 200
-    assert "page 1 / 3 (120 total)" in page1.text
-    assert page1.text.count('class="plan-file-card"') == webmod.PAGE_SIZE
+    assert "1–15 of 120" in page1.text and "page 1 of 8" in page1.text
+    assert page1.text.count('class="plan-file-card"') == DEFAULT_PER_PAGE
 
-    page3 = client.get(f"/projects/{project.id}?page=3")
-    assert page3.status_code == 200
-    assert "page 3 / 3" in page3.text
+    page8 = client.get(f"/projects/{project.id}?page=8")
+    assert page8.status_code == 200
+    assert "page 8 of 8" in page8.text
 
     # out-of-range pages clamp instead of erroring
-    assert "page 3 / 3" in client.get(f"/projects/{project.id}?page=99").text
-    assert "page 1 / 3" in client.get(f"/projects/{project.id}?page=-4").text
+    assert "page 8 of 8" in client.get(f"/projects/{project.id}?page=99").text
+    assert "page 1 of 8" in client.get(f"/projects/{project.id}?page=-4").text
+
+    # a bigger page from the menu, and a size off the menu is the default
+    assert "page 1 of 3" in client.get(f"/projects/{project.id}?per=50").text
+    assert "page 1 of 8" in client.get(f"/projects/{project.id}?per=7").text
 
 
 def test_projects_list_paginates(client):
@@ -77,9 +82,9 @@ def test_projects_list_paginates(client):
 
     page1 = client.get("/projects")
     assert page1.status_code == 200
-    assert "page 1 / 2 (60 total)" in page1.text
+    assert "1–15 of 60" in page1.text and "page 1 of 4" in page1.text
     page2 = client.get("/projects?page=2")
-    assert "page 2 / 2" in page2.text
+    assert "16–30 of 60" in page2.text and "page 2 of 4" in page2.text
 
 
 def test_dashboard_caps_grid_and_links_to_all(client):

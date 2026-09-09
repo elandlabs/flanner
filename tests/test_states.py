@@ -37,7 +37,9 @@ def test_400_bad_uuid_renders_styled_page(client):
 
 
 def test_invalid_query_param_renders_styled_400(client):
-    r = client.get("/projects?page=abc")
+    # A page number falls back rather than failing (see flanner.paging), so
+    # the typed parameter that still validates is freshness's ?full=.
+    r = client.get("/freshness?full=abc")
     assert r.status_code == 400
     assert "invalid value" in r.text
 
