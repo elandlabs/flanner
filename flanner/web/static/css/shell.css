@@ -235,6 +235,10 @@ a:hover { color: var(--accent-hi); }
   margin-left: auto; font: 400 11px var(--font-mono);
   color: var(--text-4); white-space: nowrap;
 }
+@media (max-width: 600px) {
+  .card-head { flex-wrap: wrap; }
+  .card-head .note { margin-left: 0; white-space: normal; flex-basis: 100%; }
+}
 
 .stat-grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
 .stat { background: var(--card); border: 1px solid var(--border);
@@ -389,12 +393,12 @@ a:hover { color: var(--accent-hi); }
 .check .no { color: var(--stale-text); }
 
 .plan-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.plan-head .title { font: 600 19px var(--font-mono); letter-spacing: -.01em; margin: 0; }
-.vpicker { margin-left: auto; display: flex; gap: 7px; align-items: center; }
+.plan-head .title { font: 600 19px var(--font-mono); letter-spacing: -.01em; margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.vpicker { margin-left: auto; display: flex; gap: 7px; align-items: center; flex-wrap: wrap; max-width: 100%; }
 .vpicker .field-label { margin: 0; }
 .vpicker select {
   font: 500 11.5px var(--font-mono); color: var(--text-2);
-  padding: 4px 8px; border-radius: 6px;
+  padding: 4px 8px; border-radius: 6px; max-width: 100%;
 }
 
 /* Oversized plans skip markdown entirely and are served as plain text. */
@@ -436,7 +440,11 @@ a:hover { color: var(--accent-hi); }
   margin: 12px 0 0; padding: 2px 0 2px 14px;
   border-left: 2px solid var(--accent-line); color: var(--text-3);
 }
-.doc table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 13px; }
+/* A wide table scrolls inside itself, as a code block does. */
+.doc table {
+  display: block; width: max-content; max-width: 100%; overflow-x: auto;
+  border-collapse: collapse; margin-top: 12px; font-size: 13px;
+}
 .doc th, .doc td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--divider); }
 .doc th { font-size: 11.5px; color: var(--text-4); font-weight: 500; }
 .doc img { max-width: 100%; height: auto; }
@@ -677,6 +685,10 @@ kbd {
      face and 78ch of the mono face are not the same width. One cap, one
      font context, one set of edges. */
   max-width: calc(var(--measure) + 56px);
+  /* Auto margins size a flex item to its content, so without a width
+     the column grew to its widest table and the page scrolled sideways
+     on a phone. */
+  width: 100%;
   margin-inline: auto;
 }
 [data-reading-measure="narrow"]      .plan-main { --measure: 62ch; }
@@ -1155,3 +1167,7 @@ select.btn-sm { padding-right: 8px; }
   .doc { max-width: none; }
   a { color: inherit; text-decoration: none; }
 }
+
+/* A path or a command in inline code has nowhere natural to break, so it
+   may break anywhere rather than widen the page. */
+code { overflow-wrap: anywhere; }
