@@ -74,6 +74,11 @@ REQUIRED_ROLE: dict[str, frozenset[str]] = {
 #: materialise, and one list is the only way the two stay in step.
 MEMORY_TYPES = sync.MEMORY_TYPES
 
+#: Types that only travel when the entitlement includes skill sync. Same
+#: arrangement as memory, and the list lives in `sync` for the same
+#: reason: two copies is how they come to disagree.
+SKILL_TYPES = sync.SKILL_TYPES
+
 
 def may_send(artifact_type: str, role: str) -> bool:
     """Whether a peer holding this role may push this kind of artifact."""
@@ -154,6 +159,7 @@ def accept(
     refresh_keys: Any = None,
     cooldown: Cooldown | None = None,
     memory_sync: bool = True,
+    skill_sync: bool = True,
 ) -> sync.SyncReport:
     """Take in what a peer pushed, artifact by artifact.
 
@@ -199,6 +205,9 @@ def accept(
             # Refused per artifact so a batch carrying both plans and memory
             # still delivers the plans.
             report.rejected.append((artifact_id, "this entitlement does not include memory sync"))
+            continue
+        if artifact_type in SKILL_TYPES and not skill_sync:
+            report.rejected.append((artifact_id, "this entitlement does not include skill sync"))
             continue
         if not may_send(artifact_type, role):
             report.rejected.append((artifact_id, f"a {role} may not push a {artifact_type}"))

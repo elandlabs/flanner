@@ -81,6 +81,51 @@ def test_memory_is_refused_when_the_entitlement_does_not_cover_it(artifact_type)
     assert report.rejected == [("art_mem", "this entitlement does not include memory sync")]
 
 
+def a_package():
+    return {
+        "envelope": {
+            "artifact_id": "art_skill",
+            "artifact_type": artifacts.SKILL_PACKAGE,
+            "workspace_id": "ws_1",
+        },
+        "payload": '{"bundle_version": 1}',
+    }
+
+
+def test_a_skill_package_is_refused_when_the_entitlement_does_not_cover_it():
+    """Withheld on the read path too. A gate on one direction is not a gate."""
+    report = push.accept(
+        None,
+        [a_package()],
+        workspace_id="ws_1",
+        role=MAINTAINER,
+        resolve_key=None,
+        skill_sync=False,
+    )
+
+    assert report.accepted == []
+    assert report.rejected == [("art_skill", "this entitlement does not include skill sync")]
+
+
+def test_memory_and_skills_are_refused_for_their_own_reasons():
+    """Two separate purchases. A reader has to be able to tell which one
+    lapsed, so the two refusals must not share a sentence."""
+    report = push.accept(
+        None,
+        [a_memory(), a_package()],
+        workspace_id="ws_1",
+        role=MAINTAINER,
+        resolve_key=None,
+        memory_sync=False,
+        skill_sync=False,
+    )
+
+    assert report.rejected == [
+        ("art_mem", "this entitlement does not include memory sync"),
+        ("art_skill", "this entitlement does not include skill sync"),
+    ]
+
+
 def test_each_artifact_is_refused_for_its_own_reason():
     """Per artifact, so one over-reaching item does not discard the rest,
     and so a reader can tell a lapsed feature from a missing role."""

@@ -44,6 +44,11 @@ LIVE_COLLABORATION = "live_collaboration"
 #: device that predates memory sharing simply does not have it
 #: rather than being told it does and then refusing.
 MEM_SYNC = "mem_sync"
+#: Carrying a skill package between devices. Separate from `MEM_SYNC` for
+#: the same reason that one is separate from plans: they are different
+#: things to be paying for, and an organization may reasonably want its
+#: procedures shared while its durable context stays put.
+SKILL_SYNC = "skill_sync"
 
 # How long an expired entitlement keeps working offline before team features
 # stop. Local plan work never depends on this (§18.4).

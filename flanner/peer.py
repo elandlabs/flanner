@@ -95,6 +95,10 @@ class PeerIdentity:
     # answers come from the same verified claims and asking twice is how
     # they come to disagree.
     may_sync_memory: bool = False
+    #: And whether it covers skill packages. Read alongside the memory flag
+    #: from the same verified claims, so the two cannot disagree about what
+    #: one entitlement said.
+    may_sync_skills: bool = False
 
 
 def authorize(
@@ -165,6 +169,7 @@ def authorize(
         organization_id=verdict.claims.organization_id,
         role=role,
         may_sync_memory=verdict.claims.has_feature(entitlements.MEM_SYNC),
+        may_sync_skills=verdict.claims.has_feature(entitlements.SKILL_SYNC),
     )
 
 
@@ -263,6 +268,7 @@ def _serve_fetch(
     workspace_id: str,
     hidden: Any,
     memory: bool = True,
+    skills: bool = True,
 ) -> dict[str, Any]:
     """Hand over what was asked for, minus what this caller may not have.
 
@@ -290,6 +296,8 @@ def _serve_fetch(
         # organization that switched memory sharing off, or a subscription
         # that lapsed, has to mean the memory does not travel either way.
         if not memory and envelope.get("artifact_type") in push_rules.MEMORY_TYPES:
+            continue
+        if not skills and envelope.get("artifact_type") in push_rules.SKILL_TYPES:
             continue
         payload = blob.decode("utf-8", errors="replace") if blob is not None else None
         out.append({"envelope": envelope, "payload": payload})
@@ -405,6 +413,7 @@ def _serve_request(
             workspace_id=workspace_id,
             hidden=hidden,
             memory=caller.may_sync_memory,
+            skills=caller.may_sync_skills,
         )
 
 
@@ -434,6 +443,7 @@ def _serve_write(
         refresh_keys=refresh_keys,
         cooldown=_keyring_cooldown,
         memory_sync=caller.may_sync_memory,
+        skill_sync=caller.may_sync_skills,
     )
     return {
         "accepted": report.accepted,

@@ -21,6 +21,7 @@ from flanner.database import ArtifactModel, get_artifact, save_artifact
 from flanner.device_auth import sign_request
 from flanner.entitlements import (
     MEM_SYNC,
+    SKILL_SYNC,
     TEAM_SYNC,
     Claims,
     WorkspaceCapability,
@@ -73,13 +74,13 @@ def an_entitlement(
     return encode_token(claims, sign(canonical_bytes(claims.to_dict()), issuer_key))
 
 
-def a_session(issuer_key, *, device_id, role=MAINTAINER, device_keys=None):
+def a_session(issuer_key, *, device_id, role=MAINTAINER, device_keys=None, features=(TEAM_SYNC,)):
     return cache.Session(
         endpoint="https://api.example.test",
         device_id=device_id,
         organization_id="org_1",
         user_id="maria",
-        entitlement=an_entitlement(issuer_key, device_id=device_id, role=role),
+        entitlement=an_entitlement(issuer_key, device_id=device_id, role=role, features=features),
         keyring=keyring_of(issuer_key),
         device_keys=device_keys or {},
     )
@@ -129,6 +130,23 @@ def test_memory_travels_only_when_the_entitlement_says_so(issuer_key):
     who = peer.authorize(request, WORKSPACE, keyring_of(issuer_key))
 
     assert who.may_sync_memory is True
+
+
+def test_a_plan_entitlement_alone_does_not_carry_skills(issuer_key):
+    """Same default as memory, for the same reason. A device that predates
+    skill sharing has no such flag and must not be read as holding one."""
+    who = peer.authorize(a_peer_request(issuer_key), WORKSPACE, keyring_of(issuer_key))
+    assert who.may_sync_skills is False
+
+
+def test_skills_travel_only_when_the_entitlement_says_so(issuer_key):
+    request = a_peer_request(issuer_key, features=(TEAM_SYNC, SKILL_SYNC))
+
+    who = peer.authorize(request, WORKSPACE, keyring_of(issuer_key))
+
+    assert who.may_sync_skills is True
+    # Two purchases, read apart. Buying one must not imply the other.
+    assert who.may_sync_memory is False
 
 
 def test_the_public_key_must_hash_to_the_device_id_claimed(issuer_key):
@@ -253,7 +271,7 @@ class Device:
         """Make this the device that identity and session see."""
         return _Home(self.home)
 
-    def sign_in(self, *, role=MAINTAINER, device_keys=None):
+    def sign_in(self, *, role=MAINTAINER, device_keys=None, features=(TEAM_SYNC,)):
         with self.active():
             cache.save(
                 a_session(
@@ -261,6 +279,7 @@ class Device:
                     device_id=self.device_id,
                     role=role,
                     device_keys=device_keys or {self.device_id: self.public_key},
+                    features=features,
                 )
             )
 
@@ -424,6 +443,43 @@ def test_artifacts_from_another_workspace_are_withheld(alice, bob, serve):
         delivered = remote.fetch([private.artifact_id])
 
     assert delivered == []
+
+
+def test_a_skill_package_is_withheld_from_an_entitlement_without_skill_sync(alice, bob, serve):
+    """The other half of the gate. Refusing a push while still handing the
+    same bytes over on a fetch would be a gate on one direction only."""
+    link(alice, bob)
+    package = a_stored_artifact(
+        alice.session,
+        key=alice.signing_key(),
+        artifact_type=artifacts.SKILL_PACKAGE,
+        body='{"bundle_version": 1}',
+    )
+    address = serve(peer.create_peer_app(alice.sessions, alice.held))
+
+    with bob.active():
+        remote = peer.RemotePeer(address, WORKSPACE, bob.held)
+        delivered = remote.fetch([package.artifact_id])
+
+    assert delivered == []
+
+
+def test_a_skill_package_travels_when_the_entitlement_covers_it(alice, bob, serve):
+    link(alice, bob)
+    bob.sign_in(features=(TEAM_SYNC, SKILL_SYNC))
+    package = a_stored_artifact(
+        alice.session,
+        key=alice.signing_key(),
+        artifact_type=artifacts.SKILL_PACKAGE,
+        body='{"bundle_version": 1}',
+    )
+    address = serve(peer.create_peer_app(alice.sessions, alice.held))
+
+    with bob.active():
+        remote = peer.RemotePeer(address, WORKSPACE, bob.held)
+        delivered = remote.fetch([package.artifact_id])
+
+    assert [envelope["artifact_id"] for envelope, _ in delivered] == [package.artifact_id]
 
 
 def test_a_device_that_is_not_signed_in_serves_nobody(alice, bob, serve):
