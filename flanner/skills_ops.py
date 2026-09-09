@@ -19,7 +19,9 @@ itself to.
 
 from __future__ import annotations
 
+import difflib
 import hashlib
+import itertools
 import json
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -189,6 +191,95 @@ def _agents(agent: str | None) -> list[str]:
     if agent is None:
         return list(adapters.ADAPTERS)
     return [agent] if agent in adapters.ADAPTERS else []
+
+
+def contents(directory: Path) -> list[dict[str, Any]]:
+    """The files in a package, relative to it, with sizes.
+
+    The same walk the hash uses, so what a reader is shown is exactly what
+    the package's identity was computed over — including the exclusions,
+    which is why a `.DS_Store` never appears here either.
+    """
+    files, _total, _cut = package_files(Path(directory))
+    out = []
+    for path in files:
+        try:
+            size = path.stat().st_size
+        except OSError:
+            size = 0
+        out.append(
+            {
+                "path": str(path.relative_to(directory)).replace("\\", "/"),
+                "size_bytes": size,
+                "manifest": path.name == adapters.MANIFEST,
+            }
+        )
+    return out
+
+
+#: Lines of diff worth showing. Past this the answer is "these are not the
+#: same package" and a longer listing does not make it truer.
+MAX_DIFF_LINES = 400
+
+
+def compare(left: Path, right: Path) -> dict[str, Any]:
+    """How two copies of a skill differ.
+
+    "This one is shadowed" is the finding; this is the question a reader
+    asks next, and until now nothing answered it. The manifests are
+    diffed because that is where a skill's behaviour lives; the rest of
+    the package is compared by name and bytes, which is enough to say a
+    helper was added without printing it.
+    """
+    left, right = Path(left), Path(right)
+    by_side = []
+    for side in (left, right):
+        by_side.append({item["path"]: item for item in contents(side)})
+    names = sorted(set(by_side[0]) | set(by_side[1]))
+
+    differing: list[str] = []
+    for name in names:
+        if name not in by_side[0] or name not in by_side[1]:
+            continue
+        try:
+            same = (left / name).read_bytes() == (right / name).read_bytes()
+        except OSError:
+            same = False
+        if not same:
+            differing.append(name)
+
+    def _manifest(where: Path) -> list[str]:
+        try:
+            return (
+                (where / adapters.MANIFEST)
+                .read_text(encoding="utf-8", errors="replace")
+                .splitlines()
+            )
+        except OSError:
+            return []
+
+    diff = list(
+        itertools.islice(
+            difflib.unified_diff(
+                _manifest(left),
+                _manifest(right),
+                # Both directories are named for the skill, so naming them
+                # here would print the same word twice. Which copy is which
+                # is the card's heading; this only has to say the direction.
+                fromfile="the copy that loads",
+                tofile="this copy",
+                lineterm="",
+            ),
+            MAX_DIFF_LINES + 1,
+        )
+    )
+    return {
+        "only_left": [n for n in names if n not in by_side[1]],
+        "only_right": [n for n in names if n not in by_side[0]],
+        "differing": differing,
+        "manifest_diff": diff[:MAX_DIFF_LINES],
+        "diff_truncated": len(diff) > MAX_DIFF_LINES,
+    }
 
 
 def scan(project_root: Path | None = None, agent: str | None = None) -> list[Package]:

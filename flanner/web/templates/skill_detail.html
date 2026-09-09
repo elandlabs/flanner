@@ -1,0 +1,338 @@
+{% extends "base.html" %}
+{% block title %}{{ name }}{% endblock %}
+
+{#
+  One skill, in the order somebody works through it: which copies exist and
+  which loads, what is wrong, what it says, whether anyone uses it, and only
+  then what can be done to it. The actions sit last on purpose — every one
+  of them changes a directory an agent reads, and the reading comes first.
+#}
+
+{% block topbar_back %}
+<a class="btn back" href="/skills" aria-label="Back to skills" title="Back to skills"><span aria-hidden="true">←</span></a>
+{% endblock %}
+
+{% block topbar_main %}
+<h1>{{ name }}</h1>
+<span class="sub">{{ loaded.agent }} · {{ loaded.scope }}{% if loaded.plugin %} · {{ loaded.plugin }}{% endif %}
+  {%- if copies | length > 1 %} · {{ copies | length }} copies{% endif %}</span>
+{% endblock %}
+
+{% block content %}
+<div class="pane">
+
+  {% if said %}
+  <div class="notice">{{ said }}</div>
+  {% endif %}
+
+  {% if loaded.description %}
+  <div class="card card-pad card-prose">
+    <p>{{ loaded.description }}</p>
+  </div>
+  {% endif %}
+
+  {# --- every copy ------------------------------------------------------ #}
+  <div class="card">
+    <div class="card-head">Copies of this name
+      <span class="note">{{ copies | length }}</span></div>
+    <div class="tablewrap">
+      <div class="grid-row grid-head cols-copies">
+        <span>Agent</span><span>Scope</span><span>Where</span>
+        <span>Contents</span><span>Loads</span>
+      </div>
+      {% for copy in copies %}
+      <div class="grid-row cols-copies">
+        <span class="muted">{{ copy.agent }}</span>
+        <span class="muted">{{ copy.scope }}{% if copy.revision %}
+          <span class="path">{{ copy.revision }}</span>{% endif %}</span>
+        <span>{{ copy.plugin or copy.scope }}
+          <span class="path">{{ copy.directory }}</span>
+          <span class="path">{{ copy.manifest_hash[:23] }}…</span></span>
+        <span class="when tnum">{{ copy.file_count }} files</span>
+        <span>{% if copy.effective %}<span class="pill pill-fresh">loads</span>
+          {% else %}<span class="pill pill-quiet">shadowed</span>{% endif %}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% if copies | length > 1 %}
+    <div class="card-pad" style="padding-top:0">
+      <p class="hint">
+        {% if ambiguous %}
+          {{ ambiguous | join(' and ') }} loads more than one of these and does
+          not resolve a name collision, so which one runs is not decided here.
+          Give them different names, or delete the one you did not mean to keep.
+        {% elif agents | length > 1 %}
+          {{ agents | join(' and ') }} each load their own. A name held by two
+          agents is two skills, not a collision — they are read from different
+          directories by different programs.
+        {% else %}
+          The others are on disk and never read. Editing one of them is the
+          usual cause of “my change did nothing”.
+        {% endif %}
+      </p>
+    </div>
+    {% endif %}
+  </div>
+
+  {# --- what is wrong --------------------------------------------------- #}
+  {% if findings %}
+  <div class="card" style="margin-top:14px">
+    <div class="card-head">What is wrong
+      <span class="note">{{ findings | length }}</span></div>
+    <div class="tablewrap">
+      <div class="grid-row grid-head cols-findings">
+        <span>Finding</span><span>Detail</span><span>What to do</span>
+      </div>
+      {% for f in findings %}
+      <div class="grid-row cols-findings">
+        <span><span class="pill pill-{{ 'stale' if f.severity == 'defect' else 'aging' }}">{{ f.code }}</span></span>
+        <span>{{ f.detail }}<span class="hint">{{ f.evidence }}</span></span>
+        <span class="hint">{{ f.remedy }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# --- how the copies differ ------------------------------------------- #}
+  {% for change in differences %}
+  <div class="card" style="margin-top:14px">
+    <div class="card-head">How the {{ change.against.scope }} copy differs
+      <span class="note">{{ change.against.directory }}</span></div>
+    <div class="card-pad" style="padding-bottom:0">
+      <p class="hint">
+        {% if change.differing %}{{ change.differing | length }} file(s) differ:
+          {{ change.differing | join(', ') }}.{% endif %}
+        {% if change.only_left %}Only in the copy that loads:
+          {{ change.only_left | join(', ') }}.{% endif %}
+        {% if change.only_right %}Only in this one:
+          {{ change.only_right | join(', ') }}.{% endif %}
+        {% if not change.manifest_diff %}The manifests are the same; the
+          difference is elsewhere in the package.{% endif %}
+      </p>
+    </div>
+    {% if change.manifest_diff %}
+    <pre class="diff">{% for line in change.manifest_diff %}{% if line.startswith('+') %}<span class="add">{{ line }}</span>{% elif line.startswith('-') %}<span class="cut">{{ line }}</span>{% elif line.startswith('@') %}<span class="at">{{ line }}</span>{% else %}{{ line }}
+{% endif %}{% endfor %}</pre>
+    {% if change.diff_truncated %}
+    <div class="card-pad" style="padding-top:0">
+      <p class="hint">Cut short. Past this the answer is that these are not the
+        same package.</p>
+    </div>
+    {% endif %}
+    {% endif %}
+  </div>
+  {% endfor %}
+
+  {# --- what it says ---------------------------------------------------- #}
+  <div class="card" style="margin-top:14px">
+    <div class="card-head">What it says
+      <span class="note">{{ loaded.directory }}</span></div>
+    {% if prose %}
+    <div class="card-pad"><article class="doc">{{ prose | safe }}</article></div>
+    {% else %}
+    <div class="card-pad card-prose"><p>The manifest could not be read.</p></div>
+    {% endif %}
+    <div class="tablewrap">
+      <div class="grid-row grid-head cols-files">
+        <span>File</span><span>Size</span>
+      </div>
+      {% for file in files %}
+      <div class="grid-row cols-files">
+        <span class="mono">{{ file.path }}{% if file.manifest %}
+          <span class="pill pill-quiet">manifest</span>{% endif %}</span>
+        <span class="when tnum">{{ file.size_bytes }} B</span>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="card-pad" style="padding-top:0">
+      <p class="hint">These are the files the package's hash covers. Nothing in
+        one is executed by a scan, and flanner never writes into a directory an
+        agent owns.</p>
+    </div>
+  </div>
+
+  {# --- who uses it ----------------------------------------------------- #}
+  <div class="card card-pad" style="margin-top:14px">
+    <div class="card-head" style="padding:0 0 10px 0">Used in the last {{ days }} days
+      <span class="note">{% if used %}{{ used.invocations }} time(s)
+        {% elif usage.coverage.watching %}not once{% else %}unknown{% endif %}</span></div>
+    {% if used %}
+    <div class="kv"><span>Invocations</span><b class="tnum">{{ used.invocations }}</b></div>
+    <div class="kv"><span>Last used</span><b>{{ used.last_used_at[:16].replace('T', ' ') }}</b></div>
+    <div class="kv"><span>By</span><b>{% for k, v in used.by_model.items() %}{{ k }} ({{ v }}){% if not loop.last %}, {% endif %}{% endfor %}</b></div>
+    {% endif %}
+    <p class="hint" style="margin-top:10px">
+      {% if usage.coverage.watching %}
+        Watched during {{ usage.coverage.windows }}
+        period{{ '' if usage.coverage.windows == 1 else 's' }} of these
+        {{ days }} days. Explicit invocations only: an agent that reads a
+        skill's description without being asked reports nothing, so this is a
+        floor rather than a total.
+      {% else %}
+        Nothing was watching, so there is no number here — not a zero.
+        <a href="/skills">Turn watching on</a> from the skills page.
+      {% endif %}
+    </p>
+  </div>
+
+  {# --- versions and rollback ------------------------------------------- #}
+  <div class="card" style="margin-top:14px">
+    <div class="card-head">Versions flanner is holding
+      <span class="note">{{ snapshots | length }} stored ·
+        {{ installs | length }} install(s)</span></div>
+
+    {% if snapshots %}
+    <div class="tablewrap">
+      <div class="grid-row grid-head cols-snapshots">
+        <span>Snapshot</span><span>Files</span><span>Size</span><span>State</span>
+      </div>
+      {% for row in snapshots %}
+      <div class="grid-row cols-snapshots">
+        <span class="mono">{{ row.manifest_hash[:23] }}…</span>
+        <span class="when tnum">{{ row.files }}</span>
+        <span class="when tnum">{{ row.size_bytes }} B</span>
+        <span>{% if row.verified %}<span class="pill pill-fresh">verifies</span>
+          {% else %}<span class="pill pill-stale">does not verify</span>{% endif %}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if installs %}
+    <div class="tablewrap">
+      <div class="grid-row grid-head cols-installs">
+        <span>Installed</span><span>Where</span><span>State</span><span></span>
+      </div>
+      {% for row in installs %}
+      <div class="grid-row cols-installs">
+        <span class="when">{{ row.installed_at[:16].replace('T', ' ') }}</span>
+        <span>{{ row.target }}</span>
+        <span>{% if row.intact %}<span class="pill pill-fresh">intact</span>
+          {% elif row.status == 'installed' %}<span class="pill pill-aging">edited since</span>
+          {% else %}<span class="pill pill-quiet">{{ row.status }}</span>{% endif %}</span>
+        <span>{% if row.replaced_hash and row.status == 'installed' %}
+          <form method="post" action="/skills/rollback">
+            <input type="hidden" name="installation_id" value="{{ row.id }}">
+            <input type="hidden" name="back" value="/skills/{{ name | urlencode }}">
+            <button class="btn btn-sm">Roll back</button>
+          </form>{% endif %}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="card-pad" {% if snapshots or installs %}style="padding-top:0"{% endif %}>
+      {% if not snapshots %}
+      <p class="hint">Nothing kept. Adopting takes a copy of the package into
+        flanner's store — a copy, so it cannot break the thing it adopts — and
+        that copy is what a rollback puts back and what sharing sends.</p>
+      {% endif %}
+      <form method="post" action="/skills/{{ name | urlencode }}/adopt" class="listctl">
+        <input type="hidden" name="agent" value="{{ loaded.agent }}">
+        <button class="btn btn-sm{% if not snapshots %} btn-primary{% endif %}">
+          {% if snapshots %}Keep another copy{% else %}Keep a copy{% endif %}</button>
+        <span class="hint">Reads {{ loaded.directory }}. Writes only inside
+          flanner's own store.</span>
+      </form>
+    </div>
+  </div>
+
+  {# --- the team -------------------------------------------------------- #}
+  <div class="card" style="margin-top:14px">
+    <div class="card-head">Your team
+      <span class="note">{{ transfers | length }} arrived{% if channel and channel.subscribed %} ·
+        following{% endif %}</span></div>
+
+    {% if transfers %}
+    <div class="tablewrap">
+      <div class="grid-row grid-head cols-transfers">
+        <span>Package</span><span>State</span><span>From</span><span>How</span><span></span>
+      </div>
+      {% for row in transfers %}
+      <div class="grid-row cols-transfers">
+        <span class="mono">{{ row.manifest_hash[:19] }}…{% if row.detail and row.state == 'rejected' %}
+          <span class="hint">{{ row.detail }}</span>{% endif %}</span>
+        <span>{% if row.state == 'installed' %}<span class="pill pill-fresh">installed</span>
+          {% elif row.state == 'verified' %}<span class="pill pill-quiet">verified, not installed</span>
+          {% elif row.state == 'rejected' %}<span class="pill pill-stale">rejected</span>
+          {% else %}<span class="pill pill-aging">{{ row.state }}</span>{% endif %}</span>
+        <span class="path">{{ row.from_device[:12] or '-' }}</span>
+        <span class="muted">{% if row.pinned %}a one-time copy{% else %}channel {{ row.channel }}{% endif %}</span>
+        <span>{% if row.state == 'verified' %}
+          <form method="post" action="/skills/import">
+            <input type="hidden" name="transfer_id" value="{{ row.id }}">
+            <input type="hidden" name="back" value="/skills/{{ name | urlencode }}">
+            <button class="btn btn-sm btn-primary">Install</button>
+          </form>{% endif %}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="card-pad" {% if transfers %}style="padding-top:0"{% endif %}>
+      {% if not workspace %}
+      <p class="hint">This project has not joined a workspace, so there is
+        nobody to send to. <code>flanner join &lt;workspace-id&gt;</code> joins one.</p>
+      {% elif snapshots %}
+      <form method="post" action="/skills/{{ name | urlencode }}/share" class="listctl">
+        <label class="sr-only" for="sharehash">Which copy</label>
+        <select class="btn btn-sm" id="sharehash" name="manifest_hash">
+          {% for row in snapshots if row.verified %}
+          <option value="{{ row.manifest_hash }}">{{ row.manifest_hash[:23] }}… ·
+            {{ row.files }} files</option>
+          {% endfor %}
+        </select>
+        <input type="hidden" name="agent" value="{{ loaded.agent }}">
+        <button class="btn btn-sm">Send to your workspace</button>
+      </form>
+      <p class="hint" style="margin-top:8px">The package files and nothing
+        else: no recorded uses, no evidence, no session references. Sending is
+        not installing — it arrives on a teammate's machine and waits for
+        somebody there to decide.</p>
+      {% else %}
+      <p class="hint">Keep a copy first. Sending signs what is in flanner's
+        store, so there is one exact set of bytes on the record rather than
+        whatever the directory held at the moment somebody pressed a button.</p>
+      {% endif %}
+
+      <form method="post" action="/skills/channel" class="listctl" style="margin-top:10px">
+        <input type="hidden" name="name" value="{{ name }}">
+        <input type="hidden" name="back" value="/skills/{{ name | urlencode }}">
+        <input type="hidden" name="action" value="{{ 'unsubscribe' if channel and channel.subscribed else 'subscribe' }}">
+        <button class="btn btn-sm">{{ 'Stop following' if channel and channel.subscribed else 'Follow this skill' }}</button>
+        <span class="hint">Following tells you when a new version arrives. It
+          never installs one.</span>
+      </form>
+    </div>
+  </div>
+
+  {# --- proposals ------------------------------------------------------- #}
+  {% if proposals %}
+  <div class="card" style="margin-top:14px">
+    <div class="card-head">Waiting on a decision
+      <span class="note">{{ proposals | length }}</span></div>
+    <div class="tablewrap">
+      <div class="grid-row grid-head cols-proposals">
+        <span>Draft</span><span>Action</span><span>State</span><span>Why</span><span></span>
+      </div>
+      {% for row in proposals %}
+      <div class="grid-row cols-proposals">
+        <span class="mono">{{ row.draft_hash[:16] }}…</span>
+        <span class="muted">{{ row.action }}</span>
+        <span><span class="pill pill-{{ 'fresh' if row.state == 'approved' else 'aging' }}">{{ row.state }}</span></span>
+        <span class="hint">{{ row.rationale }}</span>
+        <span><a class="btn btn-sm" href="/skills/proposals?open_id={{ row.id }}">Read it</a></span>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="card-pad" style="padding-top:0">
+      <p class="hint">A change to a skill arrives as a proposal and is read
+        before it is installed. Nothing an agent suggests edits a package on
+        its own.</p>
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

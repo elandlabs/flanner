@@ -7,6 +7,14 @@ versioning follows [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Every skill has a page of its own.** Click a name in the local web UI and
+  you get every copy of it and which one loads, what is wrong with it, a diff
+  against each shadowed copy — the question "shadowed by what, exactly?" had
+  no answer before — the manifest rendered, the files its hash covers, how
+  often it was used and over what window, the snapshots flanner holds, and
+  what has arrived from a teammate. From there you can keep a copy, roll one
+  back, send one to your workspace, install one that arrived, or follow the
+  skill for updates.
 - **Codex skills are read too, and every skill says which agent it belongs
   to.** `.agents/skills` in the repository, in your home directory, and the
   machine-wide directory an administrator deploys. Codex does not merge two

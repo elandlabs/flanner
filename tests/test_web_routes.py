@@ -696,3 +696,77 @@ def test_plans_page_pages_fifteen_at_a_time_and_remembers_the_size(client, proje
     assert _rows(client.get("/plans").text) == 17
     project = client.get(f"/projects/{project_id}")
     assert project.status_code == 200 and "1–17 of 17" in project.text
+
+
+# --- one skill's page ---------------------------------------------------------
+
+
+@pytest.fixture
+def a_skill(client, git_repo, monkeypatch):
+    """A skill in the repository the server is looking at.
+
+    The route reads the working directory, so the test moves into the
+    fixture's repository rather than the checkout the suite is running in.
+    """
+    monkeypatch.chdir(git_repo)
+    for agent, folder in (("claude-code", ".claude"), ("codex", ".agents")):
+        package = git_repo / folder / "skills" / "deploy"
+        package.mkdir(parents=True)
+        (package / "SKILL.md").write_text(
+            f"---\nname: deploy\ndescription: Ship it, for {agent}\n---\n\n## How\n\nRun it.\n",
+            encoding="utf-8",
+        )
+    return git_repo
+
+
+def test_a_skill_has_a_page_of_its_own(client, a_skill):
+    page = client.get("/skills/deploy")
+    assert page.status_code == 200
+    # Both agents' copies, each named, and each loading its own.
+    assert page.text.count("cols-copies") >= 3  # the head and two rows
+    assert "claude-code" in page.text and "codex" in page.text
+    assert "each load their own" in page.text
+    # What it says, rendered from the manifest rather than the frontmatter.
+    assert "Run it." in page.text
+
+
+def test_the_index_links_to_it(client, a_skill):
+    assert '/skills/deploy"' in client.get("/skills").text
+
+
+def test_a_name_nobody_has_is_not_a_page(client, a_skill):
+    assert client.get("/skills/no-such-skill").status_code == 404
+
+
+def test_proposals_is_a_page_rather_than_a_skill(client, a_skill):
+    """`/skills/{name}` is declared last, so the literal paths still win."""
+    assert client.get("/skills/proposals").status_code == 200
+
+
+def test_keeping_a_copy_stores_it_and_says_so(client, a_skill):
+    kept = client.post("/skills/deploy/adopt", data={"agent": "claude-code"})
+    assert kept.status_code == 303
+    assert "kept" in kept.headers["location"]
+
+    page = client.get("/skills/deploy")
+    assert "verifies" in page.text  # the snapshot is in the store and checks out
+    # And now it can be sent, once there is somewhere to send it.
+    assert "has not joined a workspace" in page.text
+
+
+def test_sharing_without_a_workspace_refuses_rather_than_pretending(client, a_skill):
+    sent = client.post(
+        "/skills/deploy/share",
+        data={"manifest_hash": "sha256:whatever", "agent": "claude-code"},
+    )
+    assert sent.status_code == 303
+    assert "has+not+joined+a+workspace" in sent.headers["location"]
+
+
+def test_a_form_cannot_send_somebody_off_this_area(client, a_skill):
+    """`back` goes straight into a Location header, so it is checked."""
+    away = client.post(
+        "/skills/channel",
+        data={"name": "deploy", "action": "subscribe", "back": "//evil.example/"},
+    )
+    assert away.headers["location"].startswith("/skills?")

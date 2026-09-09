@@ -67,7 +67,7 @@ from .exceptions import DatabaseError
 from .freshness import compute_freshness
 from .freshness import head_commit as freshness_head
 from .freshness import peek as freshness_peek
-from .frontmatter import read_managed
+from .frontmatter import parse_frontmatter, read_managed
 from .git_integration import find_git_root, update_gitignore, validate_git_repo
 from .linear_utils import generate_linear_issue_url
 from .paging import PER_PAGE_CHOICES, Page, per_page_or_default, window
@@ -1836,18 +1836,19 @@ async def skills_purge_form(request: Request, scope: str = Form("project")) -> R
 
 @app.post("/skills/rollback")
 async def skills_rollback_form(
-    request: Request, installation_id: str = Form(...)
+    request: Request, installation_id: str = Form(...), back: str = Form("/skills")
 ) -> RedirectResponse:
     """Put back what an install replaced."""
     ensure_db()
     session = get_session()
     from . import skills_manage
 
+    where = _skills_back(back)
     try:
         await run_in_threadpool(skills_manage.rollback, session, installation_id, None)
     except (ValueError, OSError) as error:
-        return RedirectResponse(f"/skills?said={quote(str(error))}", status_code=303)
-    return RedirectResponse("/skills?said=rolled+back", status_code=303)
+        return RedirectResponse(f"{where}?said={quote(str(error))}", status_code=303)
+    return RedirectResponse(f"{where}?said=rolled+back", status_code=303)
 
 
 @app.get("/skills/proposals", response_class=HTMLResponse)
@@ -1965,7 +1966,10 @@ async def skills_revise_form(
 
 @app.post("/skills/import")
 async def skills_import_form(
-    request: Request, transfer_id: str = Form(...), force: str = Form("")
+    request: Request,
+    transfer_id: str = Form(...),
+    force: str = Form(""),
+    back: str = Form("/skills"),
 ) -> RedirectResponse:
     """Install a package a teammate sent, from the page that listed it.
 
@@ -1978,9 +1982,10 @@ async def skills_import_form(
     from . import skills_mesh
     from .database import get_project_by_root
 
+    where = _skills_back(back)
     root = find_git_root(str(Path.cwd()))
     if root is None:
-        return RedirectResponse("/skills?said=not+a+repository", status_code=303)
+        return RedirectResponse(f"{where}?said=not+a+repository", status_code=303)
 
     try:
         await run_in_threadpool(
@@ -1994,13 +1999,16 @@ async def skills_import_form(
             )
         )
     except Exception as error:  # noqa: BLE001 - every refusal is shown, not raised
-        return RedirectResponse(f"/skills?said={quote(str(error))}", status_code=303)
-    return RedirectResponse("/skills?said=installed", status_code=303)
+        return RedirectResponse(f"{where}?said={quote(str(error))}", status_code=303)
+    return RedirectResponse(f"{where}?said=installed", status_code=303)
 
 
 @app.post("/skills/channel")
 async def skills_channel_form(
-    request: Request, name: str = Form(...), action: str = Form("subscribe")
+    request: Request,
+    name: str = Form(...),
+    action: str = Form("subscribe"),
+    back: str = Form("/skills"),
 ) -> RedirectResponse:
     """Follow or stop following a skill's updates. Never installs."""
     ensure_db()
@@ -2011,9 +2019,10 @@ async def skills_channel_form(
     root = find_git_root(str(Path.cwd()))
     project = get_project_by_root(session, root) if root else None
     workspace = getattr(project, "workspace_id", "") if project else ""
+    where = _skills_back(back)
     if not workspace:
         return RedirectResponse(
-            "/skills?said=this+project+has+not+joined+a+workspace", status_code=303
+            f"{where}?said=this+project+has+not+joined+a+workspace", status_code=303
         )
 
     if action == "subscribe":
@@ -2022,7 +2031,228 @@ async def skills_channel_form(
     else:
         await run_in_threadpool(skills_mesh.unsubscribe, session, workspace, name)
         said = "no+longer+following+" + quote(name)
-    return RedirectResponse(f"/skills?said={said}", status_code=303)
+    return RedirectResponse(f"{where}?said={said}", status_code=303)
+
+
+def _skills_back(back: str) -> str:
+    """Where a skills form returns to, from the form's own hidden field.
+
+    Checked rather than trusted. The value arrives in a POST body and is
+    put straight into a `Location`, so anything but a path inside this
+    area is an open redirect; a form that has been tampered with lands on
+    the index rather than wherever the tamperer wrote.
+    """
+    return back if back.startswith("/skills") and "//" not in back else "/skills"
+
+
+# --- one skill ------------------------------------------------------------------
+#
+# Everything about a single package, in the order somebody works through
+# it: which copies exist and which one loads, what is wrong with it, what
+# it says, whether anyone uses it, and only then what can be done to it.
+#
+# Declared after every literal `/skills/...` path, so `proposals` is a page
+# rather than a skill nobody can open.
+
+
+def _skill_snapshots(hashes: set[str]) -> list[dict[str, Any]]:
+    """Snapshots in the store that belong to this skill."""
+    from . import skills_manage
+
+    return [row for row in skills_manage.stored() if row["manifest_hash"] in hashes]
+
+
+@app.post("/skills/{name}/adopt")
+async def skill_adopt_form(name: str, agent: str = Form("claude-code")) -> RedirectResponse:
+    """Take a copy of the loaded package into flanner's store.
+
+    A copy, never a move: the package stays where its owner put it. This is
+    the step that makes a rollback and a share possible, because both work
+    from stored bytes rather than from whatever the directory holds at the
+    moment somebody presses a button.
+    """
+    ensure_db()
+    session = get_session()
+    from . import skills_manage
+
+    root = find_git_root(str(Path.cwd()))
+    try:
+        kept = await run_in_threadpool(
+            functools.partial(
+                skills_manage.adopt, session, name, Path(root) if root else None, agent
+            )
+        )
+    except (ValueError, OSError) as error:
+        return RedirectResponse(f"/skills/{quote(name)}?said={quote(str(error))}", status_code=303)
+    said = f"kept {kept['files']} file(s) as {kept['manifest_hash'][:19]}…"
+    return RedirectResponse(f"/skills/{quote(name)}?said={quote(said)}", status_code=303)
+
+
+@app.post("/skills/{name}/share")
+async def skill_share_form(
+    name: str, manifest_hash: str = Form(...), agent: str = Form("claude-code")
+) -> RedirectResponse:
+    """Sign a stored package for the workspace this project joined.
+
+    The package files and nothing else. There is no path from here to an
+    observation or a piece of evidence: the bundle is built from the
+    snapshot store, which holds package files only, which is a stronger
+    guarantee than remembering to leave the rest out.
+    """
+    ensure_db()
+    session = get_session()
+    from . import skills_mesh
+    from .database import get_project_by_root
+
+    root = find_git_root(str(Path.cwd()))
+    project = get_project_by_root(session, root) if root else None
+    workspace = getattr(project, "workspace_id", "") if project else ""
+    if not workspace:
+        return RedirectResponse(
+            f"/skills/{quote(name)}?said=this+project+has+not+joined+a+workspace",
+            status_code=303,
+        )
+
+    try:
+        sent = await run_in_threadpool(
+            functools.partial(
+                skills_mesh.share, session, manifest_hash, name, workspace, agent=agent
+            )
+        )
+    except (ValueError, OSError) as error:
+        return RedirectResponse(f"/skills/{quote(name)}?said={quote(str(error))}", status_code=303)
+    said = f"signed {sent['bytes']} bytes for your workspace; flanner peer sync sends it on"
+    return RedirectResponse(f"/skills/{quote(name)}?said={quote(said)}", status_code=303)
+
+
+@app.get("/skills/{name}", response_class=HTMLResponse)
+async def skill_detail(
+    request: Request, name: str, days: int = 30, said: str = ""
+) -> HTMLResponse:
+    """One skill: every copy of it, what it says, and what it has done.
+
+    Scanned on request like the index, for the same reason: a package is a
+    directory somebody else edits without telling us. The scan covers
+    every agent, because a name can belong to two of them and the answer
+    to "which one is this" is the page's first job.
+    """
+    ensure_db()
+    session = get_session()
+    from dataclasses import asdict
+
+    from . import skills_learn, skills_manage, skills_mesh, skills_observe, skills_ops
+    from .database import get_project_by_root
+
+    root = find_git_root(str(Path.cwd()))
+    here = Path(root) if root else None
+    packages = await run_in_threadpool(skills_ops.scan, here, None)
+    copies = [asdict(p) for p in packages if p.name == name]
+    if not copies:
+        raise HTTPException(status_code=404, detail=f"No skill named {name}")
+
+    report = await run_in_threadpool(skills_ops.report, here, None, packages)
+    findings = [f for f in report["findings"] if f["skill"] == name]
+
+    # The copy an agent would load. When two agents both hold the name,
+    # the first is shown and the others are a click away in the table:
+    # picking one to render is a display choice, and the copies table is
+    # where the page refuses to pick.
+    loaded = next((c for c in copies if c["effective"]), copies[0])
+    directory = Path(loaded["directory"])
+    try:
+        body = (directory / skills_ops.adapters.MANIFEST).read_text(
+            encoding="utf-8", errors="replace"
+        )
+    except OSError:
+        body = ""
+    _meta, prose = parse_frontmatter(body) if body else ({}, "")
+
+    # A diff only against copies the same agent would have loaded instead.
+    # Diffing a Claude Code skill against a Codex one of the same name
+    # compares two different skills and reads as though one drifted.
+    differences = [
+        {
+            "against": other,
+            **await run_in_threadpool(skills_ops.compare, directory, Path(other["directory"])),
+        }
+        for other in copies
+        if other is not loaded
+        and other["agent"] == loaded["agent"]
+        and other["manifest_hash"] != loaded["manifest_hash"]
+    ]
+
+    # Several copies loading is two different situations, and telling a
+    # reader the wrong one sends them looking for a collision that is not
+    # there. One agent loading two copies is ambiguity nothing on disk
+    # resolves; two agents each loading their own is simply two skills.
+    per_agent: dict[str, int] = {}
+    for copy in copies:
+        if copy["effective"]:
+            per_agent[copy["agent"]] = per_agent.get(copy["agent"], 0) + 1
+    ambiguous = sorted(agent for agent, count in per_agent.items() if count > 1)
+
+    usage = await run_in_threadpool(skills_observe.usage, session, here, days)
+    installs = [
+        row
+        for row in await run_in_threadpool(skills_manage.installations, session, here)
+        if row["name"] == name
+    ]
+    transfers = [
+        row
+        for row in await run_in_threadpool(skills_mesh.transfers, session, None)
+        if row["skill"] == name
+    ]
+    project = get_project_by_root(session, root) if root else None
+    proposals = (
+        [
+            row
+            for row in await run_in_threadpool(skills_learn.proposals, session, project, None)
+            if row["skill"] == name
+        ]
+        if project is not None
+        else []
+    )
+
+    known = {c["manifest_hash"] for c in copies}
+    known |= {row["manifest_hash"] for row in installs if row["manifest_hash"]}
+    known |= {row["manifest_hash"] for row in transfers if row["manifest_hash"]}
+    known |= {row["replaced_hash"] for row in installs if row["replaced_hash"]}
+
+    channel = next(
+        (
+            row
+            for row in await run_in_threadpool(skills_mesh.channels, session, None)
+            if row["name"] == name
+        ),
+        None,
+    )
+    return templates.TemplateResponse(
+        request,
+        "skill_detail.html",
+        {
+            **_nav(session),
+            "request": request,
+            "name": name,
+            "copies": copies,
+            "loaded": loaded,
+            "ambiguous": ambiguous,
+            "agents": sorted({c["agent"] for c in copies}),
+            "prose": render_plan_html(prose, loaded["manifest_hash"]),
+            "files": await run_in_threadpool(skills_ops.contents, directory),
+            "findings": findings,
+            "differences": differences,
+            "usage": usage,
+            "used": next((r for r in usage["rows"] if r["skill"] == name), None),
+            "days": days,
+            "installs": installs,
+            "snapshots": await run_in_threadpool(_skill_snapshots, known),
+            "transfers": transfers,
+            "channel": channel,
+            "proposals": proposals,
+            "workspace": getattr(project, "workspace_id", "") if project else "",
+            "said": said,
+        },
+    )
 
 
 @app.get("/settings", response_class=HTMLResponse)

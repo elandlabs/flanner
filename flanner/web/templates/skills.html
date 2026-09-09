@@ -55,14 +55,15 @@
       <span class="note">{{ rows | length }} of {{ report.summary.packages }}</span>
     </div>
     <div class="grid-row grid-head cols-skills">
-      <span>Skill</span><span>Scope</span><span>From</span>
+      <span>Skill</span><span>Agent</span><span>Scope</span><span>From</span>
       <span>Description</span><span>Files</span>
     </div>
     {% for row in rows %}
     <div class="grid-row cols-skills" data-list-item>
-      <span>{{ row.name }}
+      <span><a class="name" href="/skills/{{ row.name | urlencode }}">{{ row.name }}</a>
         {% if not row.effective %}<span class="pill pill-quiet">shadowed</span>{% endif %}
         <span class="path">{{ row.directory }}</span></span>
+      <span class="muted">{{ row.agent }}</span>
       <span class="muted">{{ row.scope }}</span>
       <span class="muted">{{ row.plugin or row.scope }}</span>
       <span class="hint clamp2">{{ row.description or '—' }}</span>

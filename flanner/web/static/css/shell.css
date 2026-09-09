@@ -308,8 +308,28 @@ a:hover { color: var(--accent-hi); }
 .cols-matrix { grid-template-columns: 1.2fr 1fr 1.4fr 110px 70px; }
 .cols-transfers { grid-template-columns: 1.3fr 190px 130px 150px 100px; }
 /* The skill's name and the detail beneath it share one cell, and inline they
-   run together into one unreadable string. */
-.cols-findings .hint { display: block; }
+   run together into one unreadable string. A finding's evidence is a list of
+   paths with no break opportunity in them, so it also has to be allowed to
+   break: without this it ran out of its column and over the remedy beside it. */
+.cols-findings .hint { display: block; overflow-wrap: anywhere; }
+
+/* One skill's own page. The copies table leads with which one loads,
+   because that is the question somebody arrived with. */
+.cols-copies { grid-template-columns: 110px 110px 1fr 150px 90px; }
+.cols-copies .path { display: block; }
+.cols-files { grid-template-columns: 1fr 90px; }
+.cols-snapshots { grid-template-columns: 1fr 90px 110px 100px; }
+
+/* A unified diff between two copies of a manifest. Coloured by the line's
+   first character, the way every diff a developer reads already is. */
+.diff {
+  margin: 0; padding: 12px 16px; overflow-x: auto;
+  background: var(--card-sunken); border-top: 1px solid var(--divider);
+  font: 400 12px/1.6 var(--font-mono);
+}
+.diff .add { color: var(--fresh-text); background: var(--fresh-bg); display: block; }
+.diff .cut { color: var(--stale-text); background: var(--stale-bg); display: block; }
+.diff .at  { color: var(--text-4); display: block; }
 
 /* ------------------------------------------------------------ freshness */
 
