@@ -664,7 +664,10 @@ kbd {
  * Mono is the default. A plan is read beside the code it describes, and it
  * is full of paths, identifiers and command lines that only line up in a
  * monospaced face. */
-.doc { font-family: var(--font-mono); }
+/* A long URL or identifier in prose may break anywhere. It is inherited, so
+   paragraphs, list items and table cells all get it, and a code block is
+   unaffected because `white-space: pre` never wraps. */
+.doc { font-family: var(--font-mono); overflow-wrap: anywhere; }
 [data-reading-font="mono"]   .doc { font-family: var(--font-mono); }
 [data-reading-font="sans"]   .doc { font-family: var(--font-sans); }
 [data-reading-font="serif"]  .doc { font-family: Georgia, "Times New Roman", serif; }
