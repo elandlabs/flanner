@@ -30,6 +30,7 @@ Flanner is local-first, and stays that way when a team uses it. Plans sync direc
 - **Git protection**: plans live in `.plans/` and are kept out of commits automatically.
 - **Agent integration**: `flanner init` wires CLAUDE.md, AGENTS.md, and a guard hook so agents save plans through flanner instead of scattering raw markdown.
 - **Memory**: the durable context around a plan — a constraint, a rejected library, a fact about the environment — kept as Markdown files a later session can search. Explicit by default, refuses anything that looks like a credential, and shared with a teammate only when somebody asks for it.
+- **Skills**: what your agents actually load. Skill packages arrive from a project, your home directory and every installed plugin at once, and when two share a name one wins silently. `flanner skills scan` reads them all and `flanner skills doctor` says which copy is in effect and what is wrong with the rest. A read: nothing in a package is executed.
 - **Issue tracker links**: tie a plan to its Linear (or JIRA) issue; with a `LINEAR_API_KEY`, flanner verifies the issue and shows its live state, in the CLI and the dashboard.
 - **Reading view**: a browser dashboard to read, edit, and walk the history of plans (light and dark, fully offline).
 - **Per-project config**: customize the plan directory per repository.
@@ -78,6 +79,11 @@ flanner mem remember "..." / flanner mem recall "..."   # durable context for la
 flanner mem list / show ID / supersede ID "..."         # browse, read, and correct
 flanner mem mode [off|explicit|suggest|auto-safe]       # how much this project captures
 flanner mem share ID / flanner mem withdraw ID          # give one to the team, or ask them to stop
+flanner skills scan / flanner skills doctor             # what your agents load, and what is wrong
+flanner skills list [--all] / inspect NAME              # browse them, or read every copy of one
+flanner skills observe enable / flanner skills report   # record which get used, off until you ask
+flanner skills adopt NAME / install HASH / rollback ID  # keep a copy, install it, put it back
+flanner skills share HASH / transfers / import ID       # send one to the team; receiving is not installing
 flanner register [--force] / flanner unregister         # MCP registration with Claude Desktop
 flanner claude-info                                     # integration status
 ```
@@ -306,12 +312,18 @@ Shipped in 0.9.0: peer-to-peer sync, shared workspaces, and review between
 teammates. Plans move directly between machines; nothing is uploaded. See
 [Flanner Mesh](https://flanner.io/mesh) for how that works and what it costs.
 
+Shipped since: live updates in the web UI over server-sent events, a relay
+fallback for peers that cannot reach each other directly, and — in 0.12.0 —
+Flanner Memory and Flanner Skills.
+
 Planned next:
 
-- Full-text search across plans
+- Full-text search across plan bodies. The command palette indexes names
+  today; the text inside a plan is not searchable yet.
 - Links out to product trackers, chat, and second brains like Notion
-- Real-time updates in the web UI
-- Relay fallback for peers that cannot reach each other directly
+- Observation for agents other than Claude Code, once there is an interface
+  worth trusting. Skills reports usage as unknown rather than zero until
+  then.
 
 There is no plan to host plan contents. The catalog stays on your machine.
 That is a design decision, not a milestone waiting to be funded.
