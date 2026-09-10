@@ -992,9 +992,20 @@ select.btn-sm { padding-right: 8px; }
 }
 .sel-option:hover, .sel-option:focus-visible { background: var(--chip); color: var(--text); outline: none; }
 .sel-option[aria-selected="true"] { color: var(--text); font-weight: 600; }
-.sel-option[aria-selected="true"]::after {
-  content: "¹3"; margin-left: auto; color: var(--accent-ink); font-weight: 700;
+/* Drawn, not typed. This rule read `content: "¹3"` — a superscript one
+   and a 3 — where a checkmark was meant. Measured before replacing it:
+   U+2713 has the same advance width in Geist as in a font that does not
+   exist, so Geist has no such glyph and a fallback was drawing it, at that
+   font's weight. Two borders on a rotated box need no font at all.
+   Every option reserves the box; only the chosen one is painted, so
+   changing the selection cannot resize the panel. */
+.sel-option::after {
+  content: ""; margin-left: auto; flex: none;
+  width: 5px; height: 9px; margin-top: -2px;
+  border: solid transparent; border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
 }
+.sel-option[aria-selected="true"]::after { border-color: var(--accent-ink); }
 /* Right-aligned when the control sits at the right edge of the top bar, so
    the panel opens inward instead of off the page. */
 .topbar .actions .sel-list { left: auto; right: 0; }

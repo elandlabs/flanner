@@ -968,3 +968,55 @@ def test_no_empty_state_still_uses_the_left_aligned_prose_card():
     for template in (WEB_DIR / "templates").glob("*.html"):
         text = template.read_text(encoding="utf-8")
         assert 'class="dim"' not in text, f"{template.name}: the unstyled empty state is back"
+
+STYLESHEET_DIR = WEB_DIR / "static/css"
+
+
+# --- the tick, the caret, and everything shaped like them --------------------
+
+#: Characters a CSS `content:` string may carry beyond ASCII, each one
+#: allowed because a text face actually has it. Measured in the browser by
+#: comparing the advance width in the UI font against the width in a family
+#: that does not exist: identical means the UI font has no such glyph and
+#: something else is drawing it. `document.fonts.check` answers True either
+#: way and is no use for this.
+CONTENT_ALLOWED = {
+    "\u00b7",  # middle dot, in Geist
+}
+
+
+def test_no_stylesheet_types_a_glyph_it_cannot_draw():
+    """A `content:` glyph the design font lacks is drawn by a stranger.
+
+    Both of these had already gone wrong. The dropdown caret was U+2304, a
+    maths arrowhead that sits on the baseline, and it hung 4.6px below the
+    label beside it. The tick on the chosen option was the literal bytes
+    `\u00b93` — a superscript one and a 3 — in both consoles at once,
+    which is what a checkmark decays into when it passes through the wrong
+    encoding. Neither is catchable by eye in a diff.
+
+    Anything above the Latin-1 supplement has to be drawn: a stroked path,
+    or borders on a rotated box.
+    """
+    import re
+
+    for sheet in sorted(STYLESHEET_DIR.glob("*.css")):
+        raw = sheet.read_text(encoding="utf-8")
+        # Comments first, and the comment above the fixed rule quotes the
+        # broken bytes on purpose. Same trap the grid-column test fell
+        # into, where a comma inside a comment joined the selector list.
+        # Spaces rather than deletion, so the line numbers still point at
+        # the offending declaration.
+        text = re.sub(
+            r"/\*.*?\*/", lambda m: re.sub(r"\S", " ", m.group()), raw, flags=re.S
+        )
+        for match in re.finditer(r"content:\s*([\"'])(.*?)\1", text):
+            value = match.group(2)
+            line = text[: match.start()].count("\n") + 1
+            for char in value:
+                assert ord(char) < 128 or char in CONTENT_ALLOWED, (
+                    f"{sheet.name}:{line}: content {value!r} carries "
+                    f"U+{ord(char):04X}. Draw it instead, or add it to "
+                    f"CONTENT_ALLOWED once you have measured that the UI "
+                    f"font has it."
+                )
