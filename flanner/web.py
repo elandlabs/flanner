@@ -1728,7 +1728,7 @@ async def skills_page(
     request: Request,
     scope: str = "",
     shadowed: str = "",
-    agent: str = "claude-code",
+    agent: str = "",
     days: int = 30,
     said: str = "",
 ) -> HTMLResponse:
@@ -1744,14 +1744,20 @@ async def skills_page(
     from . import skills_ops
 
     root = find_git_root(str(Path.cwd()))
-    packages = await run_in_threadpool(skills_ops.scan, Path(root) if root else None, agent)
+    # Every agent, always. The scan is what the catalog records and what the
+    # findings are computed against, so narrowing it here would file half a
+    # machine's skills and report collisions against the other half. The
+    # filters below narrow what is shown, which is a different thing.
+    packages = await run_in_threadpool(skills_ops.scan, Path(root) if root else None, None)
     await run_in_threadpool(skills_ops.record, session, packages)
-    report = skills_ops.report(Path(root) if root else None, agent, packages=packages)
+    report = skills_ops.report(Path(root) if root else None, None, packages=packages)
 
     rows = [
         pkg
         for pkg in report["packages"]
-        if (shadowed or pkg["effective"]) and (not scope or pkg["scope"] == scope)
+        if (shadowed or pkg["effective"])
+        and (not scope or pkg["scope"] == scope)
+        and (not agent or pkg["agent"] == agent)
     ]
     listed = _paginate(request, rows)
 
@@ -1768,6 +1774,11 @@ async def skills_page(
             "rows": listed.items,
             **_pager_context(request, listed),
             "scope": scope,
+            "agent": agent,
+            # Only the agents that actually have something here. An empty
+            # adapter in a filter is a control that can only ever return
+            # nothing.
+            "agents": [a for a, n in report["summary"]["by_agent"].items() if n],
             "shadowed": bool(shadowed),
             "said": said,
             "observe": await run_in_threadpool(skills_observe.status, session),

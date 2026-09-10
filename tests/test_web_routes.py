@@ -5,7 +5,7 @@ import re
 import pytest
 from fastapi.testclient import TestClient
 
-from flanner.web import app, markdown_filter
+from flanner.web import WEB_DIR, app, markdown_filter
 
 # The Host header the middleware expects. TestClient defaults to
 # "testserver", which flanner refuses on purpose: a Host it does not
@@ -770,3 +770,66 @@ def test_a_form_cannot_send_somebody_off_this_area(client, a_skill):
         data={"name": "deploy", "action": "subscribe", "back": "//evil.example/"},
     )
     assert away.headers["location"].startswith("/skills?")
+
+
+def test_the_index_shows_both_agents_and_filters_to_one(client, a_skill):
+    """The index scans every agent; the filters narrow what is shown.
+
+    Narrowing the scan instead would file half a machine's skills in the
+    catalog and compute collisions against the other half.
+    """
+    every = client.get("/skills?shadowed=1")
+    assert every.status_code == 200
+    assert "claude-code" in every.text and "codex" in every.text
+    assert every.text.count("data-list-item") == 2
+
+    only = client.get("/skills?agent=codex&shadowed=1")
+    assert only.text.count("data-list-item") == 1
+    assert ".agents" in only.text and ".claude" not in only.text.split("data-list")[1]
+
+    # The tiles say how the machine splits, and the menu offers what it has.
+    assert 'value="codex"' in every.text and 'id="skagent"' in every.text
+
+
+def test_every_grid_head_matches_the_columns_its_css_defines():
+    """A row with more spans than the grid has columns wraps the last one
+    onto a line of its own. It looks like a styling accident rather than a
+    bug, which is how one shipped: the Agent column was added to the skills
+    table and `.cols-skills` still declared five.
+    """
+    import re
+
+    css = (WEB_DIR / "static/css/shell.css").read_text(encoding="utf-8")
+    # Comments go first: a comma inside one splits into the selector list
+    # and hides the rule behind it — which is how the first draft of this
+    # test passed while `.cols-skills` went unchecked.
+    css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+    # Base rules only. A narrow screen collapses every one of these to a
+    # single column on purpose, and that override is not the shape the head
+    # row has to match.
+    css = re.sub(r"@media[^{]*\{(?:[^{}]|\{[^{}]*\})*\}", "", css)
+    declared = {}
+    for rule in re.finditer(r"([^{}]+)\{\s*grid-template-columns:\s*([^;}]+)", css):
+        for selector in rule.group(1).split(","):
+            selector = selector.strip()
+            if selector.startswith(".cols-"):
+                declared[selector[1:]] = len(rule.group(2).split())
+
+    checked = 0
+    seen = set()
+    for template in (WEB_DIR / "templates").glob("*.html"):
+        text = template.read_text(encoding="utf-8")
+        for head in re.finditer(
+            r'class="[^"]*grid-head[^"]*\b(cols-[\w-]+)[^"]*">(.*?)</div>', text, re.S
+        ):
+            name, body = head.group(1), head.group(2)
+            if name not in declared:
+                continue
+            spans = body.count("<span")
+            assert (
+                spans == declared[name]
+            ), f"{template.name}: .{name} has {spans} spans and {declared[name]} columns"
+            checked += 1
+            seen.add(name)
+    assert checked >= 18, f"only {checked} grid heads found; the pattern must have changed"
+    assert "cols-skills" in seen, "the skills table is the one that shipped this bug"

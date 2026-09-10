@@ -289,7 +289,10 @@ a:hover { color: var(--accent-hi); }
 /* The summary belongs under the title, not beside it: inline, the two ran
    together into one sentence that read as the title repeating itself. */
 .cols-memory .hint, .cols-memory-reasoned .hint { display: block; }
-.cols-skills { grid-template-columns: 1.3fr 90px 150px 1.4fr 80px; }
+/* Six, since the agent joined them. A row with more spans than the grid
+   has columns wraps the last one onto a line of its own, which is what
+   put `Files` under `Skill` in the header. */
+.cols-skills { grid-template-columns: 1.3fr 110px 90px 150px 1.4fr 80px; }
 /* The path sits under the name, always. Inline, a short name like `pg` left
    it on the same line while a long one wrapped it to the next, so the column
    read as two different layouts depending on the skill. */

@@ -8,16 +8,28 @@
 
 {% block topbar_actions %}
 <form method="get" action="/skills" class="listctl">
+  {# Only shown when there is a choice to make. One agent and this is a
+     control that can only ever return what is already on the screen. #}
+  {% if agents | length > 1 %}
+  <label class="sr-only" for="skagent">Agent</label>
+  <select class="btn btn-sm" id="skagent" name="agent" data-auto-submit>
+    <option value="" {% if not agent %}selected{% endif %}>Every agent</option>
+    {% for name in agents %}
+    <option value="{{ name }}" {% if agent == name %}selected{% endif %}>{{ name }}</option>
+    {% endfor %}
+  </select>
+  {% elif agent %}<input type="hidden" name="agent" value="{{ agent }}">{% endif %}
   <label class="sr-only" for="skscope">Scope</label>
-  <select class="btn btn-sm" id="skscope" name="scope" onchange="this.form.requestSubmit()">
+  <select class="btn btn-sm" id="skscope" name="scope" data-auto-submit>
     <option value="" {% if not scope %}selected{% endif %}>Every scope</option>
     <option value="project" {% if scope == 'project' %}selected{% endif %}>This project</option>
     <option value="user" {% if scope == 'user' %}selected{% endif %}>Yours</option>
+    <option value="admin" {% if scope == 'admin' %}selected{% endif %}>Machine-wide</option>
     <option value="plugin" {% if scope == 'plugin' %}selected{% endif %}>Plugins</option>
   </select>
   {% if shadowed %}<input type="hidden" name="shadowed" value="1">{% endif %}
 </form>
-<a class="btn btn-sm" href="/skills?scope={{ scope }}{% if not shadowed %}&shadowed=1{% endif %}">
+<a class="btn btn-sm" href="/skills?scope={{ scope }}&agent={{ agent }}{% if not shadowed %}&shadowed=1{% endif %}">
   {% if shadowed %}Hide shadowed{% else %}Show shadowed{% endif %}</a>
 <a class="btn btn-sm" href="/skills/proposals">Proposals</a>
 {% endblock %}
@@ -42,8 +54,15 @@
       <div class="k">In effect</div></div>
     <div class="stat"><div class="v tnum">{{ report.summary.shadowed }}</div>
       <div class="k">Shadowed</div></div>
+    {% if agents | length > 1 %}
+    {% for name in agents %}
+    <div class="stat"><div class="v tnum">{{ report.summary.by_agent[name] }}</div>
+      <div class="k">{{ name }}</div></div>
+    {% endfor %}
+    {% else %}
     <div class="stat"><div class="v tnum">{{ report.summary.by_scope.plugin }}</div>
       <div class="k">From plugins</div></div>
+    {% endif %}
     <div class="stat"><div class="v tnum">{{ report.summary.defects }}</div>
       <div class="k">Defects</div></div>
   </div>
@@ -268,8 +287,10 @@
 
   <div class="card card-pad card-prose" style="margin-top:14px">
     <h2 class="card-title">Where this was read from</h2>
+    {% for name in report.agents %}
+    <h3 class="card-title" style="font-size:13px;margin-top:12px">{{ name }}</h3>
     <ul>
-      {% for r in report.coverage.roots %}
+      {% for r in report.coverage.roots if r.agent == name %}
       <li><code>{{ r.path }}</code>
         <span class="muted">{{ r.scope }}{% if r.revision %} · {{ r.revision }}{% endif %}</span>
         {% if not r.exists %}<span class="pill pill-quiet">not there</span>{% endif %}
@@ -277,6 +298,7 @@
       </li>
       {% endfor %}
     </ul>
+    {% endfor %}
     {% for note in report.coverage.notes %}
     <p class="muted">{{ note }}</p>
     {% endfor %}
