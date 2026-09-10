@@ -330,7 +330,10 @@ a:hover { color: var(--accent-hi); }
 .clamp2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
           overflow: hidden; }
 .cols-findings { grid-template-columns: 180px 1fr 1.6fr; }
-.cols-usage { grid-template-columns: 1.4fr 130px 80px 150px 1fr; }
+.cols-usage { grid-template-columns: 1.4fr 110px 80px 150px 1fr; }
+/* Beside the name it qualifies, on the same line, rather than under the
+   count - the number of uses is not the part in doubt. */
+.cols-usage .hint { margin: 0 0 0 8px; }
 .cols-installs { grid-template-columns: 160px 1.4fr 130px 110px; }
 .cols-proposals { grid-template-columns: 1.4fr 90px 110px 1.2fr 90px; }
 .cols-clusters { grid-template-columns: 1.4fr 150px 1.4fr; }

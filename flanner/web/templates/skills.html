@@ -206,11 +206,14 @@
     </div>
     {% for row in usage.rows %}
     <div class="grid-row cols-usage">
-      <span><a class="name" href="/skills/{{ row.skill | urlencode }}">{{ row.skill }}</a></span>
-      <span class="tnum">{{ row.invocations }}
-        {%- if row.attributed == 0 %}<span class="hint">none matched a package</span>
+      {# The caveat belongs to the name, not to the count. What is in doubt
+         is which package these uses were of, and the number of them is not
+         the uncertain part. #}
+      <span><a class="name" href="/skills/{{ row.skill | urlencode }}">{{ row.skill }}</a>
+        {%- if row.attributed == 0 %}<span class="hint">no package by this name</span>
         {%- elif row.attributed < row.invocations %}<span class="hint">{{ row.invocations - row.attributed }}
-          unversioned</span>{% endif %}
+          use(s) unversioned</span>{% endif %}</span>
+      <span class="tnum">{{ row.invocations }}
         <span class="usebar" aria-hidden="true"
               style="width:{{ (row.invocations / busiest * 100) | round | int }}%"></span></span>
       {# Shape, not size: the sparkline scales to its own peak, so a skill
