@@ -1091,3 +1091,68 @@ def test_only_unpaged_tables_filter_in_the_browser(client):
         f"the current page and reports its answer as if it were about all "
         f"the rows. Give the route a `q` instead."
     )
+
+TEMPLATE_DIR = WEB_DIR / "templates"
+
+
+# --- glyphs typed into markup ------------------------------------------------
+
+#: Characters a template may carry beyond ASCII. Each is here because the
+#: advance width in Geist differs from the width in a family that does not
+#: exist, which is the browser saying it has the glyph. Anything absent is
+#: drawn instead: `_icon.html` holds the drawings and `_empty.html` the
+#: larger ones.
+#:
+#: This list is short on purpose. Eighteen characters used to be in here
+#: without anybody deciding they should be, including a telephone recorder
+#: standing in for a magnifying glass and three diamonds for three
+#: different pages.
+TYPEABLE = {
+    "\u2014",  # em dash
+    "\u2013",  # en dash
+    "\u2026",  # ellipsis
+    "\u201c", "\u201d", "\u2018", "\u2019",  # curly quotes
+    "\u00b7",  # middle dot, a separator
+    "\u00d7",  # multiplication sign, as in "x3"
+    "\u2212",  # minus sign
+    "\u2022",  # bullet
+    "\u203a",  # single angle quote, a breadcrumb caret
+    "\u2190", "\u2191", "\u2192", "\u2193", "\u21b5",  # arrows
+    "\u25cb", "\u25cf",  # the theme toggle's two circles
+    "\u00a0",  # non-breaking space
+    "\u00e9", "\u00fc", "\u00e8", "\u00e0",  # letters, in prose
+}
+
+
+def test_no_template_types_a_glyph_the_font_cannot_draw():
+    """A character the UI font lacks is drawn by whichever font has it.
+
+    Measured before this rule existed: eighteen such characters across the
+    two sidebars, arriving at ink heights from 5.25px to 10.25px with
+    baselines 1.88px apart, because each came from a different fallback.
+    Three navigation rows were diamonds that differed by 8.5% of their
+    pixels.
+
+    An icon goes through `_icon.html` now. If something genuinely needs a
+    new character, measure it in the browser first and add it above.
+    """
+    import re
+
+    offenders = []
+    for template in sorted(TEMPLATE_DIR.glob("*.html")):
+        raw = template.read_text(encoding="utf-8")
+        # Jinja comments never reach the page, and they carry the notes
+        # explaining this very rule.
+        text = re.sub(r"\{#.*?#\}", lambda m: re.sub(r"\S", " ", m.group()), raw, flags=re.S)
+        text = re.sub(r"<!--.*?-->", lambda m: re.sub(r"\S", " ", m.group()), text, flags=re.S)
+        for number, line in enumerate(text.split("\n"), 1):
+            for char in line:
+                if ord(char) > 126 and char not in TYPEABLE:
+                    offenders.append(
+                        f"{template.name}:{number} U+{ord(char):04X} {char!r}"
+                    )
+    assert not offenders, (
+        "typed glyphs the design font does not have:\n  "
+        + "\n  ".join(sorted(set(offenders))[:12])
+        + "\nDraw it with _icon.html, or measure the font and add it to TYPEABLE."
+    )

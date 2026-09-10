@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_icon.html" as ico %}
 {% block title %}{{ plan_file.name }} — {{ project.name }}{% endblock %}
 
 {% block topbar_back %}
@@ -142,7 +143,7 @@
     <div class="filebar">
       <span>File location:</span>
       <span class="p">{{ version.file_path }}</span>
-      {% if project.auto_gitignore %}<span class="ok">git-ignored ✓</span>{% endif %}
+      {% if project.auto_gitignore %}<span class="ok">git-ignored {{ ico.icon('check', 13) }}</span>{% endif %}
     </div>
   </div>
 
@@ -235,12 +236,12 @@
         {% for reason in freshness.reasons %}
         <div class="check">
           <span class="{% if freshness.status == 'fresh' %}ok{% else %}no{% endif %}"
-                aria-hidden="true">{% if freshness.status == 'fresh' %}✓{% else %}!{% endif %}</span>
+                aria-hidden="true">{% if freshness.status == 'fresh' %}{{ ico.icon('check', 14) }}{% else %}!{% endif %}</span>
           <span>{{ reason }}</span>
         </div>
         {% endfor %}
       {% else %}
-        <div class="check"><span class="ok" aria-hidden="true">✓</span>
+        <div class="check"><span class="ok" aria-hidden="true">{{ ico.icon('check', 14) }}</span>
           <span>Nothing has drifted since this was written.</span></div>
       {% endif %}
     </section>

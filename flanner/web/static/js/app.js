@@ -1483,3 +1483,16 @@ once('tab-jump', function () {
         tab.click();
     });
 });
+
+// The search shortcut's legend. The handler takes Ctrl or Cmd either way;
+// this is only what the button shows. It says Ctrl in the markup because
+// that is right on Windows and Linux and right with no JavaScript, and it
+// used to say Cmd on every platform while the button's own aria-label said
+// Ctrl. The Cmd symbol lives here rather than in the template because it is
+// the one place it is correct, and on a Mac the system font has it.
+onPage(function () {
+    if (!/Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)) return;
+    document.querySelectorAll('[data-shortcut-key]').forEach(function (key) {
+        key.textContent = '⌘K';
+    });
+});

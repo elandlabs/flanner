@@ -1,3 +1,4 @@
+{% import "_icon.html" as ico %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -38,7 +39,7 @@
   <nav class="rail" aria-label="Main">
     <button type="button" class="btn btn-icon menu-toggle" id="menu-toggle"
             aria-expanded="false" aria-controls="rail-nav" aria-label="Menu">
-      <span aria-hidden="true">☰</span></button>
+      {{ ico.icon('menu', 18) }}</button>
 
     <div class="rail-brand">
       <a href="/"><span class="brand-dot" aria-hidden="true"></span>flanner
@@ -47,7 +48,7 @@
 
     <button type="button" class="rail-search" id="cmdk-open"
             aria-label="Search projects and plans (Ctrl+K)">
-      <span aria-hidden="true">⌕</span><span>Search…</span><kbd>⌘K</kbd>
+      {{ ico.icon('search', 16) }}<span>Search…</span><kbd data-shortcut-key>Ctrl K</kbd>
     </button>
 
     <button type="button" class="btn btn-icon rail-theme" data-theme-toggle
@@ -58,29 +59,29 @@
     <div class="rail-nav" id="rail-nav">
       {% set here = request.url.path %}
       <a href="/" {% if here == '/' %}class="active" aria-current="page"{% endif %}>
-        <span class="glyph" aria-hidden="true">⌂</span> Dashboard</a>
+        {{ ico.icon('dashboard') }} Dashboard</a>
       <a href="/projects" {% if here.startswith('/projects') %}class="active" aria-current="page"{% endif %}>
-        <span class="glyph" aria-hidden="true">▣</span> Projects
+        {{ ico.icon('projects') }} Projects
         {% if nav_projects is not none %}<span class="n tnum">{{ nav_projects }}</span>{% endif %}</a>
       <a href="/plans" {% if here.startswith('/plans') %}class="active" aria-current="page"{% endif %}>
-        <span class="glyph" aria-hidden="true">▤</span> Plans
+        {{ ico.icon('plans') }} Plans
         {% if nav_plans is not none %}<span class="n tnum">{{ nav_plans }}</span>{% endif %}</a>
       <a href="/freshness" {% if here.startswith('/freshness') %}class="active" aria-current="page"{% endif %}>
-        <span class="glyph" aria-hidden="true">◔</span> Freshness
+        {{ ico.icon('freshness') }} Freshness
         <span class="n n-warn tnum" data-attention hidden></span></a>
       <a href="/memory" {% if here.startswith('/memory') %}class="active" aria-current="page"{% endif %}>
-        <span class="glyph" aria-hidden="true">◈</span> Memory
+        {{ ico.icon('memory') }} Memory
         {% if nav_memory_pending %}<span class="n n-warn tnum">{{ nav_memory_pending }}</span>
         {% elif nav_memory %}<span class="n tnum">{{ nav_memory }}</span>{% endif %}</a>
       <a href="/skills" {% if here.startswith('/skills') %}class="active" aria-current="page"{% endif %}>
-        <span class="glyph" aria-hidden="true">◆</span> Skills
+        {{ ico.icon('skills') }} Skills
         {% if nav_skills %}<span class="n tnum">{{ nav_skills }}</span>{% endif %}</a>
       {# Behind the flag. Linear and Jira are built but not supported
          yet, so the sidebar does not offer them. `flanner/features.py`
          has the switch and the reasoning. #}
       {% if integrations_on %}
       <a href="/integrations" {% if here.startswith('/integrations') %}class="active" aria-current="page"{% endif %}>
-        <span class="glyph" aria-hidden="true">⚯</span> Integrations</a>
+        {{ ico.icon('integrations') }} Integrations</a>
       {% endif %}
 
       {# Both are always here. Mesh signed out is the page explaining how to
@@ -92,11 +93,11 @@
          that did not compute the signed-in flag dropped the entry. #}
       <div class="rail-group">Team</div>
       <a href="/mesh" {% if here.startswith('/mesh') %}class="active" aria-current="page"{% endif %}>
-        <span class="glyph" aria-hidden="true">⬡</span> Mesh
+        {{ ico.icon('mesh') }} Mesh
         {% if nav_peers %}<span class="n tnum">{{ nav_peers }}</span>
         {% elif not nav_signed_in %}<span class="n">not joined</span>{% endif %}</a>
       <a href="/review" {% if here.startswith('/review') %}class="active" aria-current="page"{% endif %}>
-        <span class="glyph" aria-hidden="true">◇</span> Review
+        {{ ico.icon('review') }} Review
         {% if nav_review %}<span class="n tnum">{{ nav_review }}</span>{% endif %}</a>
       {# Settings is not a team item. It followed the Team group with nothing
          between them, so the heading appeared to cover it. A rule rather
@@ -104,7 +105,7 @@
          thing it is labelling. #}
       <a href="/settings" class="rail-apart {% if here.startswith('/settings') %}active{% endif %}"
          {% if here.startswith('/settings') %}aria-current="page"{% endif %}>
-        <span class="glyph" aria-hidden="true">⚙</span> Settings</a>
+        {{ ico.icon('settings') }} Settings</a>
     </div>
 
     <div class="rail-foot">
@@ -124,7 +125,7 @@
         <button type="button" class="btn btn-icon filter-toggle" id="filter-toggle"
                 aria-expanded="false" aria-controls="listctl"
                 aria-label="Filter and sort" title="Filter and sort" hidden>
-          <span aria-hidden="true">⌕</span></button>
+          {{ ico.icon('search', 16) }}</button>
         <button type="button" class="btn btn-icon topbar-theme" id="theme-toggle"
                 data-theme-toggle title="Theme">
           <span data-theme-glyph aria-hidden="true">○</span>

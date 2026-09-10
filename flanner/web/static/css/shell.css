@@ -90,7 +90,6 @@ a:hover { color: var(--accent-hi); }
 }
 .rail-nav a:hover { background: var(--nav-active); color: var(--text); }
 .rail-nav a.active { background: var(--nav-active); color: var(--text); font-weight: 600; }
-.rail-nav .glyph { width: 15px; text-align: center; flex: none; }
 /* Counts line up as a column. Every badge occupies the same box whether or
    not it is a pill, so the digits sit at one x position down the sidebar —
    right-aligning the boxes alone did not do it, because the pill's padding
@@ -1479,3 +1478,24 @@ code { overflow-wrap: anywhere; }
 .attend .hint { margin: 6px 0 0; }
 .attend-names { margin: 6px 0 0; font-size: 12.5px; line-height: 1.9; }
 .attend-names .sep { color: var(--text-4); margin: 0 7px; }
+
+/* ------------------------------------------------------------ icons */
+
+/* Phosphor regular, inlined by `_icon.html`. Drawn rather than typed:
+   every one of these used to be a Unicode character the UI font does not
+   have, so each arrived at whatever size and baseline the machine's
+   fallback font gave it. Measured across the old sidebar, ink heights ran
+   from 5.25px to 10.25px and baselines sat 1.88px apart.
+
+   `currentColor` on the fill, so a row's own colour reaches the drawing
+   and the active state needs no second rule. `flex: none` because an icon
+   beside a long label is the thing a flex row would otherwise squeeze. */
+.ico {
+  flex: none; fill: currentColor;
+  display: inline-block; vertical-align: -0.18em;
+}
+
+/* An icon inside a line of text sits on the text's baseline rather than
+   the box's middle, which is what `vertical-align` above is for. In a flex
+   row the box centres it and the nudge would double, so it is undone. */
+.rail-nav a .ico, .btn .ico, .check .ico { vertical-align: 0; }
