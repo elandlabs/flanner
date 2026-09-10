@@ -218,6 +218,18 @@ a:hover { color: var(--accent-hi); }
 .card-pad { padding: 16px 18px; }
 .card-title { font-size: 13px; font-weight: 700; margin: 0 0 12px; }
 
+/* A card that opens. Native `<details>`, so it needs no script, takes the
+   keyboard for free, and the browser draws its own marker. `display` is
+   left alone on the summary for that last reason: setting it to anything
+   but `list-item` removes the marker in Chrome, and a disclosure with
+   nothing to disclose it is a heading that mysteriously does something. */
+.disclose > summary {
+  cursor: pointer; font-size: 13px; font-weight: 700; color: var(--text);
+}
+.disclose > summary::marker { color: var(--text-4); }
+.disclose[open] > summary { margin-bottom: 12px; }
+.disclose > summary .note { margin-left: 8px; font-weight: 400; color: var(--text-4); }
+
 /* A card that holds only prose hugs its text instead of stretching. Text
    was capped at 66ch for readability while its card still filled the pane,
    which left half the card empty and read as a layout fault rather than as

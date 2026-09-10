@@ -317,11 +317,20 @@
   </div>
   {% endif %}
 
-  {# Not `card-prose`: the body is a list of file paths, and a reading
+  {# Closed by default: it is a couple of dozen directories somebody
+     consults when a skill is missing, not something to scroll past every
+     visit. The summary carries the count and how many were not there, so
+     the answer it usually gives is readable without opening it.
+
+     Not `card-prose`: the body is a list of file paths, and a reading
      measure cut them in half and wrapped nineteen of them. The notes at
      the foot are sentences, so those keep it. #}
-  <div class="card card-pad" style="margin-top:14px">
-    <h2 class="card-title">Where this was read from</h2>
+  {% set missing = report.coverage.roots | rejectattr('exists') | list | length %}
+  <details class="card card-pad disclose" style="margin-top:14px">
+    <summary>Where this was read from
+      <span class="note">{{ report.coverage.roots | length }}
+        director{{ 'y' if report.coverage.roots | length == 1 else 'ies' }}{% if missing %},
+        {{ missing }} not there{% endif %}</span></summary>
     {% for name in report.agents %}
     <h3 class="card-title" style="font-size:13px;margin-top:12px">{{ name }}</h3>
     <ul>
@@ -339,7 +348,7 @@
       <p class="muted">{{ note }}</p>
       {% endfor %}
     </div>
-  </div>
+  </details>
   </section>
 
 </div>

@@ -850,3 +850,20 @@ def test_the_skills_index_sections_are_tabs_that_survive_no_javascript(client, a
     assert "data-tab-panel hidden" not in page and 'data-tab-panel="hidden"' not in page
     # The defect banner points at the tab that holds the list, not at "below".
     assert "at the foot of this page" not in page
+
+
+def test_the_roots_list_is_closed_but_still_answers(client, a_skill):
+    """A couple of dozen directories somebody consults when a skill is
+    missing, so it starts closed — and the line you see while it is closed
+    carries the answer it usually gives.
+
+    A native `<details>`, so it opens with no script and takes the
+    keyboard for free.
+    """
+    page = client.get("/skills").text
+    assert '<details class="card card-pad disclose"' in page
+    assert "<summary>Where this was read from" in page
+    assert " open>" not in page.split("Where this was read from")[0][-200:]
+    # Codex looks in three places and two of them are absent on a fresh
+    # repository, so the summary has a number to report either way.
+    assert "directories" in page and "not there" in page
