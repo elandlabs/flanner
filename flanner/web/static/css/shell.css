@@ -267,8 +267,22 @@ a:hover { color: var(--accent-hi); }
 .grid-row:hover, .plan-file-card:hover { background: var(--card-sunken); }
 .grid-row .name, .plan-file-card .name { font-weight: 600; color: var(--text); }
 .grid-row .sub, .plan-file-card .sub { font-weight: 400; font-size: 12px; color: var(--text-3); margin-top: 2px; }
-.grid-row .path, .plan-file-card .path { font: 500 12px var(--font-mono); color: var(--text-3);
-                  overflow: hidden; text-overflow: ellipsis; }
+/* An ellipsis only applies to a line that does not wrap. Without `nowrap`
+   these had `text-overflow: ellipsis` and `white-space: normal` together,
+   so the text wrapped to three lines and the overflow was simply clipped:
+   a reader saw an ellipsis in the middle of a path and the rest below it. */
+.grid-row .path, .plan-file-card .path {
+  font: 500 12px var(--font-mono); color: var(--text-3);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* A filesystem path, cut at the front. The end identifies it - which
+   plugin, which skill - and the home directory every row shares does not.
+   `direction: rtl` moves the ellipsis to the start while the characters
+   stay in order, because the string begins and ends with a strong
+   left-to-right character. Only for real paths: on a hash truncated with a
+   trailing ellipsis, that neutral character would jump to the front. */
+.path-tail { direction: rtl; text-align: left; }
 .grid-row .when, .plan-file-card .when { font-size: 12px; color: var(--text-3); }
 
 .cols-projects { grid-template-columns: 1.3fr 70px 1fr 160px 90px; }

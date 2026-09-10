@@ -49,7 +49,7 @@
           {% if project.description %}<div class="sub">{{ project.description }}</div>{% endif %}
         </span>
         <span class="path tnum">{{ plan_counts.get(project.id, 0) }}</span>
-        <span class="path" title="{{ project.project_root or '' }}/{{ project.plan_directory }}">
+        <span class="path path-tail" title="{{ project.project_root or '' }}/{{ project.plan_directory }}">
           {{ project.plan_directory }}</span>
         <span>
           {# Filled by app.js from /projects/freshness-mix. Computing it here

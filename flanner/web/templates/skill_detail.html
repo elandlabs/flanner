@@ -46,7 +46,7 @@
         <span class="muted">{{ copy.scope }}{% if copy.revision %}
           <span class="path">{{ copy.revision }}</span>{% endif %}</span>
         <span>{{ copy.plugin or copy.scope }}
-          <span class="path">{{ copy.directory }}</span>
+          <span class="path path-tail" title="{{ copy.directory }}">{{ copy.directory }}</span>
           <span class="path">{{ copy.manifest_hash[:23] }}…</span></span>
         <span class="when tnum">{{ copy.file_count }} files</span>
         <span>{% if copy.effective %}<span class="pill pill-fresh">loads</span>

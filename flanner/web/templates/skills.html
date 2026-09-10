@@ -81,7 +81,7 @@
     <div class="grid-row cols-skills" data-list-item>
       <span><a class="name" href="/skills/{{ row.name | urlencode }}">{{ row.name }}</a>
         {% if not row.effective %}<span class="pill pill-quiet">shadowed</span>{% endif %}
-        <span class="path">{{ row.directory }}</span></span>
+        <span class="path path-tail" title="{{ row.directory }}">{{ row.directory }}</span></span>
       <span class="muted">{{ row.agent }}</span>
       <span class="muted">{{ row.scope }}</span>
       <span class="muted">{{ row.plugin or row.scope }}</span>
