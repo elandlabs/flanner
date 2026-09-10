@@ -59,6 +59,11 @@
   --accent-soft: #e9f7f0;
   --accent-line: #cdeadd;
   --accent-grad: linear-gradient(135deg, #17805a, #35c98e);
+  /* The mark, and only the mark. One value in both themes because it is a
+     logo: it is the green in the favicon, so the tab and the sidebar are
+     the same dot. Never used for text, which is what would drag it into
+     needing a light-mode variant. */
+  --brand: #3fb950;
   --nav-active:  #eef0f0;
   --chip:        #eef0f0;
 
