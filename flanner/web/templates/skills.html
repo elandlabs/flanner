@@ -317,7 +317,10 @@
   </div>
   {% endif %}
 
-  <div class="card card-pad card-prose" style="margin-top:14px">
+  {# Not `card-prose`: the body is a list of file paths, and a reading
+     measure cut them in half and wrapped nineteen of them. The notes at
+     the foot are sentences, so those keep it. #}
+  <div class="card card-pad" style="margin-top:14px">
     <h2 class="card-title">Where this was read from</h2>
     {% for name in report.agents %}
     <h3 class="card-title" style="font-size:13px;margin-top:12px">{{ name }}</h3>
@@ -331,9 +334,11 @@
       {% endfor %}
     </ul>
     {% endfor %}
-    {% for note in report.coverage.notes %}
-    <p class="muted">{{ note }}</p>
-    {% endfor %}
+    <div class="card-prose">
+      {% for note in report.coverage.notes %}
+      <p class="muted">{{ note }}</p>
+      {% endfor %}
+    </div>
   </div>
   </section>
 

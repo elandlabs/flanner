@@ -136,11 +136,18 @@ def test_an_unknown_agent_is_empty_rather_than_an_error(machine):
 
 def test_the_adapter_says_what_it_cannot_do(machine):
     """Declared, not assumed. A surface that reports zero usage where it
-    simply cannot observe is worse than one that says it does not know."""
+    simply cannot observe is worse than one that says it does not know.
+
+    Claude Code can be observed — a hook on its own settings does it — and
+    the note that mattered is the one about what such a hook can see. The
+    page prints these, so a stale one is the page telling somebody their
+    machine cannot do something it does.
+    """
     capability = adapters.adapter_for("claude-code").capability()
     assert capability.discover and capability.resolve_precedence
-    assert not capability.observe
-    assert capability.notes
+    assert capability.observe
+    assert any("explicit invocations" in note for note in capability.notes)
+    assert not any("not implemented" in note for note in capability.notes)
 
 
 def test_codex_declares_that_it_resolves_nothing():

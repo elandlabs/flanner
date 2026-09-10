@@ -170,10 +170,14 @@ class ClaudeCodeAdapter(Adapter):
             agent=self.agent,
             discover=True,
             resolve_precedence=True,
-            observe=False,
+            observe=True,
             install=False,
             notes=[
-                "Observation is not implemented yet; usage is unknown rather than zero.",
+                "Recording skill use is a hook on this agent's own settings, and it "
+                "is off until somebody turns it on.",
+                "Only explicit invocations are visible: this agent shows every "
+                "skill's description to the model without reporting which were "
+                "read, so a read is unknown rather than counted.",
             ],
         )
 
