@@ -37,9 +37,16 @@
   {% endif %}
 
   {# --- every copy ------------------------------------------------------ #}
+  {#
+    "Copies of this name" only described the page when there were several.
+    On the common case - one copy - it asked a question nobody had, when
+    the table is just saying where the skill is and who reads it.
+  #}
   <div class="card">
-    <div class="card-head">Copies of this name
-      <span class="note">{{ copies | length }}</span></div>
+    <div class="card-head">Where it lives
+      <span class="note">{% if copies | length > 1 %}{{ copies | length }} copies ·
+        {{ copies | selectattr('effective') | list | length }} loads
+        {%- else %}one copy{% endif %}</span></div>
     <div class="tablewrap">
       <div class="grid-row grid-head cols-copies">
         <span>Agent</span><span>Scope</span><span>Where</span>
