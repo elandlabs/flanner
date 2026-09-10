@@ -103,6 +103,11 @@
   --r-lg: 12px;
   --r-md: 8px;
   --r-sm: 6px;
+  /* The topbar's height, and the offset anything sticky sits below it.
+     Declared once so the two cannot drift apart: the topbar takes it as
+     a minimum, and the rail sticks to it. */
+  --topbar-h: 61px;
+
   --r-xs: 4px;
 }
 

@@ -127,7 +127,7 @@ a:hover { color: var(--accent-hi); }
 
 .topbar {
   display: flex; align-items: center; gap: 12px;
-  padding: 14px 28px;
+  padding: 14px 28px; min-height: var(--topbar-h); box-sizing: border-box;
   border-bottom: 1px solid var(--border);
   background: var(--card);
   position: sticky; top: 0; z-index: 20;
@@ -446,9 +446,28 @@ a:hover { color: var(--accent-hi); }
   padding: 20px 22px; display: flex; flex-direction: column; gap: 20px;
   font-size: 12.5px;
 }
+/* The rail's contents follow you down. The aside itself still stretches,
+   so the card and the divider run the full height of the article; only
+   what it says is pinned. Measured before: 728px of content sitting in a
+   4352px column, so on a long skill page the rail was an empty stripe
+   from the second screen onwards.
+   `max-height` matters for the rare tall rail - a skill with many kept
+   versions - because without it the foot of the rail becomes unreachable
+   the moment it is pinned. */
+.rail-sticky {
+  position: sticky; top: calc(var(--topbar-h) + 20px);
+  display: flex; flex-direction: column; gap: 20px;
+  max-height: calc(100vh - var(--topbar-h) - 40px);
+  overflow-y: auto;
+}
+
 @media (max-width: 1100px) {
   .plan-layout { flex-direction: column; }
   .plan-rail { width: auto; border-left: 0; border-top: 1px solid var(--border); }
+  /* Stacked under the article there is nothing to follow, and a pinned
+     block with its own scrollbar inside a scrolling page is two scrollbars
+     for one column. */
+  .rail-sticky { position: static; max-height: none; overflow: visible; }
 }
 .plan-rail section + section { border-top: 1px solid var(--divider); padding-top: 16px; }
 .plan-rail h2 {
@@ -509,8 +528,14 @@ details.lede > summary:hover::after { text-decoration: underline; }
 /* The rail sits beside a normal pane on the skill page, where the plan
    viewer puts its reading column. `.pane` has no width of its own, and an
    auto-margin flex item sizes to its content, so without this the column
-   grew to its widest table and pushed the rail off the screen. */
-.plan-layout > .pane { flex: 1; min-width: 0; }
+   grew to its widest table and pushed the rail off the screen.
+   `width: 100%` is the other half, and I left it out the first time. The
+   layout stacks below 1100px, and `align-items: flex-start` in a column
+   sizes children to their content rather than stretching them: measured
+   at 1000px, the pane was 1292px wide and the page scrolled 516px
+   sideways. The reading column next door carries the same declaration
+   for the same reason. */
+.plan-layout > .pane { flex: 1; min-width: 0; width: 100%; box-sizing: border-box; }
 .kv { display: flex; justify-content: space-between; gap: 12px; color: var(--text-3); padding: 3px 0; }
 .kv b { color: var(--text); font-weight: 600; }
 .kv .m { font: 500 11.5px var(--font-mono); color: var(--text); font-weight: 600; }
