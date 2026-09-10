@@ -214,13 +214,19 @@
         {%- elif row.attributed < row.invocations %}<span class="hint">{{ row.invocations - row.attributed }}
           use(s) unversioned</span>{% endif %}</span>
       <span class="tnum">{{ row.invocations }}
-        <span class="usebar" aria-hidden="true"
-              style="width:{{ (row.invocations / busiest * 100) | round | int }}%"></span></span>
+        <span class="usetrack" aria-hidden="true"><span class="usebar"
+              style="width:{{ (row.invocations / busiest * 100) | round | int }}%"></span></span></span>
       {# Shape, not size: the sparkline scales to its own peak, so a skill
          used twice still shows whether that was one day or two. #}
+      {# `preserveAspectRatio="none"` is what lets the series fill whatever
+         width the cell has, and it scales the stroke with the geometry:
+         wider than tall, a flat run rendered fat while a spike thinned to
+         a hairline. `non-scaling-stroke` keeps the line one width at any
+         size, which is the whole reason a sparkline is legible small. #}
       <span><svg class="spark" viewBox="0 0 64 16" preserveAspectRatio="none"
                  role="img" aria-label="{{ row.invocations }} uses over {{ days }} days">
-        <polyline points="{{ row.by_day | sparkline }}" /></svg></span>
+        <polyline points="{{ row.by_day | sparkline }}"
+                  vector-effect="non-scaling-stroke" /></svg></span>
       <span class="when">{{ row.last_used_at[:16].replace('T', ' ') }}</span>
       <span class="muted">{% for k, v in row.by_model.items() %}{{ k }} ({{ v }}){% if not loop.last %}, {% endif %}{% endfor %}</span>
     </div>

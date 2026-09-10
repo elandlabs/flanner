@@ -130,7 +130,14 @@ a:hover { color: var(--accent-hi); }
 }
 .topbar h1 { font-size: 15px; font-weight: 700; margin: 0; letter-spacing: -.005em; }
 .topbar .sub { font-size: 12px; color: var(--text-4); }
-.topbar .actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+/* Wraps rather than pushing the page sideways. The skills toolbar reached
+   five controls and 470px, which at phone width took the whole document
+   with it; folding onto a second line makes the bar taller, which is the
+   right thing for it to do. */
+.topbar .actions {
+  margin-left: auto; display: flex; gap: 8px; align-items: center;
+  flex-wrap: wrap; justify-content: flex-end; min-width: 0;
+}
 
 .crumbs { display: flex; align-items: center; gap: 8px; font-size: 13px; min-width: 0; }
 .crumbs a { color: var(--text-4); }
@@ -249,7 +256,12 @@ a:hover { color: var(--accent-hi); }
 }
 @media (max-width: 600px) {
   .card-head { flex-wrap: wrap; }
-  .card-head .note { margin-left: 0; white-space: normal; flex-basis: 100%; }
+  /* `normal` lets it wrap, which is no help to a path: there is nowhere in
+     one for a line to break. A skill's card head carries the directory it
+     was read from, and on a phone that ran 129px past the document. */
+  .card-head .note {
+    margin-left: 0; white-space: normal; flex-basis: 100%; overflow-wrap: anywhere;
+  }
 }
 
 .stat-grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
@@ -822,7 +834,12 @@ select.btn-sm { padding-right: 8px; }
    is wrong. The 32px is the size of the Projects sort menu, which is the one
    that looked right. Both apps use these same rules. */
 .topbar .actions { --control-h: 32px; }
-.topbar .actions form { display: flex; align-items: center; gap: 8px; margin: 0; }
+/* The filter form wraps for the same reason the row around it does: two
+   selects sized by their longest option came to 360px, which is most of a
+   phone before the buttons beside them are counted. */
+.topbar .actions form {
+  display: flex; align-items: center; gap: 8px; margin: 0; flex-wrap: wrap;
+}
 .topbar .actions .btn,
 .topbar .actions .input,
 .topbar .actions select {
@@ -830,8 +847,14 @@ select.btn-sm { padding-right: 8px; }
   font-size: 12.5px;
   border-radius: 8px;
 }
+/* `:not(.sel-native)` because the hidden native select behind each styled
+   one is not a control anybody sees. It took this 176px minimum, and
+   although it is invisible and absolutely positioned, that width still
+   reached past a phone's viewport and dragged the document with it. */
 .topbar .actions .input,
-.topbar .actions select { padding: 0 10px; min-width: 176px; width: auto; }
+.topbar .actions select:not(.sel-native) {
+  padding: 0 10px; min-width: 176px; width: auto;
+}
 .topbar .actions .btn { padding: 0 14px; }
 .topbar .actions .btn-icon { width: var(--control-h); min-width: 0; padding: 0; }
 .topbar .actions .segmented { height: var(--control-h); align-items: center; }
@@ -1286,15 +1309,26 @@ code { overflow-wrap: anywhere; }
 /* Relative volume, under the number rather than instead of it. The
    drop-off from the few skills that carry the work to the long tail is
    the shape somebody is looking for, and a column of digits hides it. */
+/* The bar is a share of a track, not of the cell. Capping the bar itself
+   clamped every one of the top four to the same 160px and threw away the
+   comparison they exist to make; capping the track keeps the proportions
+   and stops the longest spanning a whole phone row. */
+.usetrack {
+  display: block; width: 100%; max-width: 160px; height: 3px;
+  margin-top: 5px; border-radius: 2px; background: var(--drift-empty);
+}
 .usebar {
-  display: block; height: 3px; margin-top: 5px; min-width: 2px;
+  display: block; height: 100%; min-width: 2px;
   border-radius: 2px; background: var(--accent);
 }
 
 /* Seventeen uses spread over a fortnight and seventeen in one afternoon
    are the same number and different facts. Scaled to its own peak, so a
    quiet skill still shows its shape. */
-.spark { width: 100%; height: 16px; display: block; }
+/* Capped, because the narrow layout gives every cell the whole row and a
+   64-unit series stretched across 830px of it is not a shape anybody can
+   read. The cap keeps roughly the proportion the wide layout has. */
+.spark { width: 100%; max-width: 96px; height: 16px; display: block; }
 .spark polyline { fill: none; stroke: var(--accent-ink); stroke-width: 1.25; }
 
 /* One item on the attention list: what it is, why, and which skills. */
