@@ -867,3 +867,32 @@ def test_the_roots_list_is_closed_but_still_answers(client, a_skill):
     # Codex looks in three places and two of them are absent on a fresh
     # repository, so the summary has a number to report either way.
     assert "directories" in page and "not there" in page
+
+
+def test_the_usage_tab_says_what_to_do_and_draws_the_shape(client, a_skill):
+    """The table answered "what did I use"; the block answers "what now".
+
+    Rendered with no data as well, since a page that only works once
+    somebody has a fortnight of history is a page nobody sees first.
+    """
+    page = client.get("/skills").text
+    # The marks are inline, not a library: nothing here loads a chart script.
+    assert "cdn" not in page.lower()
+    assert 'class="strip"' in page and "coverage" not in page.split("strip")[0][-40:]
+    assert 'class="spark"' in page or "Used in the last" in page
+
+
+def test_the_sparkline_starts_at_zero_not_at_the_smallest_value():
+    """A series baselined on its own minimum draws activity where there
+    was none: a skill used once a day would climb like one ramping up."""
+    from flanner.web import sparkline
+
+    flat = sparkline([2, 2, 2], width=10, height=10)
+    assert flat == "0.0,1.0 5.0,1.0 10.0,1.0", flat
+
+    quiet_then_busy = sparkline([0, 4], width=10, height=10)
+    baseline, peak = quiet_then_busy.split(" ")
+    assert baseline.endswith(",9.0"), baseline  # zero sits on the floor
+    assert peak.endswith(",1.0"), peak
+
+    assert sparkline([]) == ""

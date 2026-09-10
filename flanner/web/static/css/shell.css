@@ -330,7 +330,7 @@ a:hover { color: var(--accent-hi); }
 .clamp2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
           overflow: hidden; }
 .cols-findings { grid-template-columns: 180px 1fr 1.6fr; }
-.cols-usage { grid-template-columns: 1.4fr 110px 160px 1fr; }
+.cols-usage { grid-template-columns: 1.4fr 130px 80px 150px 1fr; }
 .cols-installs { grid-template-columns: 160px 1.4fr 130px 110px; }
 .cols-proposals { grid-template-columns: 1.4fr 90px 110px 1.2fr 90px; }
 .cols-clusters { grid-template-columns: 1.4fr 150px 1.4fr; }
@@ -1264,3 +1264,39 @@ code { overflow-wrap: anywhere; }
 }
 .tab .n.n-warn { color: var(--stale-text); background: var(--stale-bg); font-weight: 600; }
 .tab[aria-current="true"] .n { color: var(--text-2); }
+
+/* ---------------------------------------------------- usage, drawn */
+
+/* Marks rather than charts, in the vocabulary the freshness ladder
+   already uses: flex boxes and one inline polyline. A chart library
+   would need a CDN, and the sidebar's claim that nothing leaves this
+   machine has to be true of the page as well as the data. */
+
+/* Was anything watching, day by day, oldest on the left. "Watched during
+   2 periods" is a claim; thirty cells are the evidence for it. */
+.strip { display: flex; gap: 2px; margin-top: 12px; }
+.strip i {
+  flex: 1; height: 9px; border-radius: 2px; background: var(--drift-empty);
+}
+.strip i.on { background: var(--fresh); }
+
+/* Relative volume, under the number rather than instead of it. The
+   drop-off from the few skills that carry the work to the long tail is
+   the shape somebody is looking for, and a column of digits hides it. */
+.usebar {
+  display: block; height: 3px; margin-top: 5px; min-width: 2px;
+  border-radius: 2px; background: var(--accent);
+}
+
+/* Seventeen uses spread over a fortnight and seventeen in one afternoon
+   are the same number and different facts. Scaled to its own peak, so a
+   quiet skill still shows its shape. */
+.spark { width: 100%; height: 16px; display: block; }
+.spark polyline { fill: none; stroke: var(--accent-ink); stroke-width: 1.25; }
+
+/* One item on the attention list: what it is, why, and which skills. */
+.attend { padding: 10px 0; border-top: 1px solid var(--divider); }
+.attend:first-of-type { border-top: 0; padding-top: 0; }
+.attend .hint { margin: 6px 0 0; }
+.attend-names { margin: 6px 0 0; font-size: 12.5px; line-height: 1.9; }
+.attend-names .sep { color: var(--text-4); margin: 0 7px; }

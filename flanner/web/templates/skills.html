@@ -125,6 +125,30 @@
   </section>
 
   <section id="tab-usage" data-tab-panel>
+
+  {# What to do about the numbers, before the numbers. Every item is a
+     join the data always supported: a skill being used while a copy of it
+     sits shadowed was readable only by holding two tables side by side.
+     The coverage caveat comes first because it qualifies the rest. #}
+  {% if attention %}
+  <div class="card card-pad" style="margin-bottom:14px">
+    <div class="card-head" style="padding:0 0 10px 0">Worth your attention
+      <span class="note">{{ attention | length }}</span></div>
+    {% for item in attention %}
+    <div class="attend">
+      <span class="pill pill-{{ 'stale' if item.severity == 'defect' else 'aging' }}">{{ item.headline }}</span>
+      <p class="hint">{{ item.detail }}</p>
+      {% if item.skills %}
+      <p class="attend-names">
+        {% for name in item.skills[:12] %}<a href="/skills/{{ name | urlencode }}">{{ name }}</a>{% if not loop.last %}<span class="sep">·</span>{% endif %}{% endfor %}
+        {%- if item.skills | length > 12 %}<span class="sep">·</span><span class="muted">and
+          {{ item.skills | length - 12 }} more</span>{% endif %}</p>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
   {% set scope_row = (observe.scopes | selectattr('observing') | list | first)
                      or (observe.scopes | list | first) %}
   <div class="card card-pad">
@@ -158,6 +182,15 @@
       <span class="hint">Off. Nothing is being recorded.</span>
       {% endif %}
     </div>
+    {% if usage.coverage.days %}
+    {% set covered = usage.coverage.days | select | list | length %}
+    <div class="strip" role="img"
+         aria-label="Watched on {{ covered }} of {{ usage.coverage.days | length }} days">
+      {% for on in usage.coverage.days %}<i{% if on %} class="on"{% endif %}></i>{% endfor %}
+    </div>
+    <p class="hint">Watched on {{ covered }} of
+      {{ usage.coverage.days | length }} days, oldest on the left.</p>
+    {% endif %}
   </div>
 
   <div class="card" style="margin-top:14px">
@@ -166,14 +199,25 @@
         {% if usage.coverage.watching %}{{ usage.rows | length }} skill(s)
         {% else %}nothing was watching{% endif %}</span></div>
     {% if usage.rows %}
+    {% set busiest = usage.rows | map(attribute='invocations') | max %}
     <div class="grid-row grid-head cols-usage">
-      <span>Skill</span><span>Uses</span><span>Last used</span><span>Models</span>
+      <span>Skill</span><span>Uses</span><span>Over the window</span>
+      <span>Last used</span><span>Models</span>
     </div>
     {% for row in usage.rows %}
     <div class="grid-row cols-usage">
-      <span>{{ row.skill }}</span>
-      <span class="tnum">{{ row.invocations }}{% if row.attributed < row.invocations %}
-        <span class="hint">{{ row.invocations - row.attributed }} unversioned</span>{% endif %}</span>
+      <span><a class="name" href="/skills/{{ row.skill | urlencode }}">{{ row.skill }}</a></span>
+      <span class="tnum">{{ row.invocations }}
+        {%- if row.attributed == 0 %}<span class="hint">none matched a package</span>
+        {%- elif row.attributed < row.invocations %}<span class="hint">{{ row.invocations - row.attributed }}
+          unversioned</span>{% endif %}
+        <span class="usebar" aria-hidden="true"
+              style="width:{{ (row.invocations / busiest * 100) | round | int }}%"></span></span>
+      {# Shape, not size: the sparkline scales to its own peak, so a skill
+         used twice still shows whether that was one day or two. #}
+      <span><svg class="spark" viewBox="0 0 64 16" preserveAspectRatio="none"
+                 role="img" aria-label="{{ row.invocations }} uses over {{ days }} days">
+        <polyline points="{{ row.by_day | sparkline }}" /></svg></span>
       <span class="when">{{ row.last_used_at[:16].replace('T', ' ') }}</span>
       <span class="muted">{% for k, v in row.by_model.items() %}{{ k }} ({{ v }}){% if not loop.last %}, {% endif %}{% endfor %}</span>
     </div>

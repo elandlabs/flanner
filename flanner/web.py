@@ -196,6 +196,25 @@ def markdown_filter(text: str | None) -> str:
 
 
 # Add custom filters to Jinja2
+def sparkline(values: list[int], width: int = 64, height: int = 16) -> str:
+    """A series as SVG polyline points, one point per bucket.
+
+    Presentation, so it lives here rather than in the domain: the report
+    hands over counts per day and this decides what they look like. The
+    baseline is zero rather than the smallest value, because a series that
+    starts halfway up the box reads as activity where there was none.
+    """
+    if not values:
+        return ""
+    top = max(values) or 1
+    step = width / max(1, len(values) - 1)
+    return " ".join(
+        f"{index * step:.1f},{height - (value / top) * (height - 2) - 1:.1f}"
+        for index, value in enumerate(values)
+    )
+
+
+templates.env.filters["sparkline"] = sparkline
 templates.env.filters["markdown"] = markdown_filter
 templates.env.filters["relative_time"] = format_relative_time
 templates.env.filters["basename"] = lambda p: Path(p).name
@@ -1764,6 +1783,9 @@ async def skills_page(
     from . import skills_manage, skills_mesh, skills_observe
 
     here = Path(root) if root else None
+    # Computed once and handed to both: `attention` joins against this
+    # report rather than running the scan inside it a second time.
+    usage = await run_in_threadpool(skills_observe.usage, session, here, days)
     return templates.TemplateResponse(
         request,
         "skills.html",
@@ -1782,7 +1804,10 @@ async def skills_page(
             "shadowed": bool(shadowed),
             "said": said,
             "observe": await run_in_threadpool(skills_observe.status, session),
-            "usage": await run_in_threadpool(skills_observe.usage, session, here, days),
+            "usage": usage,
+            "attention": await run_in_threadpool(
+                functools.partial(skills_observe.attention, session, here, days, report=usage)
+            ),
             "days": days,
             "stored": await run_in_threadpool(skills_manage.stored),
             "installs": await run_in_threadpool(skills_manage.installations, session, here),
