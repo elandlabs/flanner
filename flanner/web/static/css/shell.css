@@ -897,7 +897,14 @@ select.btn-sm { padding-right: 8px; }
   cursor: pointer; text-align: left;
 }
 .sel-button .sel-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sel-caret { color: var(--text-4); font-size: 11px; line-height: 1; flex: none; }
+/* Drawn, not typed. The glyph this replaced was a maths arrowhead sitting
+   on the baseline, so it hung below the label it belongs beside, and took
+   its weight from whichever font on the machine happened to carry it. */
+.sel-caret {
+  width: 10px; height: 6px; flex: none; color: var(--text-4);
+  fill: none; stroke: currentColor; stroke-width: 1.5;
+  stroke-linecap: round; stroke-linejoin: round;
+}
 .sel-button[aria-expanded="true"] { border-color: var(--accent); box-shadow: var(--focus); }
 
 .sel-list {

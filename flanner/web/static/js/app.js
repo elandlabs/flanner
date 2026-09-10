@@ -845,10 +845,13 @@ onPage(function () {
         if (select.id) button.setAttribute('aria-labelledby', select.id + '-label ' + select.id);
         const label = document.createElement('span');
         label.className = 'sel-label';
-        const caret = document.createElement('span');
-        caret.className = 'sel-caret';
+        const caret = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        caret.setAttribute('class', 'sel-caret');
+        caret.setAttribute('viewBox', '0 0 10 6');
         caret.setAttribute('aria-hidden', 'true');
-        caret.textContent = '⌄';
+        const caretPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        caretPath.setAttribute('d', 'M1 1l4 4 4-4');
+        caret.append(caretPath);
         button.append(label, caret);
 
         const list = document.createElement('div');
