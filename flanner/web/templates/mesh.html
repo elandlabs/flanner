@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_empty.html" as empty %}
 {% block title %}Mesh{% endblock %}
 
 {% block topbar_main %}
@@ -11,17 +12,15 @@
 <div class="pane">
 
   {% if not mesh.signed_in %}
-  <div class="card card-pad card-prose">
-    <h2 class="card-title">This machine works on its own</h2>
-    <p>
-      Everything you have here — projects, versions, history, freshness, the
+  {% call empty.state('team', 'This machine works on its own') %}
+    <p>Everything you have here — projects, versions, history, freshness, the
       MCP server — runs with no account and no network. Joining a mesh adds
       one thing: your other machines, and your colleagues' machines, can pull
       these plans directly from this one.</p>
-    <div class="kv"><span>This device</span><b class="mono">{{ mesh.device_id }}</b></div>
-    <p class="hint">The id is the hash of a key this machine generated. It was
+    <p class="empty-id mono">{{ mesh.device_id }}</p>
+    <p class="hint">That id is the hash of a key this machine generated. It was
        not assigned by anyone, and the private half has never left this disk.</p>
-  </div>
+  {% endcall %}
 
   <div class="card">
     <div class="card-head">Joining a mesh</div>
@@ -127,10 +126,10 @@
       {% endfor %}
     </div>
     {% else %}
-    <div style="padding:22px 18px" class="dim">
-      No other devices yet. They appear here once an admin enrols them and
-      this device next renews its access.
-    </div>
+    {% call empty.inside('team', 'No other devices yet') %}
+    <p class="hint">They appear here once an admin enrols them and this device
+      next renews its access.</p>
+    {% endcall %}
     {% endif %}
     <div class="footnote" style="padding: 0 18px 14px">
       <span class="i" aria-hidden="true">i</span>

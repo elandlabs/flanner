@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_empty.html" as empty %}
 {% block title %}Plans{% endblock %}
 
 {% block topbar_main %}
@@ -52,11 +53,10 @@
     </div>
   </div>
   {% else %}
-  <div class="card empty">
-    <h2>No plans yet</h2>
+  {% call empty.state('plan', 'No plans yet') %}
     <p>Plans appear here as your agents write them, or when you import an existing
        directory with <code class="mono">flanner sync</code>.</p>
-  </div>
+  {% endcall %}
   {% endif %}
 </div>
 {% endblock %}

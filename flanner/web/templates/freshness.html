@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_empty.html" as empty %}
 {% block title %}Freshness{% endblock %}
 
 {% block topbar_main %}
@@ -56,8 +57,14 @@
       <div class="empty-filter" data-list-empty hidden>Nothing matches that filter.</div>
       {% if streaming %}<div class="pager" data-list-pager hidden></div>{% else %}{% include "_pager.html" %}{% endif %}
       {% if streaming %}
-      <div class="empty-filter" data-scan-clean hidden>Nothing has drifted. Every plan
-        still lines up with the code it describes.</div>
+      {# The same state as the server-rendered one below, reached the other
+         way: this page streams its verdicts, so on a clean repository the
+         table above stays empty and the answer arrives from the scan. #}
+      <div class="empty empty-in" data-scan-clean hidden>
+        {{ empty.glyph('clear') }}
+        <h2>Nothing has drifted</h2>
+        <p class="hint">Every plan still lines up with the code it describes.</p>
+      </div>
       <noscript><div class="empty-filter">This table is filled in as each plan is
         checked, which needs JavaScript.
         <a href="/freshness?full=1">Load it all at once instead</a>.</div></noscript>
@@ -65,11 +72,10 @@
     </div>
   </div>
   {% else %}
-  <div class="card empty">
-    <h2>Nothing has drifted</h2>
+  {% call empty.state('clear', 'Nothing has drifted') %}
     <p>Every plan still lines up with the code it describes. This page fills itself
        in as commits land.</p>
-  </div>
+  {% endcall %}
   {% endif %}
 
   <div class="footnote">

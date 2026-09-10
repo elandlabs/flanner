@@ -41,6 +41,14 @@
   --divider:     #ececef;
   --border-firm: #e2e2e6;
 
+  /* Empty-state line art. A border stroke measures 1.23:1 on a card, which
+     is a line you cannot see. These are drawn shapes rather than chrome, so
+     they get their own pair: structure at ~2.6:1, faint detail at ~1.7:1.
+     The one accent element in each glyph uses --accent-ink, which is the
+     accent already tuned to be legible as a mark on both cards. */
+  --glyph-line:  #a1a0a7;
+  --glyph-soft:  #c7c6cd;
+
   /* Text */
   --text:        #17181c;
   --text-2:      #4b4c53;
@@ -112,6 +120,9 @@
     --divider:     #26272c;
     --border-firm: #2a2b31;
 
+    --glyph-line:  #5e5d64;
+    --glyph-soft:  #434249;
+
     --text:        #ececee;
     --text-2:      #b6b7bd;
     --text-3:      #9a9ba3;
@@ -155,6 +166,9 @@
   --border:      #2a2b31;
   --divider:     #26272c;
   --border-firm: #2a2b31;
+
+  --glyph-line:  #5e5d64;
+  --glyph-soft:  #434249;
 
   --text:        #ececee;
   --text-2:      #b6b7bd;

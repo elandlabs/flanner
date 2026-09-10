@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_empty.html" as empty %}
 {% block title %}{{ project.name }}{% endblock %}
 
 {% block topbar_back %}
@@ -88,11 +89,10 @@
     </div>
   </div>
   {% else %}
-  <div class="card empty">
-    <h2>No plans in this project</h2>
+  {% call empty.state('plan', 'No plans in this project') %}
     <p>Your agents will fill this in, or you can write the first one yourself.</p>
     <a class="btn btn-primary" href="/projects/{{ project.id }}/plans/new">New plan</a>
-  </div>
+  {% endcall %}
   {% endif %}
 
 

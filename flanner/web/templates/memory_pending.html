@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_empty.html" as empty %}
 {% block title %}Waiting on you{% endblock %}
 
 {% block topbar_back %}
@@ -57,8 +58,7 @@
   {% endfor %}
 
   {% else %}
-  <div class="card card-pad card-prose">
-    <h2 class="card-title">Nothing waiting</h2>
+  {% call empty.state('memory', 'Nothing waiting') %}
     <p>Capture is set to <b>{{ capture_mode }}</b> for this project.</p>
     {% if capture_mode == 'off' %}
     <p class="hint">Nothing is being captured or suggested. Change it with
@@ -70,7 +70,7 @@
     <p class="hint">Suggestions appear here when an agent offers something
        worth remembering.</p>
     {% endif %}
-  </div>
+  {% endcall %}
   {% endif %}
 
   <div class="footnote" style="margin-top:18px">

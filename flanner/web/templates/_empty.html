@@ -1,0 +1,104 @@
+{#
+  Empty states.
+
+  There was already a glyph in here — a drawn plan file — and no template
+  ever included it, so every "nothing here yet" was a heading and a
+  paragraph, and the ones outside `.card.empty` were left-aligned prose
+  that read like a paragraph somebody forgot to finish.
+
+  One family, drawn on the same 72x72 grid with the same two stroke
+  weights: the structure in `--glyph-line`, and exactly one element in
+  `--accent-ink` — the thing that would be there if the list were not empty.
+  They do not reuse the border tokens: a border stroke measures 1.23:1 on
+  a card, which is a line nobody can see. `--glyph-line` is the same grey
+  family at 2.6:1, which reads as a drawing without competing with the
+  heading under it.
+
+  `state()` is the whole block. `glyph()` is for the few places that need
+  the drawing inside markup they already have.
+#}
+
+{% macro glyph(kind) %}
+<svg class="empty-glyph" width="72" height="72" viewBox="0 0 72 72" fill="none"
+     xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  {%- if kind == 'plan' %}
+  {# a plan file: frontmatter dashed, the body it versions in accent #}
+  <path d="M14 8a4 4 0 0 1 4-4h22l14 14v42a4 4 0 0 1-4 4H18a4 4 0 0 1-4-4V8z"
+        stroke="var(--glyph-line)" stroke-width="2"/>
+  <path d="M40 4v10a4 4 0 0 0 4 4h10" stroke="var(--glyph-line)" stroke-width="2"/>
+  <line x1="22" y1="26" x2="36" y2="26" stroke="var(--glyph-line)" stroke-width="2" stroke-dasharray="4 3"/>
+  <line x1="22" y1="34" x2="44" y2="34" stroke="var(--accent-ink)" stroke-width="2"/>
+  <line x1="22" y1="42" x2="40" y2="42" stroke="var(--accent-ink)" stroke-width="2"/>
+  <line x1="22" y1="52" x2="46" y2="52" stroke="var(--glyph-soft)" stroke-width="2"/>
+
+  {%- elif kind == 'project' %}
+  {# a directory flanner has taken over #}
+  <path d="M8 20a4 4 0 0 1 4-4h16l6 7h26a4 4 0 0 1 4 4v29a4 4 0 0 1-4 4H12a4 4 0 0 1-4-4V20z"
+        stroke="var(--glyph-line)" stroke-width="2" stroke-linejoin="round"/>
+  <line x1="22" y1="40" x2="50" y2="40" stroke="var(--accent-ink)" stroke-width="2"/>
+  <line x1="22" y1="48" x2="40" y2="48" stroke="var(--glyph-soft)" stroke-width="2"/>
+
+  {%- elif kind == 'memory' %}
+  {# a card with something marked to keep #}
+  <rect x="12" y="10" width="48" height="52" rx="5" stroke="var(--glyph-line)" stroke-width="2"/>
+  <path d="M28 10v20l7-6 7 6V10" stroke="var(--accent-ink)" stroke-width="2" stroke-linejoin="round"/>
+  <line x1="21" y1="45" x2="51" y2="45" stroke="var(--glyph-soft)" stroke-width="2"/>
+  <line x1="21" y1="53" x2="41" y2="53" stroke="var(--glyph-soft)" stroke-width="2"/>
+
+  {%- elif kind == 'skill' %}
+  {# a package: hashed as a whole, which is the seam down the middle #}
+  <path d="M36 6 62 20v32L36 66 10 52V20z" stroke="var(--glyph-line)"
+        stroke-width="2" stroke-linejoin="round"/>
+  <path d="M10 20l26 14 26-14" stroke="var(--glyph-line)" stroke-width="2" stroke-linejoin="round"/>
+  <line x1="36" y1="34" x2="36" y2="66" stroke="var(--accent-ink)" stroke-width="2"/>
+
+  {%- elif kind == 'search' %}
+  {# looked, found nothing #}
+  <circle cx="31" cy="30" r="18" stroke="var(--glyph-line)" stroke-width="2"/>
+  <line x1="44" y1="43" x2="59" y2="58" stroke="var(--glyph-line)" stroke-width="2" stroke-linecap="round"/>
+  <line x1="23" y1="26" x2="39" y2="26" stroke="var(--accent-ink)" stroke-width="2"/>
+  <line x1="23" y1="34" x2="33" y2="34" stroke="var(--accent-ink)" stroke-width="2"/>
+
+  {%- elif kind == 'clear' %}
+  {# nothing is wrong, which is a result rather than an absence #}
+  <circle cx="36" cy="36" r="27" stroke="var(--glyph-line)" stroke-width="2"/>
+  <path d="M23 37l9 9 17-19" stroke="var(--accent-ink)" stroke-width="2.5"
+        stroke-linecap="round" stroke-linejoin="round"/>
+
+  {%- elif kind == 'team' %}
+  {# two machines, and the hop between them that has not happened #}
+  <rect x="5" y="19" width="24" height="34" rx="4" stroke="var(--glyph-line)" stroke-width="2"/>
+  <rect x="43" y="19" width="24" height="34" rx="4" stroke="var(--glyph-line)" stroke-width="2"/>
+  <path d="M33 36h8m0 0-3.5-3.5M41 36l-3.5 3.5" stroke="var(--accent-ink)" stroke-width="2"
+        stroke-linecap="round" stroke-linejoin="round"/>
+
+  {%- else %}
+  {# nothing in particular: a list with no rows #}
+  <rect x="10" y="14" width="52" height="44" rx="5" stroke="var(--glyph-line)" stroke-width="2"/>
+  <line x1="21" y1="30" x2="51" y2="30" stroke="var(--accent-ink)" stroke-width="2"/>
+  <line x1="21" y1="40" x2="43" y2="40" stroke="var(--glyph-soft)" stroke-width="2"/>
+  {%- endif %}
+</svg>
+{%- endmacro %}
+
+{# A page's own empty state: the card is the whole of what is there. #}
+{% macro state(kind, title) %}
+<div class="card empty">
+  {{ glyph(kind) }}
+  <h2>{{ title }}</h2>
+  {{ caller() }}
+</div>
+{%- endmacro %}
+
+{#
+  The same block inside a card that already has a head and a count — the
+  skills tabs, mostly. No `card` class, because a card inside a card draws
+  a second border around the same thing.
+#}
+{% macro inside(kind, title) %}
+<div class="empty empty-in">
+  {{ glyph(kind) }}
+  <h2>{{ title }}</h2>
+  {{ caller() }}
+</div>
+{%- endmacro %}

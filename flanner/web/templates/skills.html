@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_empty.html" as empty %}
 {% block title %}Skills{% endblock %}
 
 {% block topbar_main %}
@@ -113,14 +114,13 @@
     {% include "_pager.html" %}
   </div>
   {% else %}
-  <div class="card card-pad card-prose">
-    <h2 class="card-title">Nothing found</h2>
+  {% call empty.state('search', 'Nothing found') %}
     <p>No skill package matched. A skill is a directory holding a
       <code>SKILL.md</code>, under <code>.claude/skills</code> in a project,
       in your home directory, or inside an installed plugin.</p>
-    <p>Flanner reads those directories and never writes to them. Nothing in a
-      package is executed by a scan.</p>
-  </div>
+    <p class="hint">Flanner reads those directories and never writes to them.
+      Nothing in a package is executed by a scan.</p>
+  {% endcall %}
   {% endif %}
   </section>
 
@@ -232,11 +232,17 @@
     </div>
     {% endfor %}
     {% else %}
-    <div class="card-pad card-prose">
-      <p>{% if usage.coverage.watching %}Nothing was invoked in this window.
-        {% else %}Nothing has been watching, so a zero here means nothing
-        rather than "unused".{% endif %}</p>
-    </div>
+    {% if usage.coverage.watching %}
+      {% call empty.inside('clear', 'Nothing was invoked in this window') %}
+      <p class="hint">Something was watching throughout, so this is a real zero
+        rather than a gap in the record.</p>
+      {% endcall %}
+    {% else %}
+      {% call empty.inside('search', 'Nothing has been watching') %}
+      <p class="hint">A zero here means nothing rather than “unused”. Turn
+        watching on and this fills in as skills are invoked.</p>
+      {% endcall %}
+    {% endif %}
     {% endif %}
     {# The coverage, spelled out. A closed window still counts as coverage —
        correctly, something was watching for part of the period — but a
@@ -287,11 +293,11 @@
     </div>
     {% endfor %}
     {% else %}
-    <div class="card-pad card-prose">
-      <p>Nothing installed by flanner. Skills stay where their owner put
-        them; <code>flanner skills adopt &lt;name&gt;</code> keeps a copy
-        flanner can put back.</p>
-    </div>
+    {% call empty.inside('skill', 'Nothing installed by flanner') %}
+    <p class="hint">Skills stay where their owner put them.
+      <code>flanner skills adopt &lt;name&gt;</code> keeps a copy flanner can
+      put back.</p>
+    {% endcall %}
     {% endif %}
   </div>
 
@@ -324,10 +330,10 @@
     </div>
     {% endfor %}
     {% else %}
-    <div class="card-pad card-prose">
-      <p>Nothing has arrived. A package a teammate sends shows up here and
-        waits: receiving one is not installing it.</p>
-    </div>
+    {% call empty.inside('team', 'Nothing has arrived') %}
+    <p class="hint">A package a teammate sends shows up here and waits:
+      receiving one is not installing it.</p>
+    {% endcall %}
     {% endif %}
 
     {% if channels %}

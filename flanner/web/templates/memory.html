@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_empty.html" as empty %}
 {% block title %}Memory{% endblock %}
 
 {% block topbar_main %}
@@ -52,19 +53,19 @@
     {% if not query %}{% include "_pager.html" %}{% endif %}
   </div>
   {% else %}
-  <div class="card card-pad card-prose">
-    {% if query %}
-    <h2 class="card-title">Nothing remembered about that</h2>
+  {% if query %}
+    {% call empty.state('search', 'Nothing remembered about that') %}
     <p>No memory in this project or your personal memory matches “{{ query }}”.</p>
-    {% else %}
-    <h2 class="card-title">Nothing remembered yet</h2>
+    {% endcall %}
+  {% else %}
+    {% call empty.state('memory', 'Nothing remembered yet') %}
     <p>Memory holds what a later session would otherwise have to be told again:
        a decision and why the alternatives lost, a constraint that is not
        obvious from the code, a lesson from something that failed.</p>
     <p class="hint">Ask your agent to remember something, or run
        <code>flanner mem remember "…" --category decision</code>.</p>
-    {% endif %}
-  </div>
+    {% endcall %}
+  {% endif %}
   {% endif %}
 
   <div class="footnote" style="margin-top:18px">

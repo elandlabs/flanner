@@ -896,3 +896,75 @@ def test_the_sparkline_starts_at_zero_not_at_the_smallest_value():
     assert peak.endswith(",1.0"), peak
 
     assert sparkline([]) == ""
+
+
+# The glyph kinds `_empty.html` draws. A kind it does not know silently
+# falls through to the generic list, which is a typo you would never see.
+EMPTY_KINDS = {"plan", "project", "memory", "skill", "search", "clear", "team"}
+
+
+EMPTY_PAGES = [
+    ("/", "no projects on the dashboard"),
+    ("/projects", "no projects"),
+    ("/plans", "no plans anywhere"),
+    ("/freshness", "nothing has drifted"),
+    ("/review", "nothing waiting on a decision"),
+    ("/memory", "nothing remembered"),
+    ("/memory?q=zzznothingmatchesthis", "a search that matched nothing"),
+    ("/memory/pending", "no suggestions"),
+    ("/mesh", "not signed in to a mesh"),
+    ("/skills/proposals", "no proposals"),
+]
+
+
+@pytest.mark.parametrize("path,why", EMPTY_PAGES)
+def test_every_empty_state_draws_a_glyph(client, path, why):
+    """A page with nothing on it shows a drawing, centred, not a paragraph.
+
+    There was a drawn glyph in the templates directory that no page ever
+    included, and the empty states outside `.card.empty` were left-aligned
+    prose. Both are easy to reintroduce: a new page writes its own "nothing
+    here" markup and nothing complains.
+
+    This fixture's store is empty, which is the whole point — every page
+    below is being asked what it looks like on a first run.
+    """
+    page = client.get(path)
+    assert page.status_code == 200, (path, page.status_code)
+    body = page.text
+    assert 'class="empty' in body, f"{path}: {why} renders no empty state"
+    assert "empty-glyph" in body, f"{path}: {why} has an empty state with no drawing"
+
+
+def test_a_project_with_no_plans_draws_a_glyph(client, project_id):
+    """The one empty state that needs something to exist first."""
+    body = client.get(f"/projects/{project_id}").text
+    assert 'class="empty' in body and "empty-glyph" in body
+
+
+def test_an_empty_state_is_never_a_card_inside_a_card():
+    """`.card.empty` draws its own border, so it cannot sit inside one.
+
+    The in-card variant exists for the skills tabs, where the card above it
+    already carries a head and a count.
+    """
+    import re
+
+    for template in (WEB_DIR / "templates").glob("*.html"):
+        text = template.read_text(encoding="utf-8")
+        for call in re.finditer(r"\{%\s*call\s+empty\.(state|inside)\(\s*'([a-z]+)'", text):
+            variant, kind = call.group(1), call.group(2)
+            assert kind in EMPTY_KINDS, f"{template.name}: empty.{variant}('{kind}') is not a drawn kind"
+
+
+def test_no_empty_state_still_uses_the_left_aligned_prose_card():
+    """The shape this replaced: a heading and prose, hugging the left edge.
+
+    `.dim` was the worst of them — an inline-styled wrapper on a class with
+    no rule anywhere in the stylesheet.
+    """
+    css = (WEB_DIR / "static/css/shell.css").read_text(encoding="utf-8")
+    assert ".dim" not in css, "a rule appeared for a class that should have gone"
+    for template in (WEB_DIR / "templates").glob("*.html"):
+        text = template.read_text(encoding="utf-8")
+        assert 'class="dim"' not in text, f"{template.name}: the unstyled empty state is back"

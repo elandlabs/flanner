@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_empty.html" as empty %}
 {% block title %}Projects{% endblock %}
 
 {% block topbar_main %}
@@ -67,11 +68,10 @@
     </div>
   </div>
   {% else %}
-  <div class="card empty">
-    <h2>No projects yet</h2>
+  {% call empty.state('project', 'No projects yet') %}
     <p>Point flanner at a repository and it takes over the plan files your agents write there.</p>
     <a class="btn btn-primary" href="/projects/new">New project</a>
-  </div>
+  {% endcall %}
   {% endif %}
 
   {% if recent_activity %}

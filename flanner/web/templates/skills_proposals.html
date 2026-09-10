@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_empty.html" as empty %}
 {% block title %}Proposals{% endblock %}
 
 {% block topbar_main %}
@@ -18,12 +19,11 @@
   {% endif %}
 
   {% if no_project %}
-  <div class="card card-pad card-prose">
-    <h2 class="card-title">Not a flanner project</h2>
+  {% call empty.state('project', 'Not a flanner project') %}
     <p>Learning is scoped to a repository, so this page needs one. Evidence
       from one repository proposing a skill in another is exactly the leak
       the scoping exists to prevent.</p>
-  </div>
+  {% endcall %}
   {% else %}
 
   <div class="card card-pad card-prose">
@@ -70,11 +70,11 @@
     </div>
     {% endfor %}
     {% else %}
-    <div class="card-pad card-prose">
-      <p>Nothing proposed. <code>flanner skills evidence submit</code> hands
-        over a piece of work, and <code>flanner skills propose</code> drafts
-        a skill from it.</p>
-    </div>
+    {% call empty.inside('skill', 'Nothing proposed') %}
+    <p class="hint"><code>flanner skills evidence submit</code> hands over a
+      piece of work, and <code>flanner skills propose</code> drafts a skill
+      from it.</p>
+    {% endcall %}
     {% endif %}
   </div>
 
@@ -188,11 +188,11 @@
       {% for note in matrix.notes %}<p class="muted">{{ note }}</p>{% endfor %}
     </div>
     {% else %}
-    <div class="card-pad card-prose">
-      <p>Flanner records comparisons; it does not run them. Nothing here calls
-        a model provider, so results are entered by whatever actually ran
-        them — <code>flanner skills eval record</code>.</p>
-    </div>
+    {% call empty.inside('clear', 'No comparisons recorded') %}
+    <p class="hint">Flanner records comparisons; it does not run them. Nothing
+      here calls a model provider, so results are entered by whatever actually
+      ran them — <code>flanner skills eval record</code>.</p>
+    {% endcall %}
     {% endif %}
   </div>
 

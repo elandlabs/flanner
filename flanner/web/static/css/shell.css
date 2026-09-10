@@ -664,6 +664,18 @@ details.lede > summary:hover::after { text-decoration: underline; }
 .empty { text-align: center; padding: 44px 20px; color: var(--text-3); }
 .empty h2 { font-size: 15px; color: var(--text); margin: 0 0 6px; }
 .empty p { margin: 0 auto 16px; max-width: 46ch; }
+.empty p:last-child { margin-bottom: 0; }
+/* Inside a card that already has a head and a count, so it carries no card
+   of its own and does not need to clear a heading above it. */
+.empty-in { padding: 34px 20px; }
+/* The mesh page's own device id, which is the one identifier an empty state
+   still has to show. It replaced a `.kv` row, whose space-between put the
+   label at one edge and the hash at the other across a centred card. */
+.empty-id {
+  font-size: 12px; color: var(--text-2);
+  margin: 0 auto 10px; overflow-wrap: anywhere;
+}
+.empty .hint { max-width: 46ch; margin-left: auto; margin-right: auto; }
 
 /* -------------------------------------------------------------- dialogs */
 
@@ -1288,7 +1300,7 @@ select.btn-sm { padding-right: 8px; }
 }
 
 /* Empty states carry a line drawing of a plan file above the sentence. */
-.empty-glyph { display: block; margin: 0 auto 20px; }
+.empty-glyph { display: block; margin: 0 auto 18px; }
 
 /* Linked issues on a plan, and the "Linear ×N" count in a project's list. */
 .linear-panel h2 {
