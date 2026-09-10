@@ -1224,3 +1224,31 @@ code { overflow-wrap: anywhere; }
 .pager-nav { display: inline-flex; align-items: center; gap: 8px; }
 .pager-per { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; }
 .pager select { font: inherit; }
+
+/* -------------------------------------------------------------- tabs */
+
+/* Sections of one page, not places to go. An underline rather than pills,
+   so the strip does not read as five more buttons competing with the
+   toolbar above it. Every panel is in the page whether or not the script
+   runs; with it off this is a row of jump links. */
+.tabs {
+  display: flex; flex-wrap: wrap; gap: 2px;
+  border-bottom: 1px solid var(--border);
+}
+.tab {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 9px 13px; margin-bottom: -1px;
+  border-bottom: 2px solid transparent;
+  color: var(--text-3); font-size: 13px; font-weight: 500;
+}
+.tab:hover { color: var(--text); }
+.tab[aria-current="true"] {
+  color: var(--text); font-weight: 600; border-bottom-color: var(--accent);
+}
+.tab .n {
+  min-width: 20px; padding: 1px 6px; border-radius: 10px;
+  background: var(--chip); color: var(--text-3);
+  font: 500 11px/1.45 var(--font-mono); text-align: center;
+}
+.tab .n.n-warn { color: var(--stale-text); background: var(--stale-bg); font-weight: 600; }
+.tab[aria-current="true"] .n { color: var(--text-2); }

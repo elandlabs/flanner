@@ -833,3 +833,20 @@ def test_every_grid_head_matches_the_columns_its_css_defines():
             seen.add(name)
     assert checked >= 18, f"only {checked} grid heads found; the pattern must have changed"
     assert "cols-skills" in seen, "the skills table is the one that shipped this bug"
+
+
+def test_the_skills_index_sections_are_tabs_that_survive_no_javascript(client, a_skill):
+    """Every panel is rendered; the script hides the ones you are not reading.
+
+    Built as anchors for that reason. If the tabs were the only way to
+    reach a section, a page without JavaScript would lose five sixths of
+    itself — including the table it exists for.
+    """
+    page = client.get("/skills").text
+    for section in ("tab-skills", "tab-usage", "tab-versions", "tab-team", "tab-health"):
+        assert f'id="{section}"' in page, section
+        assert f'href="#{section}"' in page, section
+    # Nothing is hidden server-side, so the markup alone is complete.
+    assert "data-tab-panel hidden" not in page and 'data-tab-panel="hidden"' not in page
+    # The defect banner points at the tab that holds the list, not at "below".
+    assert "at the foot of this page" not in page

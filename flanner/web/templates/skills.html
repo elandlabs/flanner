@@ -45,7 +45,8 @@
   <div class="notice bad" style="margin-bottom:14px">
     {{ report.summary.defects }} defect{{ '' if report.summary.defects == 1 else 's' }}
     found. Nothing is broken on its own, but an agent may be loading a copy
-    you did not mean it to. The list is at the foot of this page.
+    you did not mean it to. <a href="#tab-health" data-tab-jump>Read them under
+    Health</a>.
   </div>
   {% endif %}
 
@@ -67,6 +68,26 @@
       <div class="k">Defects</div></div>
   </div>
 
+
+  {#
+    The table is the page; the rest is what you go looking for. Anchors, so
+    with no JavaScript this is a row of jump links and every panel is still
+    on the page — the script below only hides the ones you are not reading.
+  #}
+  <nav class="tabs" data-tabs aria-label="Skills sections">
+    <a class="tab" href="#tab-skills" data-tab>Skills
+      <span class="n tnum">{{ rows | length }}</span></a>
+    <a class="tab" href="#tab-usage" data-tab>Usage{% if usage.rows %}
+      <span class="n tnum">{{ usage.rows | length }}</span>{% endif %}</a>
+    <a class="tab" href="#tab-versions" data-tab>Versions{% if stored %}
+      <span class="n tnum">{{ stored | length }}</span>{% endif %}</a>
+    <a class="tab" href="#tab-team" data-tab>Team{% if transfers %}
+      <span class="n tnum">{{ transfers | length }}</span>{% endif %}</a>
+    <a class="tab" href="#tab-health" data-tab>Health{% if report.summary.defects %}
+      <span class="n tnum n-warn">{{ report.summary.defects }}</span>{% endif %}</a>
+  </nav>
+
+  <section id="tab-skills" data-tab-panel>
   {% if rows %}
   <div class="card" data-listgroup>
     <div class="card-head">
@@ -101,10 +122,12 @@
       package is executed by a scan.</p>
   </div>
   {% endif %}
+  </section>
 
+  <section id="tab-usage" data-tab-panel>
   {% set scope_row = (observe.scopes | selectattr('observing') | list | first)
                      or (observe.scopes | list | first) %}
-  <div class="card card-pad" style="margin-top:14px">
+  <div class="card card-pad">
     <div class="card-head" style="padding:0 0 10px 0">Watching skill use
       <span class="note">{% if scope_row and scope_row.observing %}on{% else %}off{% endif %}</span>
     </div>
@@ -184,7 +207,10 @@
     </div>
   </div>
 
-  <div class="card" style="margin-top:14px">
+  </section>
+
+  <section id="tab-versions" data-tab-panel>
+  <div class="card">
     <div class="card-head">Versions flanner is holding
       <span class="note">{{ stored | length }} stored ·
         {{ installs | length }} install(s)</span></div>
@@ -216,7 +242,10 @@
     {% endif %}
   </div>
 
-  <div class="card" style="margin-top:14px">
+  </section>
+
+  <section id="tab-team" data-tab-panel>
+  <div class="card">
     <div class="card-head">From your team
       <span class="note">{{ transfers | length }} arrived ·
         {{ channels | selectattr('subscribed') | list | length }} followed</span></div>
@@ -266,8 +295,11 @@
     {% endif %}
   </div>
 
+  </section>
+
+  <section id="tab-health" data-tab-panel>
   {% if report.findings %}
-  <div class="card" style="margin-top:14px">
+  <div class="card">
     <div class="card-head">What is wrong
       <span class="note">{{ report.summary.defects }}
         defect{{ '' if report.summary.defects == 1 else 's' }},
@@ -303,6 +335,7 @@
     <p class="muted">{{ note }}</p>
     {% endfor %}
   </div>
+  </section>
 
 </div>
 {% endblock %}

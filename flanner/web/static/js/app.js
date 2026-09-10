@@ -1394,3 +1394,63 @@ onPage(function () {
     // Deliberately not re-opened per navigation: the connection belongs to
     // the tab, not to the page currently in it.
 })();
+
+// Sections of a page, shown one at a time.
+//
+// Progressive on purpose: the panels are all rendered and this hides the
+// ones you are not reading. With the script off, the strip is a row of jump
+// links and nothing on the page is out of reach — which matters here,
+// because one of the panels is the list the page exists for.
+onPage(function () {
+    const strip = document.querySelector('[data-tabs]');
+    if (!strip) return;
+    const tabs = Array.from(strip.querySelectorAll('[data-tab]'));
+    const panels = tabs.map(function (tab) {
+        return document.querySelector(tab.getAttribute('href'));
+    });
+    if (!tabs.length || panels.some(function (panel) { return !panel; })) return;
+
+    strip.setAttribute('role', 'tablist');
+
+    function show(id) {
+        let matched = false;
+        tabs.forEach(function (tab, i) {
+            const on = tab.getAttribute('href') === '#' + id;
+            matched = matched || on;
+            tab.setAttribute('aria-current', on ? 'true' : 'false');
+            tab.setAttribute('role', 'tab');
+            tab.setAttribute('aria-selected', on ? 'true' : 'false');
+            panels[i].hidden = !on;
+            panels[i].setAttribute('role', 'tabpanel');
+        });
+        // A hash naming something else on the page - or nothing - falls back
+        // to the first panel rather than hiding every one of them.
+        if (!matched) show(tabs[0].getAttribute('href').slice(1));
+    }
+
+    tabs.forEach(function (tab) {
+        tab.addEventListener('click', function (event) {
+            event.preventDefault();
+            const id = tab.getAttribute('href').slice(1);
+            // replaceState, not a jump: Back should leave the page rather
+            // than replay which sections somebody looked at.
+            history.replaceState(null, '', '#' + id);
+            show(id);
+        });
+    });
+    window.addEventListener('hashchange', function () { show(location.hash.slice(1)); });
+    show(location.hash.slice(1));
+});
+
+// A link elsewhere on the page that opens a tab. Same anchor, so with the
+// script off it jumps to the section, which is still there to jump to.
+once('tab-jump', function () {
+    document.addEventListener('click', function (event) {
+        const link = event.target.closest('[data-tab-jump]');
+        if (!link) return;
+        const tab = document.querySelector('[data-tab][href="' + link.getAttribute('href') + '"]');
+        if (!tab) return;
+        event.preventDefault();
+        tab.click();
+    });
+});
