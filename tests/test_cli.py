@@ -1684,3 +1684,66 @@ def test_list_limit_cuts_a_projects_plans_and_says_so(runner, project, git_repo)
         cli, ["list", "--project", "proj", "--limit", "0", "--output", "json"]
     )
     assert len(json.loads(everything.output)) == 3
+
+
+# --- recording skill use is a question, asked once ----------------------------
+
+
+def test_init_asks_and_a_yes_starts_recording(runner, git_repo):
+    result = runner.invoke(
+        cli,
+        ["init", "--skip-claude", "--project-root", str(git_repo)],
+        input="myproj\ny\n",
+    )
+    assert result.exit_code == 0, result.output
+    assert "Record skill use in this repository?" in result.output
+    assert "Recording which skills are used here" in result.output
+    assert "observe disable" in result.output  # and how to stop
+
+    # The hook is what does the recording, so that is what is checked.
+    settings = json.loads((git_repo / ".claude" / "settings.json").read_text(encoding="utf-8"))
+    commands = [
+        hook["command"] for entry in settings["hooks"]["PostToolUse"] for hook in entry["hooks"]
+    ]
+    assert "flanner hook skill-use" in commands
+
+
+def test_init_takes_no_for_an_answer(runner, git_repo):
+    result = runner.invoke(
+        cli,
+        ["init", "--skip-claude", "--project-root", str(git_repo)],
+        input="myproj\nn\n",
+    )
+    assert result.exit_code == 0, result.output
+    assert "Not recording" in result.output
+    assert "Recording which skills are used here" not in result.output
+
+
+def test_nobody_to_ask_records_nothing(runner, git_repo):
+    """Enter means yes; an empty pipe is not a person pressing Enter.
+
+    The other hook init installs protects your files. This one records what
+    you do, so an unattended install must not switch it on.
+    """
+    result = runner.invoke(cli, ["init", "--skip-claude", "--project-root", str(git_repo)])
+    assert result.exit_code == 0, result.output
+    assert "No terminal to ask, so: no." in result.output
+    assert "Recording which skills are used here" not in result.output
+
+
+def test_a_flag_answers_it_without_a_prompt(runner, git_repo):
+    result = runner.invoke(
+        cli,
+        ["init", "--skip-claude", "--project-root", str(git_repo), "--watch-skills"],
+        input="myproj\n",
+    )
+    assert result.exit_code == 0, result.output
+    assert "Record skill use in this repository?" not in result.output
+    assert "Recording which skills are used here" in result.output
+
+    quiet = runner.invoke(
+        cli,
+        ["init", "--skip-claude", "--project-root", str(git_repo), "--no-watch-skills"],
+        input="myproj\n",
+    )
+    assert "Record skill use in this repository?" not in quiet.output

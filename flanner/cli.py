@@ -451,6 +451,72 @@ def _ask(question: str, default: str) -> str:
     return answer.strip() or default
 
 
+def _ask_yes_no(question: str, *, default: bool, unattended: bool) -> bool:
+    """Ask a yes/no question, with its own answer for nobody being there.
+
+    `default` is what pressing Enter means. `unattended` is what to do when
+    there is no input stream at all, and for a question about consent the
+    two differ on purpose: pressing Enter is a person agreeing, and an
+    empty pipe is not a person.
+
+    Reads the line itself for the reason `_ask` does — click cannot tell
+    end-of-input from Ctrl-C, and on Windows the null device claims to be
+    a terminal.
+    """
+    click.echo(f"{question} [{'Y/n' if default else 'y/N'}]: ", nl=False)
+    answer = sys.stdin.readline()
+    if answer == "":
+        console.print(f"No terminal to ask, so: {'yes' if unattended else 'no'}.", style="dim")
+        return unattended
+    answer = answer.strip().lower()
+    if not answer:
+        return default
+    return answer.startswith("y")
+
+
+def _offer_skill_watching(project_root: str) -> None:
+    """Ask once whether to record which skills the agents here use.
+
+    Asked at init rather than left to be found, because the answer is only
+    worth anything over time. A switch nobody knows about is one that gets
+    turned on the day somebody wants a number, and then reads zero for a
+    month.
+
+    Asked rather than assumed, because it differs in kind from the other
+    hook init installs. The guard hook protects your files; this one
+    records what you do, and consent to the first is not consent to the
+    second.
+
+    Claude Code only. Nothing wires a Codex invocation to a hook yet, so
+    offering it there would install a switch that records nothing.
+    """
+    console.print()
+    tui.note("Flanner can record which skills your agents actually use.")
+    tui.hint("  Which skill was invoked and when. Not your prompts, not the")
+    tui.hint("  agent's replies, not the files it touched. Nothing leaves this")
+    tui.hint("  machine, and nothing is recorded until you say so here.")
+    if not _ask_yes_no("Record skill use in this repository?", default=True, unattended=False):
+        tui.note(f"Not recording. {tui.command('flanner skills observe enable')} turns it on.")
+        return
+
+    _start_skill_watching(project_root)
+
+
+def _start_skill_watching(project_root: str) -> None:
+    """Turn recording on for this repository, and say what that means."""
+    from . import skills_observe
+    from .agent_hooks import ensure_observe_hook
+
+    try:
+        skills_observe.enable(get_session(), Path(project_root), "claude-code")
+    except (ValueError, OSError) as error:
+        tui.warn(f"Could not start recording: {error}")
+        return
+    ensure_observe_hook(project_root)
+    tui.ok("Recording which skills are used here.")
+    tui.hint(f"  Stop at any time with {tui.command('flanner skills observe disable')}.")
+
+
 def _adopt_repository(project_root: str, plan_dir: str, force_new_project: bool) -> None:
     """Make this repository a project, or report the one already here.
 
@@ -519,6 +585,11 @@ def _adopt_repository(project_root: str, plan_dir: str, force_new_project: bool)
 )
 @click.option("--sync", is_flag=True, help="Import plan files already in the repository")
 @click.option(
+    "--watch-skills/--no-watch-skills",
+    default=None,
+    help="Record which skills your agents use. Asked once when neither is given",
+)
+@click.option(
     "--force-new-project", is_flag=True, help="Force create new project even if one exists"
 )
 def init(
@@ -527,6 +598,7 @@ def init(
     setup_agents: tuple[str, ...],
     skip_claude: bool,
     sync: bool,
+    watch_skills: bool | None,
     force_new_project: bool,
 ) -> None:
     """Initialize Flanner
@@ -563,6 +635,10 @@ def init(
         console.print(f"\nOK Detected git repository at: {project_root}", style="green")
         _adopt_repository(project_root, plan_dir, force_new_project)
         _setup_agent_integration(project_root)
+        if watch_skills is None:
+            _offer_skill_watching(project_root)
+        elif watch_skills:
+            _start_skill_watching(project_root)
         if sync:
             _import_existing_plans(project_root)
 

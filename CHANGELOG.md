@@ -7,6 +7,19 @@ versioning follows [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **`flanner init` asks whether to record which skills your agents use**, and
+  Enter means yes. Opt-in made the feature useless: the counts only mean
+  something over a period, so a switch nobody knew about got turned on the day
+  somebody wanted an answer, and then read zero for a month. It is a question
+  rather than a default because the other hook init installs protects your
+  files and this one records what you do. An unattended install records
+  nothing — pressing Enter is a person agreeing, and an empty pipe is not.
+  `--watch-skills` and `--no-watch-skills` answer it without a prompt, and
+  `flanner skills observe disable` stops it at any time.
+- **The skills page is tabbed**: Skills, Usage, Versions, Team and Health,
+  instead of six cards stacked under the table. Every panel is still rendered,
+  so with JavaScript off the tab strip is a row of jump links and nothing is
+  out of reach.
 - **Every skill has a page of its own.** Click a name in the local web UI and
   you get every copy of it and which one loads, what is wrong with it, a diff
   against each shadowed copy — the question "shadowed by what, exactly?" had
