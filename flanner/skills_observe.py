@@ -403,6 +403,10 @@ def usage(
                 "attributed": 0,
                 "last_used_at": None,
                 "by_model": {},
+                # One bucket per day of the window, oldest first. A total
+                # and a last-used date cannot tell seventeen uses spread
+                # over a fortnight from seventeen in one afternoon.
+                "by_day": [0] * days,
                 "certainty": event.certainty,
             },
         )
@@ -413,6 +417,12 @@ def usage(
             row["last_used_at"] = stamp
         group = event.agent_version or UNKNOWN_GROUP
         row["by_model"][group] = row["by_model"].get(group, 0) + 1
+        row["by_day"][_day_index(event.occurred_at, since, days)] += 1
+
+    for row in by_skill.values():
+        # Largest first, so the model that did most of the work reads first
+        # rather than whichever happened to be seen first.
+        row["by_model"] = dict(sorted(row["by_model"].items(), key=lambda kv: (-kv[1], kv[0])))
 
     windows = session.query(SkillCoverageWindowModel)
     if project is not None:
@@ -429,6 +439,11 @@ def usage(
             "windows": len(watched),
             "dropped": sum(w.dropped_count for w in watched),
             "observes": [w.capabilities for w in watched],
+            # One flag per day, oldest first: was anything watching. The
+            # sentence above says how many periods; this says which days,
+            # which is the difference between trusting the claim and
+            # seeing it.
+            "days": _covered_days(watched, since, days),
         },
         "rows": sorted(by_skill.values(), key=lambda r: (-r["invocations"], r["skill"])),
         # Not "unused". Without coverage this is every installed skill, and
@@ -444,15 +459,147 @@ def usage(
     }
 
 
+def _day_index(when: datetime, since: datetime, days: int) -> int:
+    """Which bucket a moment falls in, clamped to the window.
+
+    Both sides are naive UTC, which is what `utcnow` returns and what the
+    columns hold. A first draft coerced a timezone onto one of them and
+    produced exactly the mismatch it was written to prevent.
+    """
+    return max(0, min(days - 1, (when - since).days))
+
+
+def _covered_days(watched: list[Any], since: datetime, days: int) -> list[bool]:
+    """Whether anything was watching on each day of the window."""
+    strip = [False] * days
+    for window in watched:
+        first = _day_index(max(window.started_at, since), since, days)
+        last = days - 1 if window.ended_at is None else _day_index(window.ended_at, since, days)
+        for index in range(first, last + 1):
+            strip[index] = True
+    return strip
+
+
 def _empty_usage(days: int, since: datetime, why: str) -> dict[str, Any]:
     return {
         "window_days": days,
         "since": since.isoformat() + "Z",
-        "coverage": {"watching": False, "windows": 0, "dropped": 0, "observes": []},
+        "coverage": {
+            "watching": False,
+            "windows": 0,
+            "dropped": 0,
+            "observes": [],
+            "days": [False] * days,
+        },
         "rows": [],
         "not_observed": [],
         "notes": [why],
     }
+
+
+#: A window watched for less of itself than this is a shortlist rather
+#: than a verdict, and the page has to say so before it says anything else.
+THIN_COVERAGE = 0.8
+
+
+def attention(
+    session: Session,
+    project_root: Path | None = None,
+    days: int = DEFAULT_RETENTION_DAYS,
+    report: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """What the usage data says somebody should do, worst first.
+
+    The table answers "what did I use". This answers "what do I do about
+    it", which is the question somebody actually arrived with, and every
+    item on it is a join the data always supported and nobody made.
+
+    The first is a caveat rather than a task. Deciding a skill is dead
+    from a window that was only half watched is exactly the wrong answer,
+    so the thinness of the evidence is said before any of it is used.
+
+    `report` lets a caller that already ran `usage` hand it back; the scan
+    inside it hashes every file in every package.
+    """
+    if report is None:
+        report = usage(session, project_root, days)
+    strip = report["coverage"].get("days") or []
+    covered = sum(1 for day in strip if day)
+    rows = {row["skill"]: row for row in report["rows"]}
+    found: list[dict[str, Any]] = []
+
+    if strip and covered < len(strip) * THIN_COVERAGE:
+        found.append(
+            {
+                "code": "thin_coverage",
+                "severity": skills_ops.ADVICE,
+                "headline": f"Watched on {covered} of {len(strip)} days",
+                "detail": (
+                    "Everything below is a shortlist rather than a verdict. A skill "
+                    "used once a month can look unused in a window nobody watched."
+                ),
+                "skills": [],
+            }
+        )
+
+    # Being used while a copy of it sits shadowed is the failure this whole
+    # product exists to catch, and until now the two halves sat in
+    # different tables.
+    packages = skills_ops.scan(project_root)
+    copies: dict[str, list[Any]] = {}
+    for package in packages:
+        copies.setdefault(package.name, []).append(package)
+
+    shadowed = sorted(
+        name for name in rows if any(not copy.effective for copy in copies.get(name, []))
+    )
+    if shadowed:
+        found.append(
+            {
+                "code": "used_and_shadowed",
+                "severity": skills_ops.DEFECT,
+                "headline": f"{len(shadowed)} skill(s) in use have a shadowed copy",
+                "detail": (
+                    "Your agent invoked these, and each has another copy on disk it "
+                    "never reads. Editing the wrong one is the usual cause of "
+                    "'my change did nothing'."
+                ),
+                "skills": shadowed,
+            }
+        )
+
+    unattributed = sorted(
+        name for name, row in rows.items() if row["attributed"] < row["invocations"]
+    )
+    if unattributed:
+        found.append(
+            {
+                "code": "used_but_unattributed",
+                "severity": skills_ops.DEFECT,
+                "headline": f"{len(unattributed)} name(s) in use match no package",
+                "detail": (
+                    "Invoked, but nothing on disk carries that name now. It was "
+                    "renamed, removed, or something is still asking for it."
+                ),
+                "skills": unattributed,
+            }
+        )
+
+    quiet = report["not_observed"]
+    if quiet and report["coverage"]["watching"]:
+        found.append(
+            {
+                "code": "not_observed",
+                "severity": skills_ops.ADVICE,
+                "headline": f"{len(quiet)} loaded skill(s) were not used",
+                "detail": (
+                    "Each one costs context on every session that loads it. Worth a "
+                    "look, not a deletion: this window is what was seen, not what exists."
+                ),
+                "skills": quiet,
+            }
+        )
+    return found
 
 
 def to_csv(report: dict[str, Any]) -> str:

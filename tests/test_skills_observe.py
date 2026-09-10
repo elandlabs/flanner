@@ -430,3 +430,96 @@ def test_the_snapshot_store_is_named_by_content(repo, tmp_path):
     kept = skills_manage.snapshot(package)
     assert kept.path.name == kept.manifest_hash.replace("sha256:", "")
     assert skills_manage.verify(kept.manifest_hash)
+
+
+# --- a shape you can draw, and an answer you can act on -----------------------
+
+
+def _report(runner, where, days: int = 30):
+    from flanner.database import get_session
+
+    return skills_observe.usage(get_session(), where, days)
+
+
+def test_the_report_carries_a_series_and_a_coverage_strip(repo):
+    runner, where = repo
+    assert runner.invoke(cli, ["skills", "observe", "enable"]).exit_code == 0
+    for at in ("2026-01-01T09:00:00Z", "2026-01-01T10:00:00Z", "2026-01-02T09:00:00Z"):
+        runner.invoke(cli, ["hook", "skill-use"], input=event(where, at=at))
+
+    report = _report(runner, where)
+    row = next(r for r in report["rows"] if r["skill"] == "demo-skill")
+    # One bucket per day, and the buckets account for every invocation.
+    assert len(row["by_day"]) == report["window_days"]
+    assert sum(row["by_day"]) == row["invocations"] == 3
+
+    strip = report["coverage"]["days"]
+    assert len(strip) == report["window_days"]
+    # Watching started a moment ago, so only the last day is covered.
+    assert strip[-1] is True and strip[0] is False
+
+
+def test_models_read_largest_first(repo):
+    runner, where = repo
+    runner.invoke(cli, ["skills", "observe", "enable"])
+    for index, model in enumerate(["small", "big", "big", "big"]):
+        payload = json.loads(event(where, at=f"2026-01-0{index + 1}T09:00:00Z"))
+        payload["model"] = model
+        runner.invoke(cli, ["hook", "skill-use"], input=json.dumps(payload))
+
+    row = next(r for r in _report(runner, where)["rows"] if r["skill"] == "demo-skill")
+    assert list(row["by_model"]) == ["big", "small"], "the model that did most reads first"
+
+
+def test_attention_leads_with_how_thin_the_evidence_is(repo):
+    """A window watched for a day of thirty cannot condemn anything, and
+    saying so after the list would be saying it too late."""
+    runner, where = repo
+    runner.invoke(cli, ["skills", "observe", "enable"])
+    runner.invoke(cli, ["hook", "skill-use"], input=event(where))
+
+    from flanner.database import get_session
+
+    found = skills_observe.attention(get_session(), where, 30)
+    assert found[0]["code"] == "thin_coverage"
+    assert "shortlist" in found[0]["detail"]
+
+
+def test_attention_joins_use_against_being_shadowed(repo, tmp_path, monkeypatch):
+    """The failure this product exists to catch, and the two halves of it
+    sat in different tables until now."""
+    runner, where = repo
+    # A second copy of the same name, in the user scope, which loses to the
+    # project one and so is never read.
+    write_skill(tmp_path / "user-home" / ".claude" / "skills", "demo-skill", "The other copy")
+    runner.invoke(cli, ["skills", "observe", "enable"])
+    runner.invoke(cli, ["hook", "skill-use"], input=event(where))
+
+    from flanner.database import get_session
+
+    found = {item["code"]: item for item in skills_observe.attention(get_session(), where, 30)}
+    assert "demo-skill" in found["used_and_shadowed"]["skills"]
+    assert found["used_and_shadowed"]["severity"] == "defect"
+
+
+def test_attention_notices_a_name_with_nothing_behind_it(repo):
+    runner, where = repo
+    runner.invoke(cli, ["skills", "observe", "enable"])
+    runner.invoke(cli, ["hook", "skill-use"], input=event(where, skill="gone-away"))
+
+    from flanner.database import get_session
+
+    found = {item["code"]: item for item in skills_observe.attention(get_session(), where, 30)}
+    assert found["used_but_unattributed"]["skills"] == ["gone-away"]
+
+
+def test_attention_says_nothing_about_use_when_nothing_watched(repo):
+    """ "Never used" is a claim, and with nothing watching there is no
+    ground for it. The skill on disk is unused either way; the difference
+    is whether anybody knows."""
+    _runner, where = repo
+
+    from flanner.database import get_session
+
+    codes = {item["code"] for item in skills_observe.attention(get_session(), where, 30)}
+    assert "not_observed" not in codes
