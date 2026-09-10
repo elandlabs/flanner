@@ -21,14 +21,18 @@
 {% block content %}
 <div data-live-list="{{ plan_file.id }}" hidden></div>
 <div class="pane">
-  <div class="card">
-    <div class="card-head">Every version <span class="note">{{ versions | length }}</span></div>
+  <div class="card" data-listgroup>
+    <div class="card-head">Every version <span class="note">{{ versions | length }}</span>
+      <input class="input input-sm sift" type="search" data-list-filter
+             aria-label="Search versions" placeholder="Search versions" autocomplete="off">
+    </div>
     <div class="tablewrap">
       <div class="grid-head cols-history">
         <span>Version</span><span>Notes</span><span>Author</span><span>File</span><span>Written</span>
       </div>
+      <div data-list>
       {% for version in versions %}
-      <div class="grid-row cols-history">
+      <div class="grid-row cols-history" data-list-item>
         <span><a class="vtag {% if version.version == plan_file.current_version %}vtag-current{% endif %}"
                  href="/plans/{{ plan_file.id }}?version={{ version.version }}">v{{ version.version }}</a></span>
         <span>{{ version.notes or '—' }}</span>
@@ -37,6 +41,8 @@
         <span class="when">{{ version.created_at | relative_time if version.created_at }}</span>
       </div>
       {% endfor %}
+      </div>
+      <div class="empty-filter" data-list-empty hidden>No version matches that.</div>
     </div>
   </div>
   <div class="footnote">

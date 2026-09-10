@@ -7,6 +7,14 @@
 <span class="sub">Proposals waiting on a decision, and what people said</span>
 {% endblock %}
 
+{% block topbar_actions %}
+<form method="get" action="/review" class="listctl">
+  <label class="sr-only" for="rvq">Search</label>
+  <input class="input input-sm" type="search" data-search-submit id="rvq" name="q" value="{{ q }}"
+         placeholder="Search plans" autocomplete="off">
+</form>
+{% endblock %}
+
 {% block content %}
 <div class="pane">
 
@@ -58,6 +66,11 @@
       {% include "_pager.html" %}
     </div>
   </div>
+  {% elif q %}
+  {% call empty.state('search', 'Nothing matches that') %}
+    <p>No plan waiting on a decision matches “{{ q }}”.
+      <a href="/review">Show everything waiting</a>.</p>
+  {% endcall %}
   {% else %}
   {% call empty.state('clear', 'Nothing is waiting') %}
     <p>No plan here has an open proposal. This page fills in when somebody

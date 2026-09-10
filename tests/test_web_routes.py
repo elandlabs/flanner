@@ -1020,3 +1020,72 @@ def test_no_stylesheet_types_a_glyph_it_cannot_draw():
                     f"CONTENT_ALLOWED once you have measured that the UI "
                     f"font has it."
                 )
+
+
+def test_search_narrows_the_data_not_the_page(client, project_id):
+    """A paged table's search runs on the server, before the page is cut.
+
+    The client-side filter this codebase already had operates on rendered
+    rows. On a table the server pages that means it searches fifteen of
+    ninety-four and reports "no matches" about a page, which is a worse
+    answer than no search at all. Skills and Review take a `q` instead.
+    """
+    client.post(
+        f"/projects/{project_id}/plans/new",
+        data={"name": "findable", "description": "d", "content": "# One\n"},
+    )
+    client.post(
+        f"/projects/{project_id}/plans/new",
+        data={"name": "otherthing", "description": "d", "content": "# Two\n"},
+    )
+
+    listed = client.get("/plans")
+    assert "findable" in listed.text and "otherthing" in listed.text
+
+    for path in ("/skills?q=zzznothingmatchesthis", "/review?q=zzznothingmatchesthis"):
+        page = client.get(path)
+        assert page.status_code == 200, path
+        # A search that found nothing says so, and says it with a drawing,
+        # rather than leaving a table head with no rows under it.
+        assert "empty-glyph" in page.text, f"{path}: no empty state for a search miss"
+
+
+def test_the_search_survives_a_page_turn(client):
+    """The pager carries every other query parameter, `q` included."""
+    page = client.get("/skills?q=a&per=15")
+    assert page.status_code == 200
+    # _pager_context rebuilds the query without page/per, so any link it
+    # writes keeps the search on it.
+    assert "q=a" in page.text or "1–15" not in page.text
+
+
+def test_only_unpaged_tables_filter_in_the_browser(client):
+    """A client-side filter on a server-paged table would lie about the total.
+
+    Peers, plan history and skill proposals are rendered whole, so filtering
+    what is on screen is filtering everything. The paged tables must not
+    carry the marker.
+    """
+    #: These filter rendered rows on a table the server pages, so they
+    #: search the page rather than the data. They predate the rule and are
+    #: listed rather than fixed, so that nothing new joins them quietly.
+    #: Their sort selects have the same limit.
+    KNOWN_PAGE_LOCAL = {"plans.html", "projects.html", "project_detail.html"}
+
+    offenders = []
+    for template in sorted((WEB_DIR / "templates").glob("*.html")):
+        text = template.read_text(encoding="utf-8")
+        if "data-list-filter" not in text or "_pager.html" not in text:
+            continue
+        # A group that pages itself in the browser filters and pages with the
+        # same machinery, so the two agree by construction.
+        if "data-list-pager" in text:
+            continue
+        if template.name in KNOWN_PAGE_LOCAL:
+            continue
+        offenders.append(template.name)
+    assert not offenders, (
+        f"{offenders}: a browser filter over a server-paged table searches "
+        f"the current page and reports its answer as if it were about all "
+        f"the rows. Give the route a `q` instead."
+    )

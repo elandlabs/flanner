@@ -534,6 +534,32 @@ onPage(function () {
     });
 });
 
+// A search box whose form goes to the server, submitted a beat after you
+// stop typing so it still feels like filtering rather than like posting.
+// The tables it sits on are paged by the server, so filtering the rendered
+// rows would search the current page and answer about that.
+// ponytail: no request cancelling, the browser drops the old navigation.
+onPage(function () {
+    document.querySelectorAll('input[data-search-submit]').forEach(function (box) {
+        let timer;
+        box.addEventListener('input', function () {
+            clearTimeout(timer);
+            timer = setTimeout(function () {
+                if (!box.form) return;
+                if (box.form.requestSubmit) box.form.requestSubmit();
+                else box.form.submit();
+            }, 350);
+        });
+    });
+    // The submit reloads the page, which drops focus. Without putting the
+    // caret back a second word cannot be typed.
+    const box = document.querySelector('input[data-search-submit]');
+    if (box && box.value && document.activeElement === document.body) {
+        box.focus();
+        box.setSelectionRange(box.value.length, box.value.length);
+    }
+});
+
 // A select that submits its form when it changes, for the rows-per-page menu:
 // a separate button would be a second click for nothing. Without JavaScript
 // the <noscript> button beside it does the same job.

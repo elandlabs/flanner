@@ -267,6 +267,15 @@ a:hover { color: var(--accent-hi); }
    plugin and which skill. The home directory every one of them shares is
    the part worth losing. */
 .card-head .note-path { direction: rtl; text-align: left; max-width: 62%; }
+
+/* A filter that lives in the head of the card it filters, for the tables
+   the server does not page. The note keeps the auto margin, so the order
+   along the head is title, count, filter. */
+.card-head .sift { margin-left: 12px; max-width: 200px; flex: none; }
+.card-head:has(.sift) { flex-wrap: wrap; }
+@media (max-width: 700px) {
+  .card-head .sift { margin-left: 0; max-width: 100%; width: 100%; }
+}
 @media (max-width: 600px) {
   .card-head { flex-wrap: wrap; }
   /* `normal` lets it wrap, which is no help to a path: there is nowhere in

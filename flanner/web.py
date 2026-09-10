@@ -12,6 +12,7 @@ import os
 import secrets
 import time
 from collections import OrderedDict
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -409,6 +410,24 @@ def _paginate(request: Request, items: list[Any]) -> Page[Any]:
     """A page of rows already in memory: a scan, a walk, a filtered list."""
     page, per, offset = _paging(request, len(items))
     return Page(items[offset : offset + per], page, per, len(items))
+
+
+def _search(rows: list[Any], query: str, fields: Callable[[Any], list[str]]) -> list[Any]:
+    """Rows whose text contains every word of the query, case-insensitively.
+
+    Every word rather than the whole string, so "claude ponytail" finds the
+    row no matter which order the two appear in. Applied before paging: a
+    filter that runs after it would be answering about a page.
+    """
+    words = query.lower().split()
+    if not words:
+        return rows
+    kept = []
+    for row in rows:
+        hay = " ".join(f for f in fields(row) if f).lower()
+        if all(word in hay for word in words):
+            kept.append(row)
+    return kept
 
 
 def _pager_context(request: Request, page: Page[Any]) -> dict[str, Any]:
@@ -1725,11 +1744,20 @@ async def mesh_page(request: Request) -> HTMLResponse:
 
 
 @app.get("/review", response_class=HTMLResponse)
-async def review_page(request: Request) -> HTMLResponse:
+async def review_page(request: Request, q: str = "") -> HTMLResponse:
     """Plans with a proposal waiting on somebody."""
     ensure_db()
     session = get_session()
-    listed = _paginate(request, await run_in_threadpool(_review_rows, session))
+    rows = await run_in_threadpool(_review_rows, session)
+    rows = _search(
+        rows,
+        q,
+        lambda row: [
+            row["plan_file"].name,
+            row["project"].name if row.get("project") else "",
+        ],
+    )
+    listed = _paginate(request, rows)
     return templates.TemplateResponse(
         request,
         "review.html",
@@ -1737,6 +1765,7 @@ async def review_page(request: Request) -> HTMLResponse:
             **_nav(session),
             "request": request,
             "rows": listed.items,
+            "q": q,
             **_pager_context(request, listed),
         },
     )
@@ -1748,6 +1777,7 @@ async def skills_page(
     scope: str = "",
     shadowed: str = "",
     agent: str = "",
+    q: str = "",
     days: int = 30,
     said: str = "",
 ) -> HTMLResponse:
@@ -1778,6 +1808,17 @@ async def skills_page(
         and (not scope or pkg["scope"] == scope)
         and (not agent or pkg["agent"] == agent)
     ]
+    # Before paging, so the answer is about the machine's skills rather
+    # than about whichever fifteen of them are on this page.
+    rows = _search(
+        rows,
+        q,
+        lambda pkg: [
+            pkg["name"], pkg["agent"], pkg["scope"],
+            pkg.get("plugin") or "", pkg.get("directory") or "",
+            pkg.get("description") or "",
+        ],
+    )
     listed = _paginate(request, rows)
 
     from . import skills_manage, skills_mesh, skills_observe
@@ -1797,6 +1838,7 @@ async def skills_page(
             **_pager_context(request, listed),
             "scope": scope,
             "agent": agent,
+            "q": q,
             # Only the agents that actually have something here. An empty
             # adapter in a filter is a control that can only ever return
             # nothing.

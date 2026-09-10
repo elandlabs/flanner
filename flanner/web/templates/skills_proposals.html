@@ -51,15 +51,19 @@
   </div>
   {% endif %}
 
-  <div class="card" style="margin-top:14px">
+  <div class="card" style="margin-top:14px" data-listgroup>
     <div class="card-head">Waiting on a decision
-      <span class="note">{{ rows | length }}</span></div>
+      <span class="note">{{ rows | length }}</span>
+      <input class="input input-sm sift" type="search" data-list-filter
+             aria-label="Search proposals" placeholder="Search proposals" autocomplete="off">
+    </div>
     {% if rows %}
     <div class="grid-row grid-head cols-proposals">
       <span>Skill</span><span>Action</span><span>State</span><span>Installable</span><span></span>
     </div>
+    <div data-list>
     {% for row in rows %}
-    <div class="grid-row cols-proposals">
+    <div class="grid-row cols-proposals" data-list-item>
       <span>{{ row.skill }}<span class="hint">{{ row.rationale }}</span></span>
       <span class="muted">{{ row.action }}</span>
       <span>{% if row.state == 'approved' %}<span class="pill pill-fresh">approved</span>
@@ -69,6 +73,8 @@
       <span><a class="btn btn-sm" href="/skills/proposals?open_id={{ row.id }}">Review</a></span>
     </div>
     {% endfor %}
+    </div>
+    <div class="empty-filter" data-list-empty hidden>No proposal matches that.</div>
     {% else %}
     {% call empty.inside('skill', 'Nothing proposed') %}
     <p class="hint"><code>flanner skills evidence submit</code> hands over a

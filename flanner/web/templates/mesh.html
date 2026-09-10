@@ -96,15 +96,18 @@
        pick up a new grant early.</p>
   </div>
 
-  <div class="card">
+  <div class="card" data-listgroup>
     <div class="card-head">
       Peers
       <span class="note">devices this machine can verify, and when their work last arrived</span>
+      <input class="input input-sm sift" type="search" data-list-filter
+             aria-label="Search peers" placeholder="Search peers" autocomplete="off">
     </div>
     {% if mesh.peers %}
     <div class="tablewrap">
+      <div data-list>
       {% for peer in mesh.peers %}
-      <div class="grid-row cols-peers">
+      <div class="grid-row cols-peers" data-list-item>
         <span class="mono">{{ peer }}</span>
         {#
           Last arrival, not last seen. Nothing here polls a peer, and an
@@ -124,6 +127,8 @@
         </span>
       </div>
       {% endfor %}
+      </div>
+      <div class="empty-filter" data-list-empty hidden>No peer matches that.</div>
     </div>
     {% else %}
     {% call empty.inside('team', 'No other devices yet') %}

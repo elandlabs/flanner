@@ -9,6 +9,9 @@
 
 {% block topbar_actions %}
 <form method="get" action="/skills" class="listctl">
+  <label class="sr-only" for="skq">Search</label>
+  <input class="input input-sm" type="search" data-search-submit id="skq" name="q" value="{{ q }}"
+         placeholder="Search skills" autocomplete="off">
   {# Only shown when there is a choice to make. One agent and this is a
      control that can only ever return what is already on the screen. #}
   {% if agents | length > 1 %}
