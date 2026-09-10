@@ -485,6 +485,27 @@ a:hover { color: var(--accent-hi); }
 .railform { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .railform .sel, .railform select { max-width: 100%; }
 
+/* A page's opening line, sized for reading rather than for a card. The
+   toggle is a native <details>: `display` on the summary set to anything
+   but `list-item` is what drops Chrome's marker, and the clamp lives on a
+   span inside so the "Show all" line is not counted as one of the two. */
+.lede {
+  margin: 0; max-width: 78ch; color: var(--text-2);
+  font-size: 13.5px; line-height: 1.65;
+}
+details.lede > summary { display: block; cursor: pointer; }
+details.lede .lede-text {
+  display: -webkit-box; -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2; overflow: hidden;
+}
+details.lede[open] .lede-text { -webkit-line-clamp: unset; }
+details.lede > summary::after {
+  content: "Show all"; display: inline-block; margin-top: 5px;
+  font-size: 12px; font-weight: 600; color: var(--accent-ink);
+}
+details.lede[open] > summary::after { content: "Show less"; }
+details.lede > summary:hover::after { text-decoration: underline; }
+
 /* The rail sits beside a normal pane on the skill page, where the plan
    viewer puts its reading column. `.pane` has no width of its own, and an
    auto-margin flex item sizes to its content, so without this the column

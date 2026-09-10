@@ -30,10 +30,21 @@
   <div class="notice">{{ said }}</div>
   {% endif %}
 
+  {#
+    The skill's own description, as the top of the page rather than a card
+    of its own. It is written for the agent, not for a person: of the 109
+    packages on this machine 81 run past 220 characters and the median is
+    335, most of it "Use when ..." routing text. A card gave all of that
+    the same weight as the manifest. Two lines, and the rest on a click.
+  #}
   {% if loaded.description %}
-  <div class="card card-pad card-prose">
-    <p>{{ loaded.description }}</p>
-  </div>
+    {% if loaded.description | length > 170 %}
+  <details class="lede">
+    <summary><span class="lede-text">{{ loaded.description }}</span></summary>
+  </details>
+    {% else %}
+  <p class="lede">{{ loaded.description }}</p>
+    {% endif %}
   {% endif %}
 
   {# --- every copy ------------------------------------------------------ #}
