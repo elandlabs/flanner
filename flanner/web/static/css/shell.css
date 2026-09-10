@@ -257,7 +257,16 @@ a:hover { color: var(--accent-hi); }
 .card-head .note {
   margin-left: auto; font: 400 11px var(--font-mono);
   color: var(--text-4); white-space: nowrap;
+  /* Nothing stopped this growing, and two of these carry a package
+     directory. A flex item will not shrink below its content unless it is
+     told it may, so the head ran past the card and dragged the card's
+     width with it. */
+  min-width: 0; overflow: hidden; text-overflow: ellipsis;
 }
+/* A note holding a path keeps its tail, which is the part that says which
+   plugin and which skill. The home directory every one of them shares is
+   the part worth losing. */
+.card-head .note-path { direction: rtl; text-align: left; max-width: 62%; }
 @media (max-width: 600px) {
   .card-head { flex-wrap: wrap; }
   /* `normal` lets it wrap, which is no help to a path: there is nowhere in
@@ -360,6 +369,13 @@ a:hover { color: var(--accent-hi); }
    paths with no break opportunity in them, so it also has to be allowed to
    break: without this it ran out of its column and over the remedy beside it. */
 .cols-findings .hint { display: block; overflow-wrap: anywhere; }
+
+/* A finding's evidence: one directory per line, each clipped at the head
+   so the end that identifies it survives. As a single joined run with
+   `overflow-wrap: anywhere` it broke mid-path across four or five ragged
+   lines, because a path offers no better place to break. */
+.evidence { display: flex; flex-direction: column; gap: 3px; margin-top: 6px; }
+.evidence .path { font-size: 11.5px; }
 
 /* One skill's own page. The copies table leads with which one loads,
    because that is the question somebody arrived with. */

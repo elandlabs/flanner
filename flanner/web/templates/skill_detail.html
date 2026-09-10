@@ -109,7 +109,17 @@
       {% for f in findings %}
       <div class="grid-row cols-findings">
         <span><span class="pill pill-{{ 'stale' if f.severity == 'defect' else 'aging' }}">{{ f.code }}</span></span>
-        <span>{{ f.detail }}<span class="hint">{{ f.evidence }}</span></span>
+        <span>{{ f.detail }}
+          {%- if f.evidence %}
+          {# The domain joins these with "; " because that is what the CLI
+             prints. A column is not a line of terminal output, so the page
+             takes them apart again and clips each one at the head. #}
+          <span class="evidence">
+            {%- for where in f.evidence.split('; ') %}
+            <span class="path path-tail" title="{{ where }}">{{ where }}</span>
+            {%- endfor %}
+          </span>
+          {%- endif %}</span>
         <span class="hint">{{ f.remedy }}</span>
       </div>
       {% endfor %}
@@ -121,7 +131,7 @@
   {% for change in differences %}
   <div class="card">
     <div class="card-head">How the {{ change.against.scope }} copy differs
-      <span class="note">{{ change.against.directory }}</span></div>
+      <span class="note note-path" title="{{ change.against.directory }}">{{ change.against.directory }}</span></div>
     <div class="card-pad" style="padding-bottom:0">
       <p class="hint">
         {% if change.differing %}{{ change.differing | length }} file(s) differ:
@@ -150,7 +160,7 @@
   {# --- what it says ---------------------------------------------------- #}
   <div class="card">
     <div class="card-head">What it says
-      <span class="note">{{ loaded.directory }}</span></div>
+      <span class="note note-path" title="{{ loaded.directory }}">{{ loaded.directory }}</span></div>
     {% if prose %}
     <div class="card-pad"><article class="doc">{{ prose | safe }}</article></div>
     {% else %}
