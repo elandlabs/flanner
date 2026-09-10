@@ -831,7 +831,7 @@ def test_every_grid_head_matches_the_columns_its_css_defines():
             ), f"{template.name}: .{name} has {spans} spans and {declared[name]} columns"
             checked += 1
             seen.add(name)
-    assert checked >= 18, f"only {checked} grid heads found; the pattern must have changed"
+    assert checked >= 17, f"only {checked} grid heads found; the pattern must have changed"
     assert "cols-skills" in seen, "the skills table is the one that shipped this bug"
 
 

@@ -366,7 +366,6 @@ a:hover { color: var(--accent-hi); }
 .cols-copies { grid-template-columns: 110px 110px 1fr 150px 90px; }
 .cols-copies .path { display: block; }
 .cols-files { grid-template-columns: 1fr 90px; }
-.cols-snapshots { grid-template-columns: 1fr 90px 110px 100px; }
 
 /* A unified diff between two copies of a manifest. Coloured by the line's
    first character, the way every diff a developer reads already is. */
@@ -452,7 +451,45 @@ a:hover { color: var(--accent-hi); }
   .plan-rail { width: auto; border-left: 0; border-top: 1px solid var(--border); }
 }
 .plan-rail section + section { border-top: 1px solid var(--divider); padding-top: 16px; }
-.plan-rail h2 { font-size: 12px; font-weight: 700; margin: 0 0 10px; }
+.plan-rail h2 {
+  font-size: 12px; font-weight: 700; margin: 0 0 10px;
+  display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+}
+/* The same right-aligned count a card head carries. Scoped separately
+   because `.note` was only ever defined inside `.card-head`. */
+.plan-rail h2 .note {
+  margin-left: auto; font: 400 11px var(--font-mono);
+  color: var(--text-4); font-weight: 400;
+}
+
+/* A list row in the rail. The skill page moved three tables in here, and a
+   300px column has no room for a grid: what survives the move is the
+   identifier, one number and the state, on one line. */
+.railrow {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 0; border-top: 1px solid var(--divider);
+  font-size: 12px; color: var(--text-3);
+}
+.railrow:first-of-type { border-top: 0; }
+.railrow .grow { flex: 1; min-width: 0; }
+.railrow .when { display: block; font-size: 11.5px; }
+.railrow form { margin: 0; }
+/* Paths and hashes are the widest thing in here and the least worth the
+   room, so they clip rather than push the state pill off the edge. */
+.plan-rail .path {
+  display: block; font: 500 11.5px var(--font-mono); color: var(--text-4);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.plan-rail .pill { font-size: 10.5px; padding: 2px 7px; }
+.plan-rail .hint { margin-top: 8px; }
+.railform { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.railform .sel, .railform select { max-width: 100%; }
+
+/* The rail sits beside a normal pane on the skill page, where the plan
+   viewer puts its reading column. `.pane` has no width of its own, and an
+   auto-margin flex item sizes to its content, so without this the column
+   grew to its widest table and pushed the rail off the screen. */
+.plan-layout > .pane { flex: 1; min-width: 0; }
 .kv { display: flex; justify-content: space-between; gap: 12px; color: var(--text-3); padding: 3px 0; }
 .kv b { color: var(--text); font-weight: 600; }
 .kv .m { font: 500 11.5px var(--font-mono); color: var(--text); font-weight: 600; }
