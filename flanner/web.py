@@ -71,6 +71,7 @@ from .freshness import peek as freshness_peek
 from .frontmatter import parse_frontmatter, read_managed
 from .git_integration import find_git_root, update_gitignore, validate_git_repo
 from .linear_utils import generate_linear_issue_url
+from . import features
 from .paging import PER_PAGE_CHOICES, Page, per_page_or_default, window
 from .plan_ops import create_plan, record_new_version
 from .storage import ensure_plan_directory_exists, load_plan_file
@@ -784,6 +785,9 @@ def _nav(session: Any) -> dict[str, Any]:
         # From the catalog, not a fresh scan: this is on every page, and a
         # scan hashes every file in every package. Zero until the first scan.
         "nav_skills": session.query(SkillModel).filter_by(effective=True).count(),
+        # Spread into every response, so a template asks this rather than
+        # every route being taught to pass it down.
+        "integrations_on": features.integrations_enabled(),
     }
 
 
@@ -1099,7 +1103,7 @@ async def project_detail(request: Request, project_id: str) -> HTMLResponse:
 
     # Count Linear links per plan so the list can mark linked plans.
     linear_counts: dict[str, int] = {}
-    for row in list_all_linear_links(session, project_uuid):
+    for row in list_all_linear_links(session, project_uuid) if features.integrations_enabled() else []:
         key = str(row["plan_file_id"])
         linear_counts[key] = linear_counts.get(key, 0) + 1
 
@@ -1298,7 +1302,11 @@ async def plan_view(
             status_code=404, detail=f"Version {version if version else 'latest'} not found"
         )
     all_versions = list_versions(session, plan_file_uuid)
-    linear_links = _linear_links_for(session, plan_file_uuid, plan_file.project_id)
+    linear_links = (
+        _linear_links_for(session, plan_file_uuid, plan_file.project_id)
+        if features.integrations_enabled()
+        else []
+    )
 
     try:
         frontmatter_data, body = load_plan_file(version_obj.file_path)
@@ -2373,16 +2381,22 @@ async def settings_page(request: Request) -> HTMLResponse:
 
 @app.get("/integrations", response_class=HTMLResponse)
 async def integrations_page(request: Request) -> HTMLResponse:
-    """Issue trackers a plan can be linked to."""
+    """Issue trackers a plan can be linked to.
+
+    Still served with the feature off, saying so. A link somebody
+    bookmarked that starts 404ing reads as a broken build; a page that
+    says "not yet" reads as a decision.
+    """
     ensure_db()
     session = get_session()
 
-    # Links are held per project, so gather them across all of them.
     links: list[dict[str, Any]] = []
     config = None
-    for project in db_list_projects(session):
-        links.extend(list_all_linear_links(session, project.id))
-        config = config or get_linear_config(session, project.id)
+    if features.integrations_enabled():
+        # Links are held per project, so gather them across all of them.
+        for project in db_list_projects(session):
+            links.extend(list_all_linear_links(session, project.id))
+            config = config or get_linear_config(session, project.id)
 
     return templates.TemplateResponse(
         request,

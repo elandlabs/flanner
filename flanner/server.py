@@ -126,6 +126,23 @@ def _loggable(kwargs: dict[str, Any]) -> dict[str, Any]:
 mcp = _Observed(_mcp)
 
 
+def _integration_tool() -> "Any":
+    """Register a tool only while Linear and Jira are switched on.
+
+    Read at import, which is when the tool list is built and the only time
+    it can change. With the feature off the function is returned unwrapped:
+    still importable, still tested, simply not advertised.
+    """
+    from . import features
+
+    on = features.integrations_enabled()
+
+    def decorate(fn: "Any") -> "Any":
+        return mcp.tool()(fn) if on else fn
+
+    return decorate
+
+
 # Configuration Tools
 
 
@@ -766,7 +783,7 @@ def get_plan_workflow_status_tool(plan_file_id: str) -> dict[str, Any]:
 # JIRA Integration Tools
 
 
-@mcp.tool()
+@_integration_tool()
 def configure_jira_tool(
     project_id: str, jira_url: str, jira_project_key: str | None = None
 ) -> dict[str, Any]:
@@ -787,7 +804,7 @@ def configure_jira_tool(
     )
 
 
-@mcp.tool()
+@_integration_tool()
 def link_plan_to_jira_tool(
     plan_file_id: str, jira_issue_key: str, issue_type: str | None = None, notes: str | None = None
 ) -> dict[str, Any]:
@@ -814,7 +831,7 @@ def link_plan_to_jira_tool(
     )
 
 
-@mcp.tool()
+@_integration_tool()
 def get_jira_links_tool(plan_file_id: str) -> dict[str, Any]:
     """
     Get all JIRA links for a plan file.
@@ -868,7 +885,7 @@ def get_jira_links_tool(plan_file_id: str) -> dict[str, Any]:
     }
 
 
-@mcp.tool()
+@_integration_tool()
 def list_jira_links_tool(project_id: str) -> dict[str, Any]:
     """
     List all JIRA links for all plan files in a project.
@@ -924,7 +941,7 @@ def list_jira_links_tool(project_id: str) -> dict[str, Any]:
     }
 
 
-@mcp.tool()
+@_integration_tool()
 def unlink_jira_issue_tool(plan_file_id: str, jira_issue_key: str | None = None) -> dict[str, Any]:
     """
     Unlink a JIRA issue from a plan file.
@@ -941,7 +958,7 @@ def unlink_jira_issue_tool(plan_file_id: str, jira_issue_key: str | None = None)
     )
 
 
-@mcp.tool()
+@_integration_tool()
 def get_jira_config_tool(project_id: str) -> dict[str, Any]:
     """
     Get JIRA configuration for a project.
@@ -987,7 +1004,7 @@ def get_jira_config_tool(project_id: str) -> dict[str, Any]:
 # Linear Integration Tools
 
 
-@mcp.tool()
+@_integration_tool()
 def configure_linear_tool(project_id: str, workspace: str) -> dict[str, Any]:
     """
     Configure Linear integration for a project.
@@ -1003,7 +1020,7 @@ def configure_linear_tool(project_id: str, workspace: str) -> dict[str, Any]:
     return dispatch("configure_linear", {"project_id": project_id, "workspace": workspace})
 
 
-@mcp.tool()
+@_integration_tool()
 def link_plan_to_linear_tool(
     plan_file_id: str,
     linear_issue_id: str,
@@ -1041,7 +1058,7 @@ def link_plan_to_linear_tool(
     )
 
 
-@mcp.tool()
+@_integration_tool()
 def get_linear_links_tool(plan_file_id: str) -> dict[str, Any]:
     """
     Get all Linear links for a plan file.
@@ -1092,7 +1109,7 @@ def get_linear_links_tool(plan_file_id: str) -> dict[str, Any]:
     }
 
 
-@mcp.tool()
+@_integration_tool()
 def list_linear_links_tool(project_id: str) -> dict[str, Any]:
     """
     List all Linear links for all plan files in a project.
@@ -1145,7 +1162,7 @@ def list_linear_links_tool(project_id: str) -> dict[str, Any]:
     }
 
 
-@mcp.tool()
+@_integration_tool()
 def unlink_linear_issue_tool(
     plan_file_id: str, linear_issue_id: str | None = None
 ) -> dict[str, Any]:
@@ -1164,7 +1181,7 @@ def unlink_linear_issue_tool(
     )
 
 
-@mcp.tool()
+@_integration_tool()
 def get_linear_config_tool(project_id: str) -> dict[str, Any]:
     """
     Get Linear configuration for a project.

@@ -429,6 +429,7 @@ def test_api_delete_project(client, project_id):
 # --- linear surfacing in the web UI ---
 
 
+@pytest.mark.usefixtures("integrations_on")
 def test_plan_view_shows_linear_panel(client, plan_id, project_id):
     from uuid import UUID
 
@@ -451,6 +452,7 @@ def test_plan_view_no_panel_when_unlinked(client, plan_id):
     assert 'class="linear-panel"' not in client.get(f"/plans/{plan_id}").text
 
 
+@pytest.mark.usefixtures("integrations_on")
 def test_project_detail_linear_marker(client, plan_id, project_id):
     from uuid import UUID
 

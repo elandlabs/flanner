@@ -25,6 +25,10 @@ FOUNDATION = {
     # of the public wire format, so it imports nothing and anything may.
     "refusals",
     "frontmatter",
+    # Which half-built things are switched on. One environment variable and
+    # a boolean, imported by every surface that has to decide whether to
+    # offer something, so it reaches for nothing itself.
+    "features",
     "git_integration",
     # Deciding whether a body carries a credential. Pure regex and
     # arithmetic, so it can be tested with a table of strings and reused by

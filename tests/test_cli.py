@@ -29,6 +29,18 @@ from flanner.database import (
 JIRA_URL = "https://x.atlassian.net"
 
 
+@pytest.fixture(autouse=True)
+def _integrations_on(monkeypatch):
+    """Linear and Jira ship switched off; this file still drives them.
+
+    Hiding a feature is only defensible while its tests keep running, or it
+    rots behind the flag and the flag becomes a delete with extra steps.
+    `tests/test_features.py` owns the other half: that nothing offers them
+    while the switch is off.
+    """
+    monkeypatch.setenv("FLANNER_INTEGRATIONS", "1")
+
+
 @pytest.fixture
 def home(tmp_path):
     """The one flanner home for this test.

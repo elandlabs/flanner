@@ -141,3 +141,13 @@ def _isolated_keychain(monkeypatch):
     keyring.set_keyring(Memory())
     yield
     keyring.set_keyring(previous)
+
+
+@pytest.fixture
+def integrations_on(monkeypatch):
+    """Switch Linear and Jira on for one test.
+
+    They ship off. A test that exercises them says so rather than the whole
+    suite running in a configuration nobody ships.
+    """
+    monkeypatch.setenv("FLANNER_INTEGRATIONS", "1")

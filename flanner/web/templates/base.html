@@ -75,8 +75,13 @@
       <a href="/skills" {% if here.startswith('/skills') %}class="active" aria-current="page"{% endif %}>
         <span class="glyph" aria-hidden="true">◆</span> Skills
         {% if nav_skills %}<span class="n tnum">{{ nav_skills }}</span>{% endif %}</a>
+      {# Behind the flag. Linear and Jira are built but not supported
+         yet, so the sidebar does not offer them. `flanner/features.py`
+         has the switch and the reasoning. #}
+      {% if integrations_on %}
       <a href="/integrations" {% if here.startswith('/integrations') %}class="active" aria-current="page"{% endif %}>
         <span class="glyph" aria-hidden="true">⚯</span> Integrations</a>
+      {% endif %}
 
       {# Both are always here. Mesh signed out is the page explaining how to
          join, which is exactly when somebody goes looking for it. Review

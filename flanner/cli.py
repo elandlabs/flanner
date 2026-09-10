@@ -185,10 +185,9 @@ class Sectioned(click.Group):
             "Agent integration",
             ("setup", "register", "unregister", "claude-info", "start", "stop", "status"),
         ),
-        (
-            "Issue trackers (talks to Jira or Linear)",
-            ("jira", "linear"),
-        ),
+        # Issue trackers used to be a section here. Both groups are behind
+        # the integrations flag and hidden, so the heading would sit over
+        # nothing. It comes back with them.
     )
 
     def format_commands(self, ctx: click.Context, formatter: click.HelpFormatter) -> None:
@@ -5131,10 +5130,23 @@ def _print_freshness_table(results: list[tuple[Any, Any, dict[str, Any]]]) -> No
     console.print()
 
 
-@cli.group()
+def _integrations_or_exit() -> None:
+    """Refuse, and say where the switch is.
+
+    A group callback runs before any of its subcommands, so one of these
+    covers `config`, `link`, `unlink`, `links` and `show` at once.
+    """
+    from . import features
+
+    if not features.integrations_enabled():
+        console.print(f"[yellow]{features.INTEGRATIONS_OFF}[/yellow]")
+        raise SystemExit(2)
+
+
+@cli.group(hidden=True)
 def jira() -> None:
     """JIRA integration commands"""
-    pass
+    _integrations_or_exit()
 
 
 @jira.command("config")
@@ -5534,10 +5546,10 @@ def _resolve_project_or_cwd(session: Session, project: str | None) -> ProjectMod
     return get_project_by_root(session, git_root) if git_root else None
 
 
-@cli.group()
+@cli.group(hidden=True)
 def linear() -> None:
     """Linear integration commands"""
-    pass
+    _integrations_or_exit()
 
 
 @linear.command("config")

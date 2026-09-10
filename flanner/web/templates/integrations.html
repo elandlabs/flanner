@@ -1,13 +1,27 @@
 {% extends "base.html" %}
+{% import "_empty.html" as empty %}
 {% block title %}Integrations{% endblock %}
 
 {% block topbar_main %}
 <h1>Integrations</h1>
-  <span class="sub">Issue trackers a plan can be linked to</span>
+  <span class="sub">Issue trackers a plan can be linked to{% if not integrations_on %} ·
+    coming later{% endif %}</span>
 {% endblock %}
 
 {% block content %}
 <div class="pane narrow">
+
+  {# Reachable with the feature off, and honest about it. Everything below
+     still renders, so what is coming is visible rather than described. #}
+  {% if not integrations_on %}
+  {% call empty.state('clear', 'Not yet') %}
+    <p>Linking a plan to a Linear or Jira issue is built, and not supported
+      yet. It is the least exercised part of flanner and it is not what
+      flanner is for, so it is switched off rather than half-promised.</p>
+    <p class="hint">What it would look like is below. Nothing on this page
+      is connected while this notice is here.</p>
+  {% endcall %}
+  {% endif %}
 
   <div class="card card-pad">
     <div style="display:flex; align-items:center; gap:12px">
