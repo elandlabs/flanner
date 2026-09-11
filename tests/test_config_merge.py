@@ -117,7 +117,7 @@ def test_one_bad_file_does_not_cost_the_repo_the_rest(repo, db, monkeypatch) -> 
     wiring = wire_agent_integration(str(repo), project)
 
     assert any("CLAUDE.md" in item for item in wiring.installed), "the rest was abandoned too"
-    assert any("flanner-plan skill" in item for item in wiring.installed)
+    assert any("flanner skills" in item for item in wiring.installed)
     assert len(wiring.skipped) == 1
     assert ".mcp.json" in wiring.skipped[0]
     assert (repo / ".mcp.json").read_text(encoding="utf-8") == THEIRS

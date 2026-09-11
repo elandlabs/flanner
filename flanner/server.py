@@ -263,7 +263,7 @@ def initialize_project_tool(
 
     Creates the flanner project (if it does not exist yet) and installs the
     coding-agent integration for the repo: the CLAUDE.md/AGENTS.md guidance
-    block, the guard-write hook, the flanner-plan skill, and a .mcp.json entry.
+    block, the guard-write hook, the flanner skills, and a .mcp.json entry.
     Use this when the user wants to save a plan, design, architecture, or
     migration doc in a git repo that is not yet flanner-managed, then create the
     document with create_plan_file_tool.
