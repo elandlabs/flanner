@@ -174,6 +174,10 @@ ALLOWED = {
         "review",
     },
     "claude_integration": set(),
+    # The list of every operation and the surfaces that offer it. Data only,
+    # imported by the tests that check it against the CLI, web app and MCP
+    # server, and by nothing that would make it a dependency.
+    "operations": set(),
     "linear_api": {"exceptions", "linear_utils"},
     "server": FOUNDATION
     | {
