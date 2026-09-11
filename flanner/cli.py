@@ -1143,6 +1143,7 @@ def mem_approve(memory_id: str, content: str | None, supersede: bool) -> None:
             "content": content,
             "supersede_conflict": supersede,
             "created_by": _whoami(),
+            "surface": "cli",
         },
     )
     console.print()
@@ -4294,7 +4295,9 @@ def _resolve_plan(
 @click.argument("plan_name")
 @click.option("--project", default=None, help="Project name")
 @click.option("--message", default="", help="Note for reviewers")
-@click.option("--actor", default=None, help="Who is proposing (defaults to your entitlement)")
+@click.option(
+    "--actor", default=None, help="Must be you on a joined project (defaults to your entitlement)"
+)
 def review_propose(plan_name: str, project: str | None, message: str, actor: str | None) -> None:
     """Offer a plan's newest version for review"""
     from .review import propose
@@ -4319,7 +4322,9 @@ def review_propose(plan_name: str, project: str | None, message: str, actor: str
 )
 @click.option("--proposal", default=None, help="Proposal id (defaults to the only open one)")
 @click.option("--project", default=None, help="Project name")
-@click.option("--actor", default=None, help="Who is deciding (defaults to your entitlement)")
+@click.option(
+    "--actor", default=None, help="Must be you on a joined project (defaults to your entitlement)"
+)
 def review_decide(
     plan_name: str, decision: str, proposal: str | None, project: str | None, actor: str | None
 ) -> None:
@@ -4353,7 +4358,9 @@ def review_decide(
             action=decision,
             actor=actor,
         )
-    except ValueError as e:
+    # PermissionError too: a refusal is an answer, and it used to surface as
+    # a traceback because only ValueError was caught.
+    except (ValueError, PermissionError) as e:
         console.print(f"ERROR {e}", style="red")
         raise SystemExit(1) from None
 

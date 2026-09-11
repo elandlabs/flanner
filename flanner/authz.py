@@ -87,10 +87,19 @@ def resolve(
             actor, workspace_id, verdict.reason or f"the entitlement is {verdict.status}"
         )
 
-    # The actor defaults to whoever the entitlement names. Keeping the local
-    # placeholder here would produce a role map keyed by a user the actor is
-    # not, and every action would be refused for the wrong reason.
-    acting_as = actor or verdict.claims.user_id
+    # The identity is the one the signed entitlement names, never a name a
+    # caller passes in. Honouring an explicit actor handed this user's role to
+    # any string at all, so `actor="alice"` acted as alice with this user's
+    # authority. A name that disagrees with the signed-in user is refused
+    # rather than quietly replaced, so the caller learns why.
+    signed_in_as = verdict.claims.user_id
+    if actor and actor != signed_in_as:
+        return _refused(
+            actor,
+            workspace_id,
+            f"cannot act as {actor}: this device is signed in as {signed_in_as}",
+        )
+    acting_as = signed_in_as
     roles = roles_from_entitlement(verdict.claims, workspace_id, acting_as)
     return Authorization(
         roles=roles,

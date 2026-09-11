@@ -75,6 +75,12 @@ def save_event(session: Session, event: Event, plan_file_id: str) -> None:
     )
 
 
+#: Where a decision was recorded. An agent relays a person's decision; it is
+#: not the person, so the two are told apart where authority is at stake.
+PERSON = "person"
+AGENT = "agent"
+
+
 def status(
     session: Session,
     *,
@@ -298,6 +304,7 @@ def decide(
     actor: str | None = None,
     roles: dict[str, str] | None = None,
     policy: Policy = DEFAULT_POLICY,
+    surface: str = PERSON,
 ) -> ReviewResult:
     """Record a decision, and advance the baseline if policy is now satisfied.
 
@@ -315,6 +322,17 @@ def decide(
     # Withdrawing is the proposer's own act, so it needs no review role.
     if action != WITHDRAW:
         _require(effective_roles, authorization, workflow.MAY_REVIEW, "review this plan")
+
+    # Where review is enforced, an approval moves a baseline the whole
+    # workspace reads, so it is recorded on a surface a person operates.
+    # Rejecting, asking for changes and withdrawing stay open to an agent:
+    # none of them grants anything. Solo review is advisory and binds nobody,
+    # so an agent may approve there.
+    if action == APPROVE and surface == AGENT and authorization.enforced:
+        raise PermissionError(
+            "cannot approve through an agent where review is enforced: "
+            "approve with `flanner review decide`"
+        )
 
     event = workflow.make_decision(
         workspace_id=workspace_id_for(project),

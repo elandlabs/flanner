@@ -477,7 +477,9 @@ def _project_accepted_heads(
             for d in decisions.get(proposal_id, [])
             if d.payload.get("action") == APPROVE and d.event_id in cited
         ]
-        if len(approvals) < policy.approvals_required:
+        # Distinct people. Counting cited events let one maintainer approve
+        # twice and satisfy a two-approval policy alone.
+        if len({d.actor for d in approvals}) < policy.approvals_required:
             state.rejected.append(
                 (event.event_id, "cited approvals do not satisfy the workspace policy")
             )
@@ -544,11 +546,15 @@ def _project_proposals(
     for proposal_id, proposal in proposals.items():
         target = str(proposal.payload.get("target_artifact_id"))
         actions = {d.payload.get("action") for d in decisions.get(proposal_id, [])}
+        # A set before sorting: the same person approving twice is one
+        # approval, and `_try_accept` counts this tuple against the policy.
         approvals = tuple(
             sorted(
-                d.actor
-                for d in decisions.get(proposal_id, [])
-                if d.payload.get("action") == APPROVE
+                {
+                    d.actor
+                    for d in decisions.get(proposal_id, [])
+                    if d.payload.get("action") == APPROVE
+                }
             )
         )
         base = tuple(proposal.payload.get("base_accepted_event_ids") or ())

@@ -717,6 +717,10 @@ def propose_plan_revision(
     """Offer a plan version for review."""
     from . import review
 
+    # Accepted for compatibility and never used as anybody's authority: the
+    # proposer is whoever this device is signed in as. See authz.resolve.
+    del actor
+
     ensure_database()
     session = get_session()
     try:
@@ -737,9 +741,9 @@ def propose_plan_revision(
             plan_file=plan_file,
             artifact_id=artifact_id,
             message=message,
-            actor=actor,
+            actor=None,
         )
-    except ValueError as e:
+    except (ValueError, PermissionError) as e:
         return {"error": True, "message": str(e)}
     return {
         "proposal_id": result.event.event_id,
@@ -757,6 +761,9 @@ def record_plan_review_decision(
 ) -> dict[str, Any]:
     """Approve, reject, request changes on, or withdraw a proposal."""
     from . import review
+
+    # As above: identity is resolved, not supplied.
+    del actor
 
     ensure_database()
     session = get_session()
@@ -778,9 +785,11 @@ def record_plan_review_decision(
             plan_file=plan_file,
             proposal_id=proposal_id,
             action=decision,
-            actor=actor,
+            actor=None,
+            # Every call reaching this seam came through the MCP server.
+            surface=review.AGENT,
         )
-    except ValueError as e:
+    except (ValueError, PermissionError) as e:
         return {"error": True, "message": str(e)}
     return {
         "decision_id": result.event.event_id,
@@ -1041,8 +1050,13 @@ def memory_decide(
     content: str | None = None,
     supersede_conflict: bool = False,
     created_by: str = "claude",
+    surface: str = "agent",
 ) -> dict[str, Any]:
-    """Approve, edit or reject one proposal."""
+    """Approve, edit or reject one proposal.
+
+    `surface` defaults to the agent, the most restricted, so a caller that
+    forgets to say where it is gets the rule that refuses.
+    """
     from . import memory_ops
 
     try:
@@ -1055,6 +1069,7 @@ def memory_decide(
             content=content,
             supersede_conflict=supersede_conflict,
             created_by=created_by,
+            surface=surface,
         )
     except Exception as e:  # noqa: BLE001
         return {"error": True, "message": str(e)}

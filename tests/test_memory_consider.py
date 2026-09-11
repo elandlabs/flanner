@@ -584,3 +584,70 @@ def test_similarity_is_between_nothing_and_everything():
     assert mem.similarity("", "anything") == 0.0
     assert mem.similarity("the same words here", "the same words here") == 1.0
     assert 0.0 < mem.similarity("use advisory locks", "use advisory locking") < 1.0
+
+
+# --- who may keep what -----------------------------------------------------------
+
+
+def test_an_agent_cannot_keep_a_category_a_person_must_approve(store, suggesting):
+    session, project, repo = store
+    allowing = replace(
+        suggesting, allow_categories=(*suggesting.allow_categories, "preference")
+    )
+    outcome = _offer(
+        session,
+        project,
+        allowing,
+        content="Prefers tabs over spaces in every file.",
+        category="preference",
+    )
+    assert outcome["outcome"] == "proposed", outcome
+    memory_id = __import__("uuid").UUID(outcome["id"])
+
+    with pytest.raises(ValidationError, match="a person approves preference"):
+        mem.decide(session, memory_id=memory_id, decision="approve", surface="agent")
+
+    kept = mem.decide(session, memory_id=memory_id, decision="approve", surface="cli")
+    assert kept["outcome"] == "approved"
+
+
+def test_an_agent_may_relay_an_ordinary_decision_and_the_record_says_so(store, suggesting):
+    import json
+
+    from flanner.database import MemoryEventModel
+
+    session, project, repo = store
+    outcome = _offer(
+        session, project, suggesting, content="Use advisory locks.", category="decision"
+    )
+    memory_id = __import__("uuid").UUID(outcome["id"])
+
+    mem.decide(session, memory_id=memory_id, decision="approve", surface="agent")
+
+    approved = (
+        session.query(MemoryEventModel).filter_by(memory_id=memory_id, action="approved").one()
+    )
+    assert json.loads(approved.detail)["surface"] == "agent"
+
+
+def test_editing_a_suggestion_keeps_who_proposed_it(store, suggesting):
+    """The editor used to replace the proposer, losing where it came from."""
+    session, project, repo = store
+    outcome = mem.consider(
+        session,
+        [mem.Candidate(content="Use advisory locks.", category="decision")],
+        policy=suggesting,
+        project=project,
+        created_by="claude",
+    )[0]
+
+    edited = mem.decide(
+        session,
+        memory_id=__import__("uuid").UUID(outcome["id"]),
+        decision="edit",
+        content="Use advisory locks, not Redis.",
+        created_by="raj",
+        surface="cli",
+    )
+
+    assert get_memory(session, __import__("uuid").UUID(edited["id"])).created_by == "claude"

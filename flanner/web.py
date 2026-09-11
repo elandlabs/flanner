@@ -2526,6 +2526,7 @@ async def memory_decide_form(
                 "decision": decision,
                 "supersede_conflict": bool(supersede),
                 "created_by": "web",
+                "surface": "web",
             },
         )
     )

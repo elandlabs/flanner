@@ -843,3 +843,102 @@ def test_the_listing_helper_reports_every_retired_plan(project):
     hidden = assurance.retired_plan_ids(session)
     assert str(gone.id) in hidden
     assert str(kept.id) not in hidden
+
+
+# --- approvals belong to a person ----------------------------------------------
+
+
+def test_one_person_approving_twice_is_one_approval(project, plan):
+    """Counting decision events let a single maintainer satisfy a
+    two-approval policy alone."""
+    session, proj = project
+    plan_file, _ = plan
+    two = Policy(policy_id="two-eyes", approvals_required=2)
+    roles = {"maria": MAINTAINER, "mo": MAINTAINER}
+    proposal = review.propose(
+        session, project=proj, plan_file=plan_file, actor="mo", roles=roles, policy=two
+    )
+
+    for _ in range(2):
+        result = review.decide(
+            session,
+            project=proj,
+            plan_file=plan_file,
+            proposal_id=proposal.event.event_id,
+            action=APPROVE,
+            actor="maria",
+            roles=roles,
+            policy=two,
+        )
+
+    assert result.advanced_baseline is False
+    assert "1 of 2" in result.reason
+    state = review.status(session, plan_file=plan_file, roles=roles, policy=two)
+    assert state.proposals[proposal.event.event_id].approvals == ("maria",)
+
+
+def test_an_agent_cannot_approve_where_review_is_enforced(project, plan):
+    session, proj = project
+    plan_file, _ = plan
+    workspace = join(session, proj)
+    a_signed_entitlement(MAINTAINER, workspace=workspace)
+    review.propose(session, project=proj, plan_file=plan_file)
+    proposal_id = next(iter(review.status(session, plan_file=plan_file, project=proj).proposals))
+
+    with pytest.raises(PermissionError, match="through an agent"):
+        review.decide(
+            session,
+            project=proj,
+            plan_file=plan_file,
+            proposal_id=proposal_id,
+            action=APPROVE,
+            surface=review.AGENT,
+        )
+
+    # Asking for changes grants nothing, so an agent may still record it.
+    result = review.decide(
+        session,
+        project=proj,
+        plan_file=plan_file,
+        proposal_id=proposal_id,
+        action=REQUEST_CHANGES,
+        surface=review.AGENT,
+    )
+    assert result.advanced_baseline is False
+
+
+def test_an_agent_may_approve_in_solo_review_which_binds_nobody(project, plan):
+    session, proj = project
+    plan_file, _ = plan
+    review.propose(session, project=proj, plan_file=plan_file)
+    proposal_id = next(iter(review.status(session, plan_file=plan_file).proposals))
+
+    result = review.decide(
+        session,
+        project=proj,
+        plan_file=plan_file,
+        proposal_id=proposal_id,
+        action=APPROVE,
+        surface=review.AGENT,
+    )
+
+    assert result.advanced_baseline is True
+
+
+def test_the_mcp_decision_seam_is_the_agent_surface_and_ignores_a_named_actor(project, plan):
+    """What an MCP call passes as `actor` is not anybody's authority."""
+    from flanner import services
+
+    session, proj = project
+    plan_file, _ = plan
+    workspace = join(session, proj)
+    a_signed_entitlement(MAINTAINER, workspace=workspace)
+    review.propose(session, project=proj, plan_file=plan_file)
+    proposal_id = next(iter(review.status(session, plan_file=plan_file, project=proj).proposals))
+
+    out = services.record_plan_review_decision(
+        str(plan_file.id), proposal_id, "approve", actor="someone-else"
+    )
+
+    assert out.get("error") is True
+    assert "through an agent" in out["message"]

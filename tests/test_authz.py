@@ -104,9 +104,20 @@ def test_the_actor_defaults_to_whoever_the_entitlement_names(home, joined):
     assert authz.resolve(joined).actor == "raj"
 
 
-def test_an_explicit_actor_is_honoured(home, joined):
+def test_a_name_that_is_not_the_signed_in_user_is_refused(home, joined):
+    """It used to be honoured, which handed this user's role to any string:
+    `actor="agent"` got the reader's authority under the name "agent"."""
     sign_in(READER)
-    assert authz.resolve(joined, actor="agent").roles == {"agent": READER}
+    result = authz.resolve(joined, actor="agent")
+
+    assert result.roles == {}
+    assert result.enforced is True
+    assert "signed in as" in result.reason
+
+
+def test_naming_yourself_is_the_same_as_naming_nobody(home, joined):
+    sign_in(READER, user="raj")
+    assert authz.resolve(joined, actor="raj").roles == authz.resolve(joined).roles
 
 
 def test_a_capability_for_another_workspace_grants_nothing_here(home, joined):

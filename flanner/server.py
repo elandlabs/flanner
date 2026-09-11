@@ -689,7 +689,7 @@ def propose_plan_revision_tool(
         plan_file_id: UUID of the plan file (as string)
         artifact_id: Exact version to propose (defaults to the newest)
         message: Optional note for reviewers
-        actor: Who is proposing
+        actor: Ignored. The proposer is whoever this device is signed in as.
 
     Returns:
         The proposal id to quote when recording a decision
@@ -720,7 +720,10 @@ def record_plan_review_decision_tool(
         plan_file_id: UUID of the plan file (as string)
         proposal_id: The proposal being decided
         decision: approve | reject | request_changes | withdraw
-        actor: Who is deciding
+        actor: Ignored. The decision is recorded as whoever this device is
+            signed in as. Where review is enforced, approving is refused here:
+            a person approves with `flanner review decide`. Rejecting,
+            requesting changes and withdrawing still work.
 
     Returns:
         The decision id, and whether the baseline moved
@@ -762,7 +765,10 @@ def get_plan_workflow_status_tool(plan_file_id: str) -> dict[str, Any]:
     if not plan_file:
         return {"error": True, "message": f"Plan file with ID {plan_file_id} not found"}
 
-    state = review.status(session, plan_file=plan_file)
+    # With the project, so a joined workspace is read under its signed roles
+    # rather than the local placeholder that makes everyone a maintainer.
+    project = get_project(session, plan_file.project_id)
+    state = review.status(session, plan_file=plan_file, project=project)
     return {
         "plan_name": plan_file.name,
         "accepted_artifact_id": state.accepted_artifact_id,
@@ -1549,7 +1555,9 @@ def memory_decide(
 
     Only call this when the user has told you what they decided. A
     suggestion the user has not seen is not one you may approve on their
-    behalf; that would make the whole proposal step decorative.
+    behalf; that would make the whole proposal step decorative. Categories
+    the project's policy lists under require_approval are refused here: a
+    person approves those with `flanner mem approve` or on the Memory page.
 
     decision: "approve" keeps it as written, "edit" keeps `content`
     instead, "reject" removes it entirely.
@@ -1566,6 +1574,7 @@ def memory_decide(
             "content": content or None,
             "supersede_conflict": supersede_conflict,
             "created_by": created_by,
+            "surface": "agent",
         },
     )
 

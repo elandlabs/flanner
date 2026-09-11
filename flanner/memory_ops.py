@@ -1145,6 +1145,7 @@ def decide(
     content: str | None = None,
     supersede_conflict: bool = False,
     created_by: str = "claude",
+    surface: str = "agent",
 ) -> dict[str, Any]:
     """Approve, edit or reject a proposal.
 
@@ -1168,6 +1169,18 @@ def decide(
     if decision not in ("approve", "edit"):
         raise ValidationError("decision must be approve, edit or reject")
 
+    # The categories policy says a person must approve are not approved by an
+    # agent relaying one. An agent can still suggest them, and a person keeps
+    # them with `flanner mem approve` or on the Memory page. Anything else an
+    # agent may relay, and the event below records that it did.
+    if surface == "agent":
+        owner = db.get_project(session, memory.project_id) if memory.project_id else None
+        if memory.category in policy_for(owner).require_approval:
+            raise ValidationError(
+                f"a person approves {memory.category} memories: "
+                f"`flanner mem approve {memory.id}` or the Memory page"
+            )
+
     conflict_id = _conflict_of(session, memory)
     if conflict_id and not supersede_conflict:
         other = get_memory(session, conflict_id)
@@ -1184,6 +1197,9 @@ def decide(
         # Rejecting and re-remembering rather than rewriting in place: the
         # body decides the id's own hash and the file's name, and editing
         # around that would leave three things to keep in step.
+        # Captured before the reject below deletes the row. The edited memory
+        # is still the proposer's; the editor is recorded as who approved it.
+        proposer = memory.created_by
         decide(session, memory_id=memory.id, decision="reject", created_by=created_by)
         edited, _ = remember(
             session,
@@ -1195,21 +1211,27 @@ def decide(
             sensitivity=memory.sensitivity,
             source_type=memory.source_type,
             source_refs=json.loads(memory.source_refs or "[]"),
-            created_by=created_by,
+            created_by=proposer,
         )
         record_memory_event(
             session,
             memory_id=edited.id,
             action="approved",
             actor=created_by,
-            detail=json.dumps({"edited": True, "from": str(memory_id)}),
+            detail=json.dumps({"edited": True, "from": str(memory_id), "surface": surface}),
         )
         return {"id": str(edited.id), "outcome": "approved", "edited": True}
 
     memory.status = "active"
     session.commit()
     _reindex(session, memory)
-    record_memory_event(session, memory_id=memory.id, action="approved", actor=created_by)
+    record_memory_event(
+        session,
+        memory_id=memory.id,
+        action="approved",
+        actor=created_by,
+        detail=json.dumps({"surface": surface}),
+    )
 
     if conflict_id and supersede_conflict:
         other = get_memory(session, conflict_id)
