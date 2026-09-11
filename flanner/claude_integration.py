@@ -454,11 +454,14 @@ command = "flanner-mcp"
 
 def _toml_loads() -> Any:
     """`tomllib.loads`, or None on Python 3.10, which ships no TOML reader."""
+    import importlib
+
+    # Imported by name so the 3.10 type check, which has no tomllib, reads
+    # this as the optional import it is rather than a missing module.
     try:
-        import tomllib
+        return importlib.import_module("tomllib").loads
     except ModuleNotFoundError:  # pragma: no cover - 3.10 only
         return None
-    return tomllib.loads
 
 
 def codex_registration(server_name: str = "flanner") -> bool:

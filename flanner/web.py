@@ -2250,8 +2250,10 @@ async def skill_detail(
     # where the page refuses to pick.
     loaded = next((c for c in copies if c["effective"]), copies[0])
     directory = Path(loaded["directory"])
+    from .skills_adapters import MANIFEST
+
     try:
-        body = (directory / skills_ops.adapters.MANIFEST).read_text(
+        body = (directory / MANIFEST).read_text(
             encoding="utf-8", errors="replace"
         )
     except OSError:

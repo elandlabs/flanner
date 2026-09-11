@@ -126,7 +126,7 @@ def _loggable(kwargs: dict[str, Any]) -> dict[str, Any]:
 mcp = _Observed(_mcp)
 
 
-def _integration_tool() -> "Any":
+def _integration_tool() -> Callable[[F], F]:
     """Register a tool only while Linear and Jira are switched on.
 
     Read at import, which is when the tool list is built and the only time
@@ -137,7 +137,7 @@ def _integration_tool() -> "Any":
 
     on = features.integrations_enabled()
 
-    def decorate(fn: "Any") -> "Any":
+    def decorate(fn: F) -> F:
         return mcp.tool()(fn) if on else fn
 
     return decorate
