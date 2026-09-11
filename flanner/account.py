@@ -31,7 +31,7 @@ from typing import Any
 
 from . import device_auth, identity, refusals
 from . import session as cache
-from .entitlements import VALID
+from .entitlements import VALID, approval_subject
 from .session import DEFAULT_ENDPOINT, Session
 
 REQUEST_TIMEOUT = 15.0
@@ -145,7 +145,9 @@ def ensure_fresh(*, now: datetime | None = None) -> Session | None:
     end of the grace window, not this operation.
     """
     current = cache.load()
-    if current is None or current.status(now=now).status == VALID:
+    # A session cached before rosters existed renews once, or teammates'
+    # review would stay invisible until the entitlement next expired.
+    if current is None or (current.status(now=now).status == VALID and current.roster):
         return current
     try:
         return refresh(current)
@@ -179,6 +181,7 @@ def _session_from(endpoint: str, body: dict[str, Any]) -> Session:
             # Sent by no control plane today; read anyway, so the day one
             # does the client already works rather than needing a release.
             device_keys=dict(body.get("device_keys") or {}),
+            roster=str(body.get("roster") or ""),
         )
     except (KeyError, TypeError, ValueError) as e:
         raise SessionError(f"the control plane returned something unusable: {e}") from None
@@ -342,6 +345,28 @@ def request_enrollment_code() -> tuple[str, str]:
     # never learned leaves a second one valid and unaccounted for.
     body = _signed("/v1/devices/codes", {})
     return str(body["enrollment_code"]), str(body["expires_at"])
+
+
+def request_approval(
+    *, workspace_id: str, proposal_id: str, target_artifact_id: str
+) -> dict[str, Any]:
+    """Ask the console to confirm an approval. Returns its id, link and code.
+
+    Sends a digest of the proposal and version, never the ids themselves.
+    """
+    # Not repeatable: each call opens a request somebody has to answer.
+    return _signed(
+        "/v1/approvals",
+        {
+            "workspace_id": workspace_id,
+            "subject": approval_subject(proposal_id, target_artifact_id),
+        },
+    )
+
+
+def approval_status(request_id: str) -> dict[str, Any]:
+    """Whether a person has answered, and the signed confirmation if they agreed."""
+    return _signed("/v1/approvals/status", {"request_id": request_id}, repeatable=True)
 
 
 def fetch_device_keys() -> dict[str, str]:

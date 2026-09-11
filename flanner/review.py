@@ -41,7 +41,6 @@ from .storage import load_plan_file
 from .utils import utcnow
 from .workflow import (
     APPROVE,
-    DEFAULT_POLICY,
     MAINTAINER,
     WITHDRAW,
     Event,
@@ -87,7 +86,8 @@ def status(
     plan_file: PlanFileModel,
     project: ProjectModel | None = None,
     roles: dict[str, str] | None = None,
-    policy: Policy = DEFAULT_POLICY,
+    policy: Policy | None = None,
+    authorization: authz.Authorization | None = None,
 ) -> WorkflowState:
     """Project the current review state for a plan.
 
@@ -96,9 +96,18 @@ def status(
     should pass it, or a joined workspace will read as advisory here while
     the assurance verdict enforces it.
     """
+    if authorization is None and project is not None:
+        authorization = authz.resolve(project)
     if roles is None:
-        roles = authz.resolve(project).roles if project is not None else local_roles()
-    return workflow.project(load_review_events(session, str(plan_file.id)), roles, policy)
+        roles = authorization.roles if authorization is not None else local_roles()
+    if policy is None:
+        policy = authorization.policy if authorization is not None else workflow.DEFAULT_POLICY
+    return workflow.project(
+        load_review_events(session, str(plan_file.id)),
+        roles,
+        policy,
+        verifier=authorization.verifier if authorization is not None else None,
+    )
 
 
 def propose(
@@ -110,7 +119,7 @@ def propose(
     message: str = "",
     actor: str | None = None,
     roles: dict[str, str] | None = None,
-    policy: Policy = DEFAULT_POLICY,
+    policy: Policy | None = None,
 ) -> ReviewResult:
     """Offer a version for review.
 
@@ -132,8 +141,15 @@ def propose(
     # peers - but a local caller deserves to be told, rather than watch the
     # command succeed and the proposal never appear.
     _require(effective_roles, authorization, workflow.MAY_PROPOSE, "propose on this plan")
+    policy = policy or authorization.policy
 
-    state = status(session, plan_file=plan_file, roles=effective_roles, policy=policy)
+    state = status(
+        session,
+        plan_file=plan_file,
+        roles=effective_roles,
+        policy=policy,
+        authorization=authorization,
+    )
     event = workflow.make_proposal(
         workspace_id=workspace_id_for(project),
         plan_file_id=str(plan_file.id),
@@ -303,18 +319,28 @@ def decide(
     action: str,
     actor: str | None = None,
     roles: dict[str, str] | None = None,
-    policy: Policy = DEFAULT_POLICY,
+    policy: Policy | None = None,
     surface: str = PERSON,
+    confirmation: str | None = None,
 ) -> ReviewResult:
     """Record a decision, and advance the baseline if policy is now satisfied.
 
     The decision names the exact version the reviewer saw, so it can never
-    be replayed against different content.
+    be replayed against different content. Where review is enforced, an
+    approval carries `confirmation`: the console's signed record that the
+    approver agreed to it.
     """
     authorization = authz.resolve(project, actor=actor)
     acting_as = authorization.actor
     effective_roles = roles if roles is not None else authorization.roles
-    before = status(session, plan_file=plan_file, roles=effective_roles, policy=policy)
+    policy = policy or authorization.policy
+    before = status(
+        session,
+        plan_file=plan_file,
+        roles=effective_roles,
+        policy=policy,
+        authorization=authorization,
+    )
     proposal = before.proposals.get(proposal_id)
     if proposal is None:
         raise ValueError(f"no proposal {proposal_id} on this plan")
@@ -334,6 +360,17 @@ def decide(
             "approve with `flanner review decide`"
         )
 
+    # Refused here rather than recorded and then dropped by the projection,
+    # which would read as an approval that silently did nothing.
+    if (
+        action == APPROVE
+        and proposal.proposer == acting_as
+        and not workflow.may_self_approve(policy, effective_roles, acting_as)
+    ):
+        raise PermissionError(
+            "cannot approve your own proposal: another maintainer here has to review it"
+        )
+
     event = workflow.make_decision(
         workspace_id=workspace_id_for(project),
         plan_file_id=str(plan_file.id),
@@ -341,7 +378,15 @@ def decide(
         target_artifact_id=proposal.target_artifact_id,
         action=action,
         actor_user_id=acting_as,
+        confirmation=confirmation,
     )
+    # The same check the projection makes, run before anything is stored.
+    # Nothing on this machine can show a person approved, since an agent
+    # with a shell runs the same commands they do. A confirmation signed by
+    # the console, for a browser signed in as the approver, can.
+    refusal = authorization.verifier.refusal(event) if authorization.verifier else ""
+    if refusal:
+        raise PermissionError(f"cannot record this approval: {refusal}")
     save_event(session, event, str(plan_file.id))
     session.commit()
 
@@ -356,8 +401,30 @@ def decide(
         actor=acting_as,
         roles=effective_roles,
         policy=policy,
+        authorization=authorization,
     )
     return ReviewResult(event=event, accepted=accepted, reason=reason)
+
+
+def needs_confirmation(
+    authorization: authz.Authorization, proposal: workflow.ProposalView | None
+) -> bool:
+    """Whether approving this proposal waits on the console first.
+
+    Only where review is enforced, and only when the approval would
+    otherwise stand, so nobody confirms something that is then refused.
+    """
+    return (
+        authorization.enforced
+        and proposal is not None
+        and authorization.role in workflow.MAY_REVIEW
+        and (
+            proposal.proposer != authorization.actor
+            or workflow.may_self_approve(
+                authorization.policy, authorization.roles, authorization.actor
+            )
+        )
+    )
 
 
 def _require(
@@ -388,13 +455,16 @@ def _try_accept(
     actor: str,
     roles: dict[str, str],
     policy: Policy,
+    authorization: authz.Authorization,
 ) -> tuple[Event | None, str]:
     """Emit an accepted-head transition when the approvals now justify one.
 
     Returns the transition and why, or None and the reason it was withheld,
     so a caller can always explain the outcome to a human.
     """
-    state = status(session, plan_file=plan_file, roles=roles, policy=policy)
+    state = status(
+        session, plan_file=plan_file, roles=roles, policy=policy, authorization=authorization
+    )
     proposal = state.proposals.get(proposal_id)
     if proposal is None:
         return None, "proposal is no longer projected"
@@ -414,6 +484,7 @@ def _try_accept(
         for event in load_review_events(session, str(plan_file.id))
         if event.payload.get("proposal_id") == proposal_id
         and event.payload.get("action") == APPROVE
+        and event.actor in proposal.approvals
     ]
     accepted = workflow.make_accepted_head(
         workspace_id=workspace_id_for(project),

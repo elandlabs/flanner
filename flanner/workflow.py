@@ -23,6 +23,7 @@ explicit conflict rather than a silent winner.
 
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -111,6 +112,11 @@ def local_roles(actor: str = LOCAL_ACTOR) -> dict[str, str]:
 
 DEFAULT_POLICY = Policy()
 
+#: The policy wherever review is enforced. Approving your own proposal there
+#: let one maintainer move a baseline the whole team reads with nobody else
+#: looking. Solo review keeps the default: there is nobody else to ask.
+TEAM_POLICY = Policy(policy_id="team-v1", allow_self_approval=False)
+
 # Exported so the write surface can refuse before recording an event that
 # projection would only discard. One definition, so the two cannot drift.
 #: Leaving a note is the lightest thing anybody can do to a plan: it adds
@@ -124,6 +130,50 @@ MAY_REVIEW = frozenset({MAINTAINER})
 MAY_RETIRE = frozenset({MAINTAINER})
 _MAY_AUTHOR = MAY_PROPOSE
 _MAY_DECIDE = MAY_REVIEW
+
+
+def may_self_approve(policy: Policy, roles: Mapping[str, str], actor: str) -> bool:
+    """Whether `actor` may approve a proposal of their own.
+
+    A workspace where nobody else may review would otherwise never accept
+    anything, so a sole reviewer still may. The roster decides who else
+    there is, and a device that holds none sees only itself.
+    """
+    if policy.allow_self_approval:
+        return True
+    return not any(who != actor and role in MAY_REVIEW for who, role in roles.items())
+
+
+@dataclass(frozen=True)
+class Verifier:
+    """What an enforced workspace checks about an event beyond its signature.
+
+    A signature proves which device wrote an event. It says nothing about
+    whether that device belongs to the person the event names, so a
+    teammate's device could sign an approval in anybody's name. `devices`
+    closes that, and `confirmed` is how an approval shows a person agreed
+    to it somewhere an agent on this machine cannot reach.
+    """
+
+    #: device id -> the user it belongs to, from the signed roster.
+    devices: Mapping[str, str]
+    #: Whether an approval carries a confirmation that matches it. None
+    #: asks for none.
+    confirmed: Callable[[Event], bool] | None = None
+
+    def refusal(self, event: Event) -> str:
+        """Why this event cannot count, or an empty string if it can."""
+        owner = self.devices.get(event.artifact.actor_device_id)
+        if owner is None or owner != event.actor:
+            return f"signed by a device that does not belong to {event.actor}"
+        if (
+            self.confirmed is not None
+            and event.artifact.artifact_type == artifacts.REVIEW_DECISION
+            and event.payload.get("action") == APPROVE
+            and not self.confirmed(event)
+        ):
+            return "approval was not confirmed by its approver in the console"
+        return ""
 
 
 @dataclass(frozen=True)
@@ -314,12 +364,14 @@ def make_decision(
     target_artifact_id: str,
     action: str,
     actor_user_id: str | None = None,
+    confirmation: str | None = None,
     **kw: Any,
 ) -> Event:
     """Record a review decision against an exact proposal and version.
 
     The target is named explicitly so a decision can never be replayed
-    against different content than the reviewer saw.
+    against different content than the reviewer saw. `confirmation` is the
+    console's signed record that the approver agreed, where one is needed.
     """
     if action not in DECISION_ACTIONS:
         raise ValueError(f"Unknown review action: {action}")
@@ -328,6 +380,10 @@ def make_decision(
         "target_artifact_id": target_artifact_id,
         "action": action,
     }
+    # Only when present, so a decision recorded without one keeps the
+    # payload, and the id, it always had.
+    if confirmation:
+        payload["confirmation"] = confirmation
     return _sign_event(
         artifacts.REVIEW_DECISION,
         workspace_id,
@@ -402,6 +458,8 @@ def project(
     events: list[Event],
     roles: dict[str, str],
     policy: Policy = DEFAULT_POLICY,
+    *,
+    verifier: Verifier | None = None,
 ) -> WorkflowState:
     """Fold append-only events into the current workflow state.
 
@@ -413,6 +471,10 @@ def project(
     state = WorkflowState()
     by_type: dict[str, list[Event]] = {}
     for event in events:
+        refusal = verifier.refusal(event) if verifier is not None else ""
+        if refusal:
+            state.rejected.append((event.event_id, refusal))
+            continue
         by_type.setdefault(event.artifact.artifact_type, []).append(event)
 
     proposals: dict[str, Event] = {}
@@ -442,7 +504,9 @@ def project(
             state.rejected.append((event.event_id, f"{event.actor} may not review"))
             continue
         elif (
-            action == APPROVE and not policy.allow_self_approval and event.actor == proposal.actor
+            action == APPROVE
+            and event.actor == proposal.actor
+            and not may_self_approve(policy, roles, event.actor)
         ):
             state.rejected.append((event.event_id, "policy requires independent review"))
             continue

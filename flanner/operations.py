@@ -220,7 +220,8 @@ OPERATIONS: tuple[Operation, ...] = (
         mcp=("record_plan_review_decision_tool",),
         note=(
             "The decision is recorded as whoever this device is signed in as. Where "
-            "review is enforced, an agent may not approve: a person does, at the CLI."
+            "review is enforced, an agent may not approve, and a person confirms each "
+            "approval in the console."
         ),
         note_since="0.13.0",
     ),
@@ -464,7 +465,10 @@ OPERATIONS: tuple[Operation, ...] = (
         "approve",
         cli=("skills approve", "skills reject"),
         web=("POST /skills/proposals/decide",),
-        why="An approval covers the exact text a person read. No model output may authorise its own installation.",
+        why=(
+            "An approval covers the exact text a person read. No model output may authorise its "
+            "own installation."
+        ),
     ),
     _op(
         "skills",

@@ -29,13 +29,13 @@ Renewal is ``account``'s job and belongs to commands that expect to wait.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 
 from . import session as cache
 from . import workflow
 from .database import ProjectModel
-from .entitlements import roles_from_entitlement
+from .entitlements import approval_matches, roles_from_entitlement, verify_roster
 from .plan_ops import workspace_id_for
 
 # Where a role map came from. Reported rather than inferred, so a caller can
@@ -53,11 +53,23 @@ class Authorization:
     source: str
     workspace_id: str
     reason: str = ""
+    #: How events are checked beyond their signatures. None where nothing
+    #: is enforced, or where there is nothing to check against.
+    verifier: workflow.Verifier | None = field(default=None, compare=False)
 
     @property
     def enforced(self) -> bool:
         """True when refusals here mean something the user cannot overrule."""
         return self.source == ENTITLEMENT
+
+    @property
+    def role(self) -> str | None:
+        """The acting person's own role. The map holds teammates' roles too."""
+        return self.roles.get(self.actor)
+
+    @property
+    def policy(self) -> workflow.Policy:
+        return workflow.TEAM_POLICY if self.enforced else workflow.DEFAULT_POLICY
 
 
 def resolve(
@@ -100,13 +112,39 @@ def resolve(
             f"cannot act as {actor}: this device is signed in as {signed_in_as}",
         )
     acting_as = signed_in_as
-    roles = roles_from_entitlement(verdict.claims, workspace_id, acting_as)
+
+    # Teammates come from the signed roster. Without one, every proposal
+    # and approval a teammate made was judged against a map that named
+    # nobody but this user, and dropped. This user's own role still comes
+    # from the entitlement, which is the fresher of the two.
+    roster = verify_roster(session.roster, session.keyring, now=now) if session.roster else None
+    members = roster.members(workspace_id) if roster is not None else ()
+    roles = {m.user_id: m.role for m in members if m.user_id != acting_as}
+    roles.update(roles_from_entitlement(verdict.claims, workspace_id, acting_as))
+    devices = {device: m.user_id for m in members for device in m.devices}
+    # The entitlement itself proves this device is this user's.
+    devices[verdict.claims.device_id] = acting_as
+
+    keyring = dict(session.keyring)
+
+    def confirmed(event: workflow.Event) -> bool:
+        return approval_matches(
+            str(event.payload.get("confirmation") or ""),
+            keyring,
+            workspace_id=event.artifact.workspace_id,
+            user_id=event.actor,
+            device_id=event.artifact.actor_device_id,
+            proposal_id=str(event.payload.get("proposal_id") or ""),
+            target_artifact_id=str(event.payload.get("target_artifact_id") or ""),
+        )
+
     return Authorization(
         roles=roles,
         actor=acting_as,
         source=ENTITLEMENT,
         workspace_id=workspace_id,
-        reason="" if roles else "you hold no role in this workspace",
+        reason="" if acting_as in roles else "you hold no role in this workspace",
+        verifier=workflow.Verifier(devices=devices, confirmed=confirmed),
     )
 
 

@@ -136,12 +136,24 @@ def test_ensure_fresh_returns_nothing_when_never_logged_in(home):
 
 def test_ensure_fresh_does_not_call_out_for_a_valid_entitlement(home, monkeypatch):
     """A working entitlement is used as-is; the network is not consulted."""
-    cache.save(a_session())
+    held = a_session()
+    held.roster = "a signed roster"
+    cache.save(held)
     monkeypatch.setattr(
         account, "refresh", lambda *a, **k: pytest.fail("should not have refreshed")
     )
     monkeypatch.setattr(cache.Session, "status", lambda self, **k: _verdict(VALID))
     assert account.ensure_fresh() is not None
+
+
+def test_a_session_from_before_rosters_renews_once(home, monkeypatch):
+    """Otherwise teammates stay invisible until the entitlement next expires."""
+    cache.save(a_session())
+    renewed = []
+    monkeypatch.setattr(account, "refresh", lambda current: renewed.append(current) or current)
+    monkeypatch.setattr(cache.Session, "status", lambda self, **k: _verdict(VALID))
+    account.ensure_fresh()
+    assert len(renewed) == 1
 
 
 @pytest.mark.parametrize("state", [IN_GRACE, EXPIRED, MALFORMED])

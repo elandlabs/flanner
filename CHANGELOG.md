@@ -47,9 +47,27 @@ versioning follows [SemVer](https://semver.org/).
   was cut. A table taller than the terminal is shown through the system
   pager when stdout is a terminal; piped output is unchanged.
 
+### Security
+- **A teammate's review counts, and only as the person who signed it.** A
+  device knew its own role and nobody else's, so every proposal and approval
+  a teammate made was dropped. It now reads a roster the control plane signs
+  with each entitlement. An event also has to be signed by a device the
+  roster gives to the person it names, so one person's device cannot act in
+  another's name. A session cached before rosters existed renews once.
+- **Approving in a team workspace is confirmed in the console.** Nothing on a
+  machine can show that a person ran a command rather than an agent with a
+  shell. `flanner review decide approve` now prints a link and a code, and
+  records the approval once you confirm it in a browser signed in as you.
+  Peers refuse an approval without that signed confirmation.
+- **Nobody approves their own proposal while somebody else could.** Team
+  workspaces use a policy that refuses self-approval unless no other
+  maintainer exists. Solo review is unchanged.
+
 ### Fixed
 - A project's plan list counted hidden plans out and listed them anyway; the
   count and the rows now agree.
+- **`remember` is refused when capture is off**, from the CLI and from the
+  agent's tool. The policy file always said so; only suggestions honoured it.
 
 ## [0.12.0] - 2026-09-09
 

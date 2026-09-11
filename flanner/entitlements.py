@@ -251,6 +251,127 @@ def _parse_stamp(raw: str) -> datetime:
     return stamp if stamp.tzinfo else stamp.replace(tzinfo=timezone.utc)
 
 
+#: What a signed document other than an entitlement is for. An entitlement
+#: carries no kind, and each of these lacks a field an entitlement needs,
+#: so none of the three can be passed off as another.
+ROSTER = "roster"
+APPROVAL = "approval"
+
+
+@dataclass(frozen=True)
+class Member:
+    """One person in a workspace roster, and the devices that sign for them."""
+
+    user_id: str
+    role: str
+    devices: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class Roster:
+    """Every member of this device's workspaces, as the control plane lists them.
+
+    An entitlement names one person's role, which is all a device needs to
+    act. Judging a teammate's proposal needs theirs too, and a device used
+    to have nothing to read it from, so every teammate's review was dropped.
+    """
+
+    organization_id: str
+    workspaces: dict[str, tuple[Member, ...]]
+
+    def members(self, workspace_id: str) -> tuple[Member, ...]:
+        return self.workspaces.get(workspace_id, ())
+
+
+def read_signed(token: str, keyring: dict[str, str], kind: str) -> dict[str, Any] | None:
+    """The fields of a signed document of this kind, or None if it does not verify."""
+    body, _, signature = token.partition(TOKEN_SEPARATOR)
+    if not body or not signature:
+        return None
+    try:
+        import json
+
+        data = json.loads(_unb64url(body))
+    except (binascii.Error, ValueError):
+        return None
+    if not isinstance(data, dict) or data.get("kind") != kind:
+        return None
+    public_key = keyring.get(str(data.get("key_id") or ""))
+    if not public_key or not identity.verify(public_key, canonical_bytes(data), signature):
+        return None
+    return data
+
+
+def verify_roster(
+    token: str,
+    keyring: dict[str, str],
+    *,
+    now: datetime | None = None,
+    grace: timedelta = DEFAULT_GRACE,
+) -> Roster | None:
+    """A roster that verifies and has not lapsed past the grace window."""
+    data = read_signed(token, keyring, ROSTER)
+    if data is None:
+        return None
+    try:
+        if (now or datetime.now(timezone.utc)) > _parse_stamp(str(data["expires_at"])) + grace:
+            return None
+        return Roster(
+            organization_id=str(data["organization_id"]),
+            workspaces={
+                str(workspace_id): tuple(
+                    Member(
+                        user_id=str(m["user_id"]),
+                        role=str(m["role"]),
+                        devices=tuple(str(d) for d in m.get("devices") or ()),
+                    )
+                    for m in members
+                )
+                for workspace_id, members in dict(data["workspaces"]).items()
+            },
+        )
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def approval_subject(proposal_id: str, target_artifact_id: str) -> str:
+    """What a confirmation is about, in a form the control plane may hold.
+
+    The control plane keeps no artifact ids (PRD §17.2), so it is asked to
+    confirm a digest of them. A device holding the proposal computes the
+    same digest; the digest itself names neither id.
+    """
+    import hashlib
+
+    fields = {"proposal_id": proposal_id, "target_artifact_id": target_artifact_id}
+    return hashlib.sha256(canonical_bytes(fields)).hexdigest()
+
+
+def approval_matches(
+    token: str,
+    keyring: dict[str, str],
+    *,
+    workspace_id: str,
+    user_id: str,
+    device_id: str,
+    proposal_id: str,
+    target_artifact_id: str,
+) -> bool:
+    """Whether a person confirmed exactly this approval in the console.
+
+    Every field is bound, so a confirmation cannot be moved to another
+    proposal, another version, another person or another machine. It never
+    expires: it is part of the review history, and history does not lapse.
+    """
+    data = read_signed(token, keyring, APPROVAL)
+    return data is not None and (
+        data.get("workspace_id"),
+        data.get("user_id"),
+        data.get("device_id"),
+        data.get("subject"),
+    ) == (workspace_id, user_id, device_id, approval_subject(proposal_id, target_artifact_id))
+
+
 def roles_from_entitlement(
     claims: Claims, workspace_id: str, actor: str | None = None
 ) -> dict[str, str]:

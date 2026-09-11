@@ -709,7 +709,7 @@ def _review_rows(session: Any) -> list[dict[str, Any]]:
                     session,
                     plan_file=plan_file,
                     project=project,
-                    roles=authorization.roles,
+                    authorization=authorization,
                 )
             except Exception:  # noqa: BLE001 - one bad plan must not blank the page
                 logger.warning("could not project review state for %s", plan_file.id)

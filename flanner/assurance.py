@@ -41,7 +41,7 @@ from .database import (
 )
 from .freshness import compute_freshness
 from .frontmatter import read_managed
-from .workflow import BLOCK, DEFAULT_POLICY, Policy
+from .workflow import BLOCK, Policy
 
 # Freshness statuses that mean the plan may no longer describe the code.
 _DOUBTFUL = frozenset({"suspect", "stale"})
@@ -343,7 +343,7 @@ def assess(
     project: ProjectModel,
     plan_file: PlanFileModel,
     roles: dict[str, str] | None = None,
-    policy: Policy = DEFAULT_POLICY,
+    policy: Policy | None = None,
 ) -> Assurance:
     """Judge one plan against its code and its review history."""
     version = get_version(session, plan_file.id, None)
@@ -359,10 +359,12 @@ def assess(
     # status. Note `roles or ...` would be wrong: the local placeholder is
     # an empty mapping that answers for every actor.
     authorization = authz.resolve(project)
+    policy = policy or authorization.policy
     state = workflow.project(
         load_review_events(session, str(plan_file.id)),
         roles if roles is not None else authorization.roles,
         policy,
+        verifier=authorization.verifier,
     )
 
     # Prefer the team's accepted baseline; fall back to the newest local

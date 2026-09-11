@@ -48,6 +48,9 @@ class Session:
     # other directly. Empty means the transport's own defaults, which is
     # also what an older control plane that never sends one produces.
     relay_url: str = ""
+    # Every member of this device's workspaces, signed by the control plane.
+    # Empty from a control plane that does not send one.
+    roster: str = ""
 
     def store(self) -> EntitlementStore:
         return EntitlementStore(token=self.entitlement, keyring=self.keyring)
@@ -74,6 +77,7 @@ class Session:
             "keyring": self.keyring,
             "device_keys": self.device_keys,
             "relay_url": self.relay_url,
+            "roster": self.roster,
         }
 
 
@@ -97,6 +101,7 @@ def load() -> Session | None:
             keyring=dict(data.get("keyring") or {}),
             device_keys=dict(data.get("device_keys") or {}),
             relay_url=str(data.get("relay_url") or ""),
+            roster=str(data.get("roster") or ""),
         )
     except (OSError, ValueError, KeyError, TypeError):
         # A corrupt cache is indistinguishable from never having logged in,

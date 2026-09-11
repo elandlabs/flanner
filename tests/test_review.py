@@ -339,17 +339,21 @@ def a_signed_entitlement(role, *, workspace, user="maria"):
 
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
+    from flanner import identity
     from flanner import session as cache
     from flanner.artifacts import canonical_bytes
     from flanner.entitlements import Claims, WorkspaceCapability, encode_token
     from flanner.identity import public_key_b64, sign
 
+    # The id of the key that signs events here, as it is for a real device.
+    # A made-up one would name a device that owns none of the events.
+    device = identity.device_id()
     key = Ed25519PrivateKey.generate()
     now = datetime.now(timezone.utc)
     claims = Claims(
         organization_id="org_1",
         user_id=user,
-        device_id="dev_abc",
+        device_id=device,
         key_id="sk_1",
         issued_at=now.isoformat().replace("+00:00", "Z"),
         expires_at=(now + timedelta(hours=1)).isoformat().replace("+00:00", "Z"),
@@ -360,13 +364,38 @@ def a_signed_entitlement(role, *, workspace, user="maria"):
     cache.save(
         cache.Session(
             endpoint="https://api.example.test",
-            device_id="dev_abc",
+            device_id=device,
             organization_id="org_1",
             user_id=user,
             entitlement=encode_token(claims, sign(canonical_bytes(claims.to_dict()), key)),
             keyring={"sk_1": public_key_b64(key.public_key())},
         )
     )
+    return key
+
+
+def a_console_confirmation(key, *, workspace, proposal, target, user="maria"):
+    """What the console signs once the approver agrees, for this device."""
+    import base64
+
+    from flanner import identity
+    from flanner.artifacts import canonical_bytes
+    from flanner.entitlements import APPROVAL, approval_subject
+    from flanner.identity import sign
+
+    data = canonical_bytes(
+        {
+            "kind": APPROVAL,
+            "key_id": "sk_1",
+            "organization_id": "org_1",
+            "workspace_id": workspace,
+            "user_id": user,
+            "device_id": identity.device_id(),
+            "subject": approval_subject(proposal, target),
+            "confirmed_at": "2026-09-11T00:00:00Z",
+        }
+    )
+    return base64.urlsafe_b64encode(data).decode().rstrip("=") + "." + sign(data, key)
 
 
 def join(session, proj, workspace="ws_core"):
@@ -406,16 +435,21 @@ def test_a_maintainer_carries_the_proposal_all_the_way(project, plan):
     session, proj = project
     plan_file, _ = plan
     workspace = join(session, proj)
-    a_signed_entitlement(MAINTAINER, workspace=workspace)
+    key = a_signed_entitlement(MAINTAINER, workspace=workspace)
 
-    review.propose(session, project=proj, plan_file=plan_file)
-    state = review.status(session, plan_file=plan_file, project=proj)
+    proposed = review.propose(session, project=proj, plan_file=plan_file)
     result = review.decide(
         session,
         project=proj,
         plan_file=plan_file,
-        proposal_id=next(iter(state.proposals)),
+        proposal_id=proposed.event.event_id,
         action=APPROVE,
+        confirmation=a_console_confirmation(
+            key,
+            workspace=workspace,
+            proposal=proposed.event.event_id,
+            target=proposed.event.payload["target_artifact_id"],
+        ),
     )
     assert result.accepted is not None, result.reason
 

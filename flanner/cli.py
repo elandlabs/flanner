@@ -2670,7 +2670,7 @@ def _note_authorization(authorization: Any) -> None:
     """
     if not authorization.enforced:
         console.print(f"review here is advisory: {authorization.reason}", style="dim")
-    elif not authorization.roles:
+    elif authorization.role is None:
         console.print(f"WARN cannot authorize review: {authorization.reason}", style="yellow")
 
 
@@ -4335,7 +4335,7 @@ def review_decide(
 ) -> None:
     """Approve, reject, request changes on, or withdraw a proposal"""
     from . import authz
-    from .review import decide, status
+    from .review import decide, needs_confirmation, status
 
     session = _require_session()
     proj, plan_file = _resolve_plan(session, project, plan_name)
@@ -4354,6 +4354,19 @@ def review_decide(
             raise SystemExit(1)
         proposal = open_ones[0].proposal_id
 
+    # Where review is enforced, the approver confirms in the console before
+    # anything is recorded.
+    confirmation = None
+    if decision == "approve":
+        authorization = authz.resolve(proj, actor=actor)
+        view = status(session, plan_file=plan_file, authorization=authorization).proposals.get(
+            proposal
+        )
+        if view is not None and needs_confirmation(authorization, view):
+            confirmation = _confirm_in_console(
+                plan_name, authorization.workspace_id, proposal, view.target_artifact_id
+            )
+
     try:
         result = decide(
             session,
@@ -4362,6 +4375,7 @@ def review_decide(
             proposal_id=proposal,
             action=decision,
             actor=actor,
+            confirmation=confirmation,
         )
     # PermissionError too: a refusal is an answer, and it used to surface as
     # a traceback because only ValueError was caught.
@@ -4380,6 +4394,49 @@ def review_decide(
     # having run status, and "Recorded approve" on its own does not
     # distinguish a decision that binds from one that is a rehearsal.
     _note_authorization(authz.resolve(proj))
+
+
+#: How often to ask the console whether the approver has answered.
+APPROVAL_POLL_SECONDS = 2.0
+
+
+def _confirm_in_console(plan_name: str, workspace_id: str, proposal_id: str, target: str) -> str:
+    """Wait for the approver to confirm in the console. Returns its signed record.
+
+    Nothing on this machine can show a person approved: an agent with a
+    shell runs this command as easily as they do. A browser signed in as
+    the approver can, so the answer comes from there.
+    """
+    from . import account
+
+    try:
+        opened = account.request_approval(
+            workspace_id=workspace_id, proposal_id=proposal_id, target_artifact_id=target
+        )
+    except account.SessionError as e:
+        console.print(f"ERROR could not ask the console to confirm: {e}", style="red")
+        raise SystemExit(1) from None
+
+    console.print(f"\nApproving '{plan_name}' here needs you to confirm it in the console.")
+    console.print(f"  Open: {opened['url']}", markup=False)
+    console.print(f"  Check the page shows the code {opened['code']}", style="cyan")
+    console.print("Waiting for your answer. Ctrl-C stops waiting, recording nothing.", style="dim")
+    while True:
+        time.sleep(APPROVAL_POLL_SECONDS)
+        try:
+            answer = account.approval_status(str(opened["request_id"]))
+        except account.SessionError as e:
+            console.print(f"ERROR could not hear back from the console: {e}", style="red")
+            raise SystemExit(1) from None
+        state = answer.get("state")
+        if state == "confirmed":
+            return str(answer.get("confirmation") or "")
+        if state != "pending":
+            console.print(
+                f"ERROR the approval was {state} in the console. Nothing was recorded.",
+                style="red",
+            )
+            raise SystemExit(1)
 
 
 def _print_comments(session: Session, plan_file: Any) -> None:
@@ -6150,8 +6207,8 @@ def _report_access(proj: ProjectModel) -> None:
     from . import authz
 
     authorization = authz.resolve(proj)
-    if authorization.roles:
-        console.print(f"You hold: {authorization.roles[authorization.actor]}", style="green")
+    if authorization.role is not None:
+        console.print(f"You hold: {authorization.role}", style="green")
     else:
         console.print(f"No access yet: {authorization.reason}", style="yellow")
 
@@ -6219,7 +6276,7 @@ def join(
     from .database import ProjectModel
 
     probe = authz.resolve(ProjectModel(name=proj.name, workspace_id=workspace_id))
-    if not probe.roles:
+    if probe.role is None:
         console.print(f"ERROR No access to {workspace_id}: {probe.reason}", style="red")
         console.print("Nothing was changed.", style="dim")
         console.print(
