@@ -7,6 +7,27 @@ versioning follows [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **One action history.** Every write through the CLI, the web UI or an agent
+  is recorded with an id, where it came from, and the person it was for.
+  `flanner actions list` and the Actions page show the same record, and an
+  agent's reply carries the id. Ids and closed vocabularies are kept; a plan
+  body, a memory or a piece of evidence never is.
+- **Agents can ask for risky actions, and only ask.** `request_action` covers
+  installing, rolling back, sharing and importing a skill, and restoring a
+  memory. It stores a preview and changes nothing. You apply or decline it
+  with `flanner actions apply` or on the Actions page, and it is refused as
+  stale if what the preview described has changed since.
+- **Agents can draft skills for review.** `skills_submit_evidence`,
+  `skills_propose` and `skills_revise` create evidence and drafts. Evidence is
+  labelled as the agent's own account, and no tool approves or installs.
+- **One setup check.** `flanner status` now also shows the tools advertised,
+  the project, capture mode, whose skill use is watched, and peers.
+  `project_context` gives an agent the same check.
+- **A harness for automatic tool use**, in `benchmarks/agent_tool_use`. It
+  scores recall, capture judgment, quietness, choosing the right project,
+  self-approval and recovery for Claude Code and Codex, from the calls
+  flanner logged. No results have been recorded yet.
+
 - **`flanner init` asks whether to record which skills your agents use**, and
   Enter means yes. Opt-in made the feature useless: the counts only mean
   something over a period, so a switch nobody knew about got turned on the day
@@ -46,6 +67,11 @@ versioning follows [SemVer](https://semver.org/).
   unless told otherwise (`--limit 0` for everything) and say when the list
   was cut. A table taller than the terminal is shown through the system
   pager when stdout is a terminal; piped output is unchanged.
+
+### Changed
+- **Evaluations say what they are.** `flanner skills eval` stores comparison
+  results that somebody else produced, and every report now says flanner ran
+  none of them. Running comparisons is on the roadmap.
 
 ### Security
 - **A teammate's review counts, and only as the person who signed it.** A
