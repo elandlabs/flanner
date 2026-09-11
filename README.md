@@ -327,6 +327,9 @@ Planned next:
 - Full-text search across plan bodies. The command palette indexes names
   today; the text inside a plan is not searchable yet.
 - Links out to product trackers, chat, and second brains like Notion
+- Running skill comparisons, not only storing them. `flanner skills eval`
+  records results that a harness or a person produced; it does not yet run a
+  suite against a model and a harness itself.
 - Observation for agents other than Claude Code, once there is an interface
   worth trusting. Skills reports usage as unknown rather than zero until
   then.

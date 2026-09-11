@@ -517,14 +517,17 @@ OPERATIONS: tuple[Operation, ...] = (
         "Record evaluation cases and results",
         "write",
         cli=("skills eval add-case", "skills eval add-profile", "skills eval record"),
-        why=f"{NOT_YET} Flanner records comparisons; it does not run them.",
+        why=(
+            f"{NOT_YET} Flanner stores comparison results and does not run them. "
+            "Running them is on the roadmap."
+        ),
     ),
     _op(
         "skills",
         "See the evaluation matrix",
         "read",
         cli=("skills eval matrix",),
-        why=NOT_YET,
+        why=f"{NOT_YET} It shows results somebody else produced. Flanner ran none of them.",
     ),
     # --- mesh ----------------------------------------------------------------
     _op(

@@ -45,6 +45,7 @@ RESULTS = (PASSED, FAILED, ERROR, SKIPPED)
 #: Printed on every comparison. Shortening it would be the whole failure
 #: mode of this feature.
 LIMITS = (
+    "Flanner stored these results. It ran none of them, and nothing here calls a model.",
     "A result here is about these fixtures in this environment. It is not "
     "a claim about production.",
     "A model is not an agent: an endpoint result does not show how a skill "

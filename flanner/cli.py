@@ -3848,7 +3848,7 @@ def skills_reject(proposal_id: str, actor: str, note: str) -> None:
 
 @skills.group("eval")
 def skills_eval_group() -> None:
-    """Compare a candidate skill against a baseline on tasks you defined"""
+    """Store comparison results you produced elsewhere; flanner runs none of them"""
 
 
 @skills_eval_group.command("add-case")
@@ -3971,7 +3971,7 @@ def skills_eval_record(
 @click.argument("suite")
 @click.option("--json", "as_json", is_flag=True, help="Machine-readable matrix")
 def skills_eval_matrix(suite: str, as_json: bool) -> None:
-    """Every fixture against every profile and version, gaps included"""
+    """Every stored result, fixture by profile by version, with the gaps shown"""
     _open_store()
     from . import skills_eval
 
