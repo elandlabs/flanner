@@ -1481,17 +1481,20 @@ code { overflow-wrap: anywhere; }
 
 /* ------------------------------------------------------------ icons */
 
-/* Phosphor regular, inlined by `_icon.html`. Drawn rather than typed:
-   every one of these used to be a Unicode character the UI font does not
-   have, so each arrived at whatever size and baseline the machine's
-   fallback font gave it. Measured across the old sidebar, ink heights ran
-   from 5.25px to 10.25px and baselines sat 1.88px apart.
+/* Lucide, inlined by `_icon.html`, the same pack the marketing site
+   imports. Drawn rather than typed: every one of these used to be a
+   Unicode character the UI font does not have, so each arrived at whatever
+   size and baseline the machine's fallback font gave it. Measured across
+   the old sidebar, ink heights ran from 5.25px to 10.25px and baselines
+   sat 1.88px apart.
 
-   `currentColor` on the fill, so a row's own colour reaches the drawing
-   and the active state needs no second rule. `flex: none` because an icon
-   beside a long label is the thing a flex row would otherwise squeeze. */
+   Stroked artwork. `fill: none` has to be said here as well as on the
+   element, because a stylesheet beats a presentation attribute: a bare
+   `fill: currentColor` on this class would paint every outline solid.
+   `stroke: currentColor` lets a row's own colour reach the drawing, so the
+   active state needs no second rule. */
 .ico {
-  flex: none; fill: currentColor;
+  flex: none; fill: none; stroke: currentColor;
   display: inline-block; vertical-align: -0.18em;
 }
 
