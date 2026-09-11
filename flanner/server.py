@@ -786,6 +786,290 @@ def get_plan_workflow_status_tool(plan_file_id: str) -> dict[str, Any]:
     }
 
 
+# --- where you are: project, skills and the mesh, read-only -----------------
+#
+# Nothing below writes to the catalog, creates a device key, or touches the
+# network, so an agent may call any of them without asking. The Skills page
+# and `flanner skills scan` record the scan they run; these do not, because
+# an agent asking what is installed is not somebody adopting it.
+
+
+def _here() -> Any:
+    """The git root of the directory this server runs in, or None."""
+    from pathlib import Path
+
+    from .git_integration import find_git_root
+
+    root = find_git_root(str(Path.cwd()))
+    return Path(root) if root else None
+
+
+def _iso(stamp: Any) -> str | None:
+    """A timestamp as ISO text. The catalog stores naive UTC."""
+    if stamp is None:
+        return None
+    return stamp.isoformat() if stamp.tzinfo else stamp.isoformat() + "Z"
+
+
+def _watching(session: Any, project_root: Any) -> list[dict[str, Any]]:
+    """Which agents' skill use is recorded for this project."""
+    from pathlib import Path
+
+    from . import skills_observe
+
+    if project_root is None:
+        return []
+    here = Path(project_root).resolve()
+    return [
+        {"agent": scope["agent"], "observing": scope["observing"]}
+        for scope in skills_observe.status(session)["scopes"]
+        if Path(scope["project_root"]).resolve() == here
+    ]
+
+
+@mcp.tool()
+def project_context() -> dict[str, Any]:
+    """
+    Where you are, before you act: the flanner project this directory
+    belongs to, whether it has joined a workspace and under whose
+    authority, what memory will keep, whose skill use is being watched, and
+    which feature groups are switched on.
+
+    Call this first when you are unsure which project you are in, and
+    before a write whose outcome depends on permissions. It reads local
+    state only: no network, and nothing is created.
+    """
+    ensure_database()
+    session = get_session()
+    from . import authz, features, memory_ops
+    from . import session as cache
+
+    held = cache.load()
+    verdict = held.status() if held is not None else None
+    context: dict[str, Any] = {
+        "project": None,
+        "signed_in": held is not None,
+        "user_id": held.user_id if held is not None else None,
+        "entitlement": None
+        if verdict is None
+        else {
+            "status": verdict.status,
+            "usable": verdict.usable,
+            "reason": verdict.reason,
+            "expires_at": verdict.claims.expires_at if verdict.claims else None,
+        },
+        "features": {"integrations": features.integrations_enabled()},
+    }
+
+    project = memory_ops.resolve_project(session)
+    if project is None:
+        context["next"] = (
+            "This directory is not a flanner project. initialize_project_tool "
+            "adopts the repository; memory_recall still searches personal memory."
+        )
+        return context
+
+    authorization = authz.resolve(project)
+    context["project"] = {
+        "id": str(project.id),
+        "name": project.name,
+        "project_root": project.project_root,
+        "plan_directory": project.plan_directory,
+        "workspace_id": project.workspace_id,
+    }
+    context["review"] = {
+        # Enforced means roles come from a signed entitlement. Solo review
+        # is advisory: it records decisions and binds nobody.
+        "enforced": authorization.enforced,
+        "acting_as": authorization.actor,
+        "your_role": authorization.roles.get(authorization.actor),
+        "reason": authorization.reason,
+    }
+    try:
+        policy = memory_ops.policy_for(project)
+        context["memory"] = {
+            "capture_mode": policy.capture_mode,
+            "allow_categories": list(policy.allow_categories),
+            "require_approval": list(policy.require_approval),
+        }
+    except Exception as error:  # noqa: BLE001 - a bad policy file is reported, not raised
+        context["memory"] = {"error": str(error)}
+    context["skills_watching"] = _watching(session, project.project_root)
+    return context
+
+
+@mcp.tool()
+def skills_report(name: str = "", agent: str = "") -> dict[str, Any]:
+    """
+    The skills your agents would load here, which copy of each one wins,
+    and what is wrong with them.
+
+    Without a name: a summary, every finding, and one short row per
+    package. With a name: every copy of that skill, which one loads, the
+    files in the copy that loads, and how any shadowed copy differs from
+    it. Call it before editing a skill, so you edit the copy that loads.
+
+    agent narrows the scan to one agent, such as claude-code or codex.
+    Read-only: it reads the skill directories and records nothing.
+    """
+    from pathlib import Path
+
+    from . import skills_ops
+
+    root = _here()
+    try:
+        packages = skills_ops.scan(root, agent or None)
+        report = skills_ops.report(root, agent or None, packages=packages)
+    except Exception as error:  # noqa: BLE001 - an unknown agent is an answer
+        return {"error": True, "message": str(error)}
+
+    def row(package: dict[str, Any], *, full: bool = False) -> dict[str, Any]:
+        description = package.get("description") or ""
+        if not full and len(description) > 160:
+            description = description[:157] + "..."
+        return {
+            "name": package["name"],
+            "agent": package["agent"],
+            "scope": package["scope"],
+            "plugin": package.get("plugin"),
+            "loads": package["effective"],
+            "directory": str(package["directory"]),
+            "files": package["file_count"],
+            "manifest_hash": package["manifest_hash"],
+            "description": description,
+        }
+
+    if not name:
+        return {
+            "project_root": report["project_root"],
+            "summary": report["summary"],
+            "findings": report["findings"],
+            "packages": [row(p) for p in report["packages"]],
+            "notes": report["coverage"]["notes"],
+        }
+
+    copies = [p for p in report["packages"] if p["name"] == name]
+    if not copies:
+        return {
+            "error": True,
+            "message": f"no skill named {name!r} is visible from here",
+            "known": sorted({p["name"] for p in report["packages"]})[:50],
+        }
+    detail: dict[str, Any] = {
+        "name": name,
+        "copies": [row(c, full=True) for c in copies],
+        "findings": [f for f in report["findings"] if f.get("skill") == name],
+    }
+    loads = [c for c in copies if c["effective"]]
+    if loads:
+        loaded = loads[0]
+        here = Path(str(loaded["directory"]))
+        detail["files"] = skills_ops.contents(here)
+        detail["differences"] = []
+        for other in copies:
+            same = other["manifest_hash"] == loaded["manifest_hash"]
+            if other is loaded or other["agent"] != loaded["agent"] or same:
+                continue
+            change = skills_ops.compare(here, Path(str(other["directory"])))
+            detail["differences"].append(
+                {
+                    "directory": str(other["directory"]),
+                    "differing_files": change["differing"],
+                    "only_in_the_copy_that_loads": change["only_left"],
+                    "only_in_this_copy": change["only_right"],
+                }
+            )
+    return detail
+
+
+@mcp.tool()
+def skills_usage(days: int = 30) -> dict[str, Any]:
+    """
+    Which skills were actually invoked in this project in the last `days`
+    days, by which model, whether anything was watching at the time, and
+    what that suggests looking at.
+
+    When `watching` is empty, skill use is not being recorded here, so an
+    empty usage list means nothing was recorded, not that nothing was used.
+    Read-only.
+    """
+    ensure_database()
+    session = get_session()
+    from . import skills_observe
+
+    root = _here()
+    days = max(1, min(int(days), 365))
+    usage = skills_observe.usage(session, root, days)
+    return {
+        "usage": usage,
+        "attention": skills_observe.attention(session, root, days, report=usage),
+        "watching": _watching(session, root),
+    }
+
+
+@mcp.tool()
+def mesh_status() -> dict[str, Any]:
+    """
+    This device's place in the mesh: who it is signed in as, the
+    workspaces it may enter and in what role, the peers whose work it can
+    verify and when that work last arrived, and skill packages sent between
+    devices.
+
+    Read-only and offline. It reads this device's cached session and
+    catalog, never contacts a peer or the control plane, and creates no
+    device key. So a peer's last arrival is when its work reached this
+    device, not whether that peer is online now.
+    """
+    ensure_database()
+    session = get_session()
+    from . import session as cache
+    from . import skills_mesh
+    from .database import last_received_by_device
+
+    held = cache.load()
+    if held is None:
+        return {
+            "signed_in": False,
+            "message": (
+                "This device is not signed in to a mesh. Everything local works "
+                "without one; `flanner login` joins one."
+            ),
+        }
+    verdict = held.status()
+    claims = verdict.claims
+    arrived = last_received_by_device(session)
+    transfers = skills_mesh.transfers(session)
+    return {
+        "signed_in": True,
+        "device_id": held.device_id,
+        "user_id": held.user_id,
+        "organization_id": held.organization_id,
+        "entitlement": {
+            "status": verdict.status,
+            "usable": verdict.usable,
+            "reason": verdict.reason,
+            "expires_at": claims.expires_at if claims else None,
+            "plan": claims.plan if claims else None,
+            "features": list(claims.features) if claims else [],
+        },
+        "workspaces": [
+            {"workspace_id": c.workspace_id, "role": c.role}
+            for c in (claims.workspace_capabilities if claims else ())
+        ],
+        "peers": [
+            {
+                "device_id": device,
+                "this_device": device == held.device_id,
+                "work_last_arrived": _iso(arrived.get(device)),
+            }
+            for device in sorted(held.device_keys or {})
+        ],
+        "skill_transfers": transfers[:50],
+        "skill_transfers_total": len(transfers),
+        "skill_channels": skills_mesh.channels(session),
+    }
+
+
 # JIRA Integration Tools
 
 

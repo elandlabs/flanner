@@ -189,6 +189,15 @@ ALLOWED = {
         # read tools call into `database` and `storage`.
         "memory_ops",
         "memory_policy",
+        # The read-only Skills, Mesh and context tools. Same reasoning as
+        # recall: the report, the usage and the authority are domain logic
+        # the CLI and the web page already call. `account` stays out, which
+        # is what keeps these off the network.
+        "authz",
+        "session",
+        "skills_ops",
+        "skills_observe",
+        "skills_mesh",
     },
     # The web UI reads freshness and MCP registration state so the Freshness
     # and Settings pages cannot disagree with what the CLI prints. Both are
