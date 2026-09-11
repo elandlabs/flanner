@@ -2033,6 +2033,47 @@ def _claude_row(claude_status: dict[str, Any]) -> Text:
     return registered
 
 
+def _setup_rows(setup: dict[str, Any]) -> list[tuple[str, Any]]:
+    """The half of the setup check `status` did not already show."""
+    tools = setup["tools"]
+    shown = f"{tools['count']} advertised"
+    if tools["integrations"]:
+        shown += ", Linear and Jira included"
+    rows: list[tuple[str, Any]] = [("Tools", Text(shown, style="value"))]
+
+    project = setup["project"]
+    if project is None:
+        rows.append(("Project", Text("not a flanner project here", style="muted")))
+    else:
+        rows.append(("Project", Text(project["name"], style="value")))
+        rows.append(("Capture", Text(str(setup["capture_mode"]), style="value")))
+        watched = [scope["agent"] for scope in setup["watching"] if scope["observing"]]
+        rows.append(
+            (
+                "Watching",
+                Text(", ".join(watched), style="value")
+                if watched
+                else Text("no agent's skill use", style="muted"),
+            )
+        )
+
+    peers = setup["peers"]
+    if peers["signed_in"]:
+        rows.append(
+            (
+                "Peers",
+                Text(
+                    f"{peers['known_devices']} other device(s) known, "
+                    f"signed in as {peers['user_id']}",
+                    style="value",
+                ),
+            )
+        )
+    else:
+        rows.append(("Peers", Text("not signed in", style="muted")))
+    return rows
+
+
 @cli.command()
 def status() -> None:
     """Show server status"""
@@ -2045,6 +2086,10 @@ def status() -> None:
     rows.append(("Claude Code", _claude_code_row()))
     rows.append(("Codex", _codex_row()))
     rows.append(("Desktop config", Text(str(claude_status["config_path"]), style="muted")))
+    if (get_mcp_dir() / "data.db").exists():
+        from . import setup_check
+
+        rows.extend(_setup_rows(setup_check.check(get_session())))
 
     console.print()
     console.print(tui.fields(rows))

@@ -815,23 +815,7 @@ def _iso(stamp: Any) -> str | None:
     """A timestamp as ISO text. The catalog stores naive UTC."""
     if stamp is None:
         return None
-    return stamp.isoformat() if stamp.tzinfo else stamp.isoformat() + "Z"
-
-
-def _watching(session: Any, project_root: Any) -> list[dict[str, Any]]:
-    """Which agents' skill use is recorded for this project."""
-    from pathlib import Path
-
-    from . import skills_observe
-
-    if project_root is None:
-        return []
-    here = Path(project_root).resolve()
-    return [
-        {"agent": scope["agent"], "observing": scope["observing"]}
-        for scope in skills_observe.status(session)["scopes"]
-        if Path(scope["project_root"]).resolve() == here
-    ]
+    return str(stamp.isoformat() if stamp.tzinfo else stamp.isoformat() + "Z")
 
 
 @mcp.tool()
@@ -848,7 +832,7 @@ def project_context() -> dict[str, Any]:
     """
     ensure_database()
     session = get_session()
-    from . import authz, features, memory_ops
+    from . import authz, features, memory_ops, setup_check
     from . import session as cache
 
     held = cache.load()
@@ -866,6 +850,9 @@ def project_context() -> dict[str, Any]:
             "expires_at": verdict.claims.expires_at if verdict.claims else None,
         },
         "features": {"integrations": features.integrations_enabled()},
+        # The same check `flanner status` prints: agents registered, tools,
+        # project, capture mode, watching and peers, in one place.
+        "setup": setup_check.check(session),
     }
 
     project = memory_ops.resolve_project(session)
@@ -901,7 +888,7 @@ def project_context() -> dict[str, Any]:
         }
     except Exception as error:  # noqa: BLE001 - a bad policy file is reported, not raised
         context["memory"] = {"error": str(error)}
-    context["skills_watching"] = _watching(session, project.project_root)
+    context["skills_watching"] = setup_check.watching(session, project.project_root)
     return context
 
 
@@ -1002,7 +989,7 @@ def skills_usage(days: int = 30) -> dict[str, Any]:
     """
     ensure_database()
     session = get_session()
-    from . import skills_observe
+    from . import setup_check, skills_observe
 
     root = _here()
     days = max(1, min(int(days), 365))
@@ -1010,7 +997,7 @@ def skills_usage(days: int = 30) -> dict[str, Any]:
     return {
         "usage": usage,
         "attention": skills_observe.attention(session, root, days, report=usage),
-        "watching": _watching(session, root),
+        "watching": setup_check.watching(session, str(root) if root else None),
     }
 
 

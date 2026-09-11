@@ -177,6 +177,17 @@ ALLOWED = {
         "skills_learn",
     },
     "claude_integration": set(),
+    # One answer to "is flanner set up here?", shown by `status` and by the
+    # agent's context tool. Local reads only.
+    "setup_check": FOUNDATION
+    | {"claude_integration", "database", "memory_ops", "operations", "session", "skills_observe"},
+    # The one history. Needs the table, and the cached session to say who.
+    "actions": {"database", "session"},
+    # Previews and applies what an agent may only ask for. Reaches the same
+    # domain functions the CLI and web UI call, so applying here does what
+    # doing it there does.
+    "requested_actions": FOUNDATION
+    | {"actions", "database", "memory_ops", "skills_manage", "skills_mesh", "skills_ops"},
     # The list of every operation and the surfaces that offer it. Data only,
     # imported by the tests that check it against the CLI, web app and MCP
     # server, and by nothing that would make it a dependency.
@@ -205,6 +216,7 @@ ALLOWED = {
         "skills_ops",
         "skills_observe",
         "skills_mesh",
+        "setup_check",
     },
     # The web UI reads freshness and MCP registration state so the Freshness
     # and Settings pages cannot disagree with what the CLI prints. Both are
@@ -290,6 +302,8 @@ ALLOWED = {
     "cli": FOUNDATION
     | {
         "tui",
+        "actions",
+        "setup_check",
         "skills_ops",
         "skills_observe",
         "skills_manage",
