@@ -857,6 +857,7 @@ def memory_remember(
                     "Run `flanner init` in the repository, or use scope='personal'."
                 ),
             }
+        memory_ops.refuse_when_capture_is_off(project)
         memory, created = memory_ops.remember(
             session,
             content=content,

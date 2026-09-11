@@ -1264,6 +1264,21 @@ def policy_for(project: ProjectModel | None) -> Policy:
     return memory_policy.load(project.project_root if project else None, home=flanner_home())
 
 
+def refuse_when_capture_is_off(project: ProjectModel | None) -> None:
+    """Stop a new memory where the policy says nothing is captured.
+
+    `consider` already refused, but `remember` did not, so switching capture
+    off still let an agent save anything it was told to. The policy file
+    promises both are refused. Correcting or approving an existing memory is
+    not new capture and is left alone.
+    """
+    if policy_for(project).capture_mode == memory_policy.OFF:
+        raise ValidationError(
+            "capture is off here, so nothing new is remembered. "
+            "`flanner mem mode` shows where that is set."
+        )
+
+
 # --- attachments --------------------------------------------------------------
 #
 # A memory says why something matters; an attachment is the evidence. The

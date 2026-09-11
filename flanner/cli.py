@@ -763,6 +763,7 @@ def mem_remember(
         _no_project(project)
 
     try:
+        memory_ops.refuse_when_capture_is_off(proj)
         memory, created = memory_ops.remember(
             session,
             content=body,

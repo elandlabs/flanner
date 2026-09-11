@@ -62,6 +62,22 @@ def test_remember_then_recall(repo):
     assert json.loads(found.output)["memories"][0]["title"] == "Use advisory locks."
 
 
+def test_remember_is_refused_when_capture_is_off(repo):
+    """The policy file says so, and the agent's tool used to save anyway."""
+    from flanner import services
+
+    runner, where = repo
+    _run(runner, "mem", "mode", "off")
+
+    typed = runner.invoke(cli, ["mem", "remember", "Use advisory locks.", "--category", "decision"])
+    asked = services.memory_remember("Use advisory locks.", "decision")
+
+    assert typed.exit_code == 1
+    assert "capture is off" in typed.output
+    assert asked["error"] is True and "capture is off" in asked["message"]
+    assert json.loads(_run(runner, "mem", "list", "--output", "json").output) == []
+
+
 def test_remember_reads_a_body_from_stdin(repo):
     """So a long memory does not have to survive shell quoting."""
     runner, where = repo
