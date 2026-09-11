@@ -6,7 +6,8 @@ nothing `init` writes for Claude Code lives in the one being checked — so a
 correct setup read as "not registered", on the command somebody runs to
 find out whether it worked. Codex was not mentioned at all, though `init`
 hands it an AGENTS.md block that talks about MCP tools it has no way to
-reach until a file it never heard of is edited.
+reach until a file it never heard of is edited. `setup` now makes that
+edit where it provably cannot clobber anything, and says so where not.
 
 And `init` died with "Aborted!" when nothing was attached to stdin, which
 made the very first command unusable from a script.
@@ -140,20 +141,103 @@ def test_status_reads_codex_config(runner, desktop) -> None:
 # --- setup says the Codex step out loud ---------------------------------------
 
 
-def test_setup_prints_the_codex_lines_it_cannot_write(runner, desktop, monkeypatch) -> None:
-    """No TOML writer on 3.10, and editing somebody's editor config by hand
-    is how the .mcp.json clobbering happened. So the step is shown."""
+@pytest.fixture
+def codex(tmp_path, monkeypatch):
+    """A Codex config path under tmp, and no `claude` or `codex` binary."""
     import shutil
 
-    monkeypatch.setattr(shutil, "which", lambda name: None)  # no `claude` binary here
+    path = tmp_path / ".codex" / "config.toml"
+    monkeypatch.setattr(ci, "codex_config_path", lambda: path)
+    monkeypatch.setattr(shutil, "which", lambda name: None)
+    return path
+
+
+def _collapsed(output: str) -> str:
+    # Rich wraps a long temp path, so compare with whitespace removed.
+    return "".join(output.split())
+
+
+def test_setup_prints_the_codex_lines_when_codex_is_not_installed(runner, desktop, codex) -> None:
+    """Nothing is created for somebody who does not use Codex. `init` sets up
+    every agent by default, and a config directory appearing for a tool that
+    is not installed would be litter. The lines are still shown."""
+    result = runner.invoke(cli, ["setup"])
+
+    assert not codex.exists(), "created a Codex config on a machine without Codex"
+    assert "Codex: not found" in result.output
+    assert "[mcp_servers.flanner]" in result.output
+    assert _collapsed(str(codex)) in _collapsed(result.output)
+
+
+def test_setup_registers_codex_by_appending_its_own_table(runner, desktop, codex) -> None:
+    """The one edit that cannot clobber anything: append, parse, then replace."""
+    import tomllib
+
+    codex.parent.mkdir(parents=True)
+    original = '# mine\nmodel = "gpt-5"\n\n[mcp_servers.other]\ncommand = "x"\n'
+    codex.write_text(original, encoding="utf-8")
 
     result = runner.invoke(cli, ["setup"])
 
-    assert "Codex: not registered" in result.output
-    assert "[mcp_servers.flanner]" in result.output
-    # Whitespace collapsed on both sides: Rich wraps a long temp path.
-    said = "".join(result.output.split())
-    assert "".join(str(ci.codex_config_path()).split()) in said
+    written = codex.read_text(encoding="utf-8")
+    assert "Codex: registered" in result.output
+    assert written.startswith(original), "rewrote what was already there"
+    parsed = tomllib.loads(written)
+    assert parsed["model"] == "gpt-5"
+    assert parsed["mcp_servers"]["other"] == {"command": "x"}
+    assert parsed["mcp_servers"]["flanner"] == {"command": "flanner-mcp"}
+
+
+def test_registering_codex_twice_changes_nothing(runner, desktop, codex) -> None:
+    codex.parent.mkdir(parents=True)
+    runner.invoke(cli, ["setup"])
+    once = codex.read_text(encoding="utf-8")
+
+    result = runner.invoke(cli, ["setup"])
+
+    assert codex.read_text(encoding="utf-8") == once
+    assert "Codex: already registered" in result.output
+
+
+def test_a_codex_config_that_does_not_parse_is_left_exactly_as_it_was(
+    runner, desktop, codex
+) -> None:
+    """Somebody mid-edit, or a file this package cannot read: not ours to fix."""
+    codex.parent.mkdir(parents=True)
+    broken = "[mcp_servers\ncommand = \n"
+    codex.write_text(broken, encoding="utf-8")
+
+    result = runner.invoke(cli, ["setup"])
+
+    assert codex.read_text(encoding="utf-8") == broken
+    assert "does not parse" in result.output
+    assert "[mcp_servers.flanner]" in result.output, "left the user without the lines to add"
+
+
+def test_a_flanner_entry_written_another_way_counts_as_registered(runner, desktop, codex) -> None:
+    """An inline table is as much a registration as a header."""
+    codex.parent.mkdir(parents=True)
+    inline = 'mcp_servers = { flanner = { command = "flanner-mcp" } }\n'
+    codex.write_text(inline, encoding="utf-8")
+
+    result = runner.invoke(cli, ["setup"])
+
+    assert codex.read_text(encoding="utf-8") == inline
+    assert "Codex: already registered" in result.output
+    assert ci.codex_registration() is True
+
+
+def test_an_empty_codex_config_is_filled_not_refused(runner, desktop, codex) -> None:
+    import tomllib
+
+    codex.parent.mkdir(parents=True)
+    codex.write_text("", encoding="utf-8")
+
+    runner.invoke(cli, ["setup"])
+
+    assert tomllib.loads(codex.read_text(encoding="utf-8"))["mcp_servers"]["flanner"] == {
+        "command": "flanner-mcp"
+    }
 
 
 def test_a_registration_file_that_is_not_json_reads_as_not_registered(desktop, tmp_path) -> None:

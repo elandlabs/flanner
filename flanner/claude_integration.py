@@ -452,14 +452,102 @@ command = "flanner-mcp"
 """
 
 
+def _toml_loads() -> Any:
+    """`tomllib.loads`, or None on Python 3.10, which ships no TOML reader."""
+    try:
+        import tomllib
+    except ModuleNotFoundError:  # pragma: no cover - 3.10 only
+        return None
+    return tomllib.loads
+
+
 def codex_registration(server_name: str = "flanner") -> bool:
     """Whether Codex has the server in its config.
 
-    A text check rather than a parse: Python 3.10 ships no TOML reader, and
-    the one line that matters is the table header.
+    Parsed where Python can, so a server declared as a dotted key or an
+    inline table counts as well as a `[mcp_servers.flanner]` header. On
+    3.10 it falls back to looking for the header, which is the form this
+    package writes.
     """
     try:
         text = codex_config_path().read_text(encoding="utf-8")
     except OSError:
         return False
+    loads = _toml_loads()
+    if loads is not None:
+        try:
+            return server_name in (loads(text).get("mcp_servers") or {})
+        except Exception:
+            return False
     return f"[mcp_servers.{server_name}]" in text
+
+
+def codex_installed() -> bool:
+    """Whether Codex looks installed: its home directory, or its binary."""
+    import shutil
+
+    return codex_config_path().parent.is_dir() or shutil.which("codex") is not None
+
+
+def ensure_codex_registration(server_name: str = "flanner") -> tuple[str, str]:
+    """Add flanner to Codex's config, or say exactly why not.
+
+    Returns `(outcome, detail)`, where outcome is `registered`, `already`,
+    `not-installed` or `left-alone`.
+
+    This package once clobbered an agent's config by editing it by hand,
+    which is why Codex used to be report-only. The fix is to make the one
+    edit that cannot clobber anything and to prove it before keeping it:
+    flanner's table is appended, never merged; the result is parsed before
+    it replaces the file; and the replacement is atomic. A file that does
+    not parse to begin with is left exactly as it was.
+
+    Nothing is created for somebody who does not use Codex. `init` sets up
+    every agent by default, and a config directory appearing for a tool
+    that is not installed would be litter.
+    """
+    import os
+    import tempfile
+
+    path = codex_config_path()
+    if not codex_installed():
+        return "not-installed", "Codex was not found on this machine"
+
+    try:
+        text = path.read_text(encoding="utf-8") if path.exists() else ""
+    except OSError as error:
+        return "left-alone", f"{path} could not be read ({error})"
+
+    loads = _toml_loads()
+    if text.strip():
+        if loads is None:
+            if f"[mcp_servers.{server_name}]" in text:
+                return "already", str(path)
+            return "left-alone", "Python 3.10 cannot check a TOML file, so it was not edited"
+        try:
+            existing = loads(text)
+        except Exception:
+            return "left-alone", f"{path} does not parse, so it was not edited"
+        if server_name in (existing.get("mcp_servers") or {}):
+            return "already", str(path)
+
+    separator = "" if not text else ("\n" if text.endswith("\n") else "\n\n")
+    updated = text + separator + CODEX_SNIPPET
+    if loads is not None:
+        try:
+            added = loads(updated)["mcp_servers"][server_name]
+        except Exception:
+            return "left-alone", "adding the entry would not have parsed, so nothing changed"
+        if added.get("command") != "flanner-mcp":
+            return "left-alone", "adding the entry did not read back as written"
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temp = tempfile.mkstemp(dir=path.parent, prefix=".config.", suffix=".toml")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
+            handle.write(updated)
+        os.replace(temp, path)
+    except OSError as error:
+        Path(temp).unlink(missing_ok=True)
+        return "left-alone", f"{path} could not be written ({error})"
+    return "registered", str(path)

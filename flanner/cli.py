@@ -324,13 +324,25 @@ def _register_claude_code() -> None:
 
 
 def _register_codex() -> None:
-    """Report only. Codex's registration is TOML this deliberately does not edit."""
-    from .claude_integration import CODEX_SNIPPET, codex_config_path, codex_registration
+    """Register flanner with Codex, or print exactly what is left to do.
 
-    if codex_registration():
-        console.print("OK Codex: registered", style="green")
+    Written only when it is provably safe: see `ensure_codex_registration`.
+    Every other outcome prints the lines to add and where, so the step is
+    never silently skipped.
+    """
+    from .claude_integration import CODEX_SNIPPET, codex_config_path, ensure_codex_registration
+
+    outcome, detail = ensure_codex_registration()
+    if outcome == "registered":
+        console.print(f"OK Codex: registered in {detail}", style="green")
         return
-    console.print(f"- Codex: not registered. Add to {codex_config_path()}:", style="yellow")
+    if outcome == "already":
+        console.print("OK Codex: already registered", style="green")
+        return
+    if outcome == "not-installed":
+        console.print(f"- Codex: not found. If you use it, add to {codex_config_path()}:", style="yellow")
+    else:
+        console.print(f"- Codex: not registered. {detail}. Add to {codex_config_path()}:", style="yellow")
     for line in CODEX_SNIPPET.splitlines():
         # markup=False: Rich reads "[mcp_servers.flanner]" as a style tag and
         # prints nothing for it, which is the one line that matters.
@@ -1860,7 +1872,9 @@ def _codex_row() -> Text:
     if codex_registration():
         return tui.dot("ok", label="registered")
     row = tui.dot("unknown", label="not registered")
-    row.append(f"  add [mcp_servers.flanner] to {codex_config_path()}", style="muted")
+    row.append("  run ", style="muted")
+    row.append("flanner setup", style="accent")
+    row.append(f", or add [mcp_servers.flanner] to {codex_config_path()}", style="muted")
     return row
 
 
