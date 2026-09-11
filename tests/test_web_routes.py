@@ -828,9 +828,9 @@ def test_every_grid_head_matches_the_columns_its_css_defines():
             if name not in declared:
                 continue
             spans = body.count("<span")
-            assert (
-                spans == declared[name]
-            ), f"{template.name}: .{name} has {spans} spans and {declared[name]} columns"
+            assert spans == declared[name], (
+                f"{template.name}: .{name} has {spans} spans and {declared[name]} columns"
+            )
             checked += 1
             seen.add(name)
     assert checked >= 17, f"only {checked} grid heads found; the pattern must have changed"
@@ -956,7 +956,9 @@ def test_an_empty_state_is_never_a_card_inside_a_card():
         text = template.read_text(encoding="utf-8")
         for call in re.finditer(r"\{%\s*call\s+empty\.(state|inside)\(\s*'([a-z]+)'", text):
             variant, kind = call.group(1), call.group(2)
-            assert kind in EMPTY_KINDS, f"{template.name}: empty.{variant}('{kind}') is not a drawn kind"
+            assert kind in EMPTY_KINDS, (
+                f"{template.name}: empty.{variant}('{kind}') is not a drawn kind"
+            )
 
 
 def test_no_empty_state_still_uses_the_left_aligned_prose_card():
@@ -970,6 +972,7 @@ def test_no_empty_state_still_uses_the_left_aligned_prose_card():
     for template in (WEB_DIR / "templates").glob("*.html"):
         text = template.read_text(encoding="utf-8")
         assert 'class="dim"' not in text, f"{template.name}: the unstyled empty state is back"
+
 
 STYLESHEET_DIR = WEB_DIR / "static/css"
 
@@ -1009,9 +1012,7 @@ def test_no_stylesheet_types_a_glyph_it_cannot_draw():
         # into, where a comma inside a comment joined the selector list.
         # Spaces rather than deletion, so the line numbers still point at
         # the offending declaration.
-        text = re.sub(
-            r"/\*.*?\*/", lambda m: re.sub(r"\S", " ", m.group()), raw, flags=re.S
-        )
+        text = re.sub(r"/\*.*?\*/", lambda m: re.sub(r"\S", " ", m.group()), raw, flags=re.S)
         for match in re.finditer(r"content:\s*([\"'])(.*?)\1", text):
             value = match.group(2)
             line = text[: match.start()].count("\n") + 1
@@ -1092,6 +1093,7 @@ def test_only_unpaged_tables_filter_in_the_browser(client):
         f"the rows. Give the route a `q` instead."
     )
 
+
 TEMPLATE_DIR = WEB_DIR / "templates"
 
 
@@ -1107,6 +1109,9 @@ TEMPLATE_DIR = WEB_DIR / "templates"
 #: without anybody deciding they should be, including a telephone recorder
 #: standing in for a magnifying glass and three diamonds for three
 #: different pages.
+# fmt: off
+# One comment per group. The formatter would put each member on its own
+# line and leave the group's comment on the last one.
 TYPEABLE = {
     "\u2014",  # em dash
     "\u2013",  # en dash
@@ -1122,6 +1127,7 @@ TYPEABLE = {
     "\u00a0",  # non-breaking space
     "\u00e9", "\u00fc", "\u00e8", "\u00e0",  # letters, in prose
 }
+# fmt: on
 
 
 def test_no_template_types_a_glyph_the_font_cannot_draw():
@@ -1148,9 +1154,7 @@ def test_no_template_types_a_glyph_the_font_cannot_draw():
         for number, line in enumerate(text.split("\n"), 1):
             for char in line:
                 if ord(char) > 126 and char not in TYPEABLE:
-                    offenders.append(
-                        f"{template.name}:{number} U+{ord(char):04X} {char!r}"
-                    )
+                    offenders.append(f"{template.name}:{number} U+{ord(char):04X} {char!r}")
     assert not offenders, (
         "typed glyphs the design font does not have:\n  "
         + "\n  ".join(sorted(set(offenders))[:12])

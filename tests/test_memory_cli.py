@@ -69,7 +69,9 @@ def test_remember_is_refused_when_capture_is_off(repo):
     runner, where = repo
     _run(runner, "mem", "mode", "off")
 
-    typed = runner.invoke(cli, ["mem", "remember", "Use advisory locks.", "--category", "decision"])
+    typed = runner.invoke(
+        cli, ["mem", "remember", "Use advisory locks.", "--category", "decision"]
+    )
     asked = services.memory_remember("Use advisory locks.", "decision")
 
     assert typed.exit_code == 1

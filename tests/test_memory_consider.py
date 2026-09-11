@@ -591,9 +591,7 @@ def test_similarity_is_between_nothing_and_everything():
 
 def test_an_agent_cannot_keep_a_category_a_person_must_approve(store, suggesting):
     session, project, repo = store
-    allowing = replace(
-        suggesting, allow_categories=(*suggesting.allow_categories, "preference")
-    )
+    allowing = replace(suggesting, allow_categories=(*suggesting.allow_categories, "preference"))
     outcome = _offer(
         session,
         project,

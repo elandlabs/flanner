@@ -83,7 +83,9 @@ OPERATIONS: tuple[Operation, ...] = (
         "read",
         mcp=("project_context",),
         mcp_since="0.13.0",
-        note="The project, whether review is enforced, what memory keeps, and what is switched on.",
+        note=(
+            "The project, whether review is enforced, what memory keeps, and what is switched on."
+        ),
     ),
     _op(
         "projects",
@@ -342,7 +344,10 @@ OPERATIONS: tuple[Operation, ...] = (
         "Change the capture mode",
         "admin",
         cli=("mem mode",),
-        why="Decides how much your agent may capture. Letting it widen its own permission defeats the setting.",
+        why=(
+            "Decides how much your agent may capture. Letting it widen its own permission "
+            "defeats the setting."
+        ),
     ),
     _op(
         "memory",
@@ -422,7 +427,10 @@ OPERATIONS: tuple[Operation, ...] = (
         "admin",
         cli=("skills observe enable", "skills observe disable"),
         web=("POST /skills/observe",),
-        why="Consent to being watched. An agent switching on its own monitoring would make the setting meaningless.",
+        why=(
+            "Consent to being watched. An agent switching on its own monitoring would make the "
+            "setting meaningless."
+        ),
     ),
     _op(
         "skills",
@@ -437,7 +445,10 @@ OPERATIONS: tuple[Operation, ...] = (
         "Hand over work to learn from, and see what was handed over",
         "write",
         cli=("skills evidence submit", "skills evidence list"),
-        why=f"{NOT_YET} Evidence exists because a person submitted it, which keeps learning from becoming surveillance.",
+        why=(
+            f"{NOT_YET} Evidence exists because a person submitted it, which keeps learning from "
+            f"becoming surveillance."
+        ),
     ),
     _op(
         "skills",
@@ -492,7 +503,10 @@ OPERATIONS: tuple[Operation, ...] = (
         "write",
         cli=("skills channel subscribe", "skills channel unsubscribe"),
         web=("POST /skills/channel",),
-        why="Following notifies you and never installs, so whoever publishes cannot steer what your agent reads.",
+        why=(
+            "Following notifies you and never installs, so whoever publishes cannot steer what "
+            "your agent reads."
+        ),
     ),
     _op(
         "skills",
@@ -525,7 +539,10 @@ OPERATIONS: tuple[Operation, ...] = (
         "Enrol this machine",
         "admin",
         cli=("accept", "login"),
-        why="Generates a key and binds the machine to your account. An agent must never enrol a device.",
+        why=(
+            "Generates a key and binds the machine to your account. An agent must never enrol a "
+            "device."
+        ),
     ),
     _op(
         "mesh",
@@ -575,7 +592,9 @@ OPERATIONS: tuple[Operation, ...] = (
         "Register flanner with your agents",
         "admin",
         cli=("setup", "register", "unregister"),
-        why="Edits where your editors look for tools. An agent must not rewire its own connection.",
+        why=(
+            "Edits where your editors look for tools. An agent must not rewire its own connection."
+        ),
     ),
     _op(
         "local",
@@ -604,7 +623,10 @@ OPERATIONS: tuple[Operation, ...] = (
         "Guard plan files and record skill use from an agent hook",
         "write",
         cli=("hook guard-write", "hook skill-use"),
-        why="Called by the agent's own hook system when it writes a file or uses a skill, not by a person or a tool call.",
+        why=(
+            "Called by the agent's own hook system when it writes a file or uses a skill, not by "
+            "a person or a tool call."
+        ),
     ),
     # --- integrations, behind FLANNER_INTEGRATIONS ---------------------------
     _op(

@@ -434,6 +434,6 @@ def test_the_version_is_derived_rather_than_typed():
     guard that fires on correct code gets deleted rather than heeded.
     """
     source = (PACKAGE / "__init__.py").read_text(encoding="utf-8")
-    assert (
-        "_installed_version(" in source
-    ), "__version__ is no longer read from package metadata; it will drift again"
+    assert "_installed_version(" in source, (
+        "__version__ is no longer read from package metadata; it will drift again"
+    )

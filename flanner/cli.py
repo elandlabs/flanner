@@ -340,9 +340,13 @@ def _register_codex() -> None:
         console.print("OK Codex: already registered", style="green")
         return
     if outcome == "not-installed":
-        console.print(f"- Codex: not found. If you use it, add to {codex_config_path()}:", style="yellow")
+        console.print(
+            f"- Codex: not found. If you use it, add to {codex_config_path()}:", style="yellow"
+        )
     else:
-        console.print(f"- Codex: not registered. {detail}. Add to {codex_config_path()}:", style="yellow")
+        console.print(
+            f"- Codex: not registered. {detail}. Add to {codex_config_path()}:", style="yellow"
+        )
     for line in CODEX_SNIPPET.splitlines():
         # markup=False: Rich reads "[mcp_servers.flanner]" as a style tag and
         # prints nothing for it, which is the one line that matters.
@@ -3727,7 +3731,7 @@ def skills_review(proposal_id: str, against: str | None, as_json: bool) -> None:
     for item in seen["evidence"]:
         label = "reported by the agent" if item["source"] == "agent" else "submitted by you"
         console.print(
-            f"    {_clip(item['summary'] or '(no summary)', 50)} — {label}, " f"{item['outcome']}",
+            f"    {_clip(item['summary'] or '(no summary)', 50)} — {label}, {item['outcome']}",
             style="muted",
         )
     if seen["evidence_expired"]:

@@ -39,10 +39,20 @@ def test_off_is_the_default(off):
     assert features.integrations_enabled() is False
 
 
-@pytest.mark.parametrize("value,expected", [
-    ("1", True), ("true", True), ("TRUE", True), ("yes", True), ("on", True),
-    ("0", False), ("false", False), ("", False), ("maybe", False),
-])
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        ("1", True),
+        ("true", True),
+        ("TRUE", True),
+        ("yes", True),
+        ("on", True),
+        ("0", False),
+        ("false", False),
+        ("", False),
+        ("maybe", False),
+    ],
+)
 def test_the_switch_reads_the_obvious_spellings(monkeypatch, value, expected):
     monkeypatch.setenv(features.INTEGRATIONS_ENV, value)
     assert features.integrations_enabled() is expected
@@ -113,7 +123,10 @@ def _tool_names(enabled: bool) -> list[str]:
         env.pop(features.INTEGRATIONS_ENV, None)
     out = subprocess.run(
         [sys.executable, "-c", _LIST_TOOLS],
-        capture_output=True, text=True, env=env, check=True,
+        capture_output=True,
+        text=True,
+        env=env,
+        check=True,
     )
     return json.loads(out.stdout.strip().splitlines()[-1])
 
@@ -139,8 +152,12 @@ def test_the_tool_functions_are_still_importable_and_tested(off):
     """Hidden, not deleted. The suite still runs against these."""
     from flanner import server
 
-    for name in ("configure_jira_tool", "configure_linear_tool",
-                 "link_plan_to_jira_tool", "link_plan_to_linear_tool"):
+    for name in (
+        "configure_jira_tool",
+        "configure_linear_tool",
+        "link_plan_to_jira_tool",
+        "link_plan_to_linear_tool",
+    ):
         assert callable(getattr(server, name)), name
 
 

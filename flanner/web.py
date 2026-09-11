@@ -37,7 +37,7 @@ from sqlalchemy import func
 from starlette.concurrency import run_in_threadpool
 from starlette.responses import StreamingResponse
 
-from . import __version__, ipc, services
+from . import __version__, features, ipc, services
 from .database import (
     PlanFileModel,
     SkillEvalCaseModel,
@@ -71,7 +71,6 @@ from .freshness import peek as freshness_peek
 from .frontmatter import parse_frontmatter, read_managed
 from .git_integration import find_git_root, update_gitignore, validate_git_repo
 from .linear_utils import generate_linear_issue_url
-from . import features
 from .paging import PER_PAGE_CHOICES, Page, per_page_or_default, window
 from .plan_ops import create_plan, record_new_version
 from .storage import ensure_plan_directory_exists, load_plan_file
@@ -1103,7 +1102,10 @@ async def project_detail(request: Request, project_id: str) -> HTMLResponse:
 
     # Count Linear links per plan so the list can mark linked plans.
     linear_counts: dict[str, int] = {}
-    for row in list_all_linear_links(session, project_uuid) if features.integrations_enabled() else []:
+    linked = (
+        list_all_linear_links(session, project_uuid) if features.integrations_enabled() else []
+    )
+    for row in linked:
         key = str(row["plan_file_id"])
         linear_counts[key] = linear_counts.get(key, 0) + 1
 
@@ -1822,8 +1824,11 @@ async def skills_page(
         rows,
         q,
         lambda pkg: [
-            pkg["name"], pkg["agent"], pkg["scope"],
-            pkg.get("plugin") or "", pkg.get("directory") or "",
+            pkg["name"],
+            pkg["agent"],
+            pkg["scope"],
+            pkg.get("plugin") or "",
+            pkg.get("directory") or "",
             pkg.get("description") or "",
         ],
     )

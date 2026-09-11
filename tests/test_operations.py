@@ -102,7 +102,8 @@ def test_every_web_route_is_registered_or_is_plumbing():
     routes = _web_routes()
     named = set(_named("web"))
     assert named <= routes, {"registry names no such route": sorted(named - routes)}
-    assert routes - PLUMBING <= named, {"routes the registry misses": sorted(routes - PLUMBING - named)}
+    missed = sorted(routes - PLUMBING - named)
+    assert routes - PLUMBING <= named, {"routes the registry misses": missed}
 
 
 def test_the_registry_names_exactly_the_tools_the_server_advertises():
