@@ -47,6 +47,13 @@ class Operation:
     gated: str = ""
     #: What a caller needs to know that the columns do not say.
     note: str = ""
+    #: The first release that advertises this operation's MCP tools, when
+    #: that is later than the operation itself. The site describes the
+    #: published package, so it hides a tool until that release is out.
+    mcp_since: str = ""
+    #: The same, for the note: a rule that has not shipped is not one to
+    #: describe to somebody installing the current release.
+    note_since: str = ""
 
 
 def _op(
@@ -60,8 +67,12 @@ def _op(
     why: str = "",
     gated: str = "",
     note: str = "",
+    mcp_since: str = "",
+    note_since: str = "",
 ) -> Operation:
-    return Operation(domain, action, access, cli, mcp, web, why, gated, note)
+    return Operation(
+        domain, action, access, cli, mcp, web, why, gated, note, mcp_since, note_since
+    )
 
 
 OPERATIONS: tuple[Operation, ...] = (
@@ -71,6 +82,7 @@ OPERATIONS: tuple[Operation, ...] = (
         "Find out where you are",
         "read",
         mcp=("project_context",),
+        mcp_since="0.13.0",
         note="The project, whether review is enforced, what memory keeps, and what is switched on.",
     ),
     _op(
@@ -208,6 +220,7 @@ OPERATIONS: tuple[Operation, ...] = (
             "The decision is recorded as whoever this device is signed in as. Where "
             "review is enforced, an agent may not approve: a person does, at the CLI."
         ),
+        note_since="0.13.0",
     ),
     _op(
         "review",
@@ -308,6 +321,7 @@ OPERATIONS: tuple[Operation, ...] = (
             "An agent relays what the user decided. Categories the policy says a person "
             "must approve are refused through the agent."
         ),
+        note_since="0.13.0",
     ),
     _op(
         "memory",
@@ -389,6 +403,7 @@ OPERATIONS: tuple[Operation, ...] = (
         "read",
         cli=("skills scan", "skills list", "skills inspect", "skills doctor"),
         mcp=("skills_report",),
+        mcp_since="0.13.0",
         web=("GET /skills", "GET /skills/{name}"),
         note="The agent's read records nothing. `flanner skills scan` records by default.",
     ),
@@ -398,6 +413,7 @@ OPERATIONS: tuple[Operation, ...] = (
         "read",
         cli=("skills report", "skills observe status"),
         mcp=("skills_usage",),
+        mcp_since="0.13.0",
     ),
     _op(
         "skills",
@@ -467,6 +483,7 @@ OPERATIONS: tuple[Operation, ...] = (
         "read",
         cli=("skills transfers", "skills channel list"),
         mcp=("mesh_status",),
+        mcp_since="0.13.0",
     ),
     _op(
         "skills",
@@ -497,6 +514,7 @@ OPERATIONS: tuple[Operation, ...] = (
         "read",
         cli=("whoami",),
         mcp=("mesh_status",),
+        mcp_since="0.13.0",
         web=("GET /mesh",),
         note="The agent's view is offline: it reads the cached session and never contacts a peer.",
     ),
@@ -648,6 +666,22 @@ def as_json() -> dict[str, object]:
         "mcp_tool_count": len(ungated),
         "operations": [asdict(op) for op in OPERATIONS],
     }
+
+
+def released_tool_count(version: str) -> int:
+    """How many tools a given release advertises, integrations off."""
+
+    def key(v: str) -> tuple[int, ...]:
+        return tuple(int(part) for part in v.split("."))
+
+    return len(
+        {
+            name
+            for op in OPERATIONS
+            if not op.gated and (not op.mcp_since or key(op.mcp_since) <= key(version))
+            for name in op.mcp
+        }
+    )
 
 
 if __name__ == "__main__":

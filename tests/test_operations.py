@@ -131,3 +131,16 @@ def test_the_export_is_deterministic_and_counts_the_default_tool_list():
     first = json.dumps(operations.as_json(), sort_keys=True)
     assert first == json.dumps(operations.as_json(), sort_keys=True)
     assert operations.as_json()["mcp_tool_count"] == len(_tools(integrations=False))
+
+
+def test_release_markers_are_versions_and_add_up():
+    """The site hides what has not shipped by these markers, so a typo in one
+    would publish a tool early or hide it for good."""
+    import re
+
+    marked = [v for op in operations.OPERATIONS for v in (op.mcp_since, op.note_since) if v]
+    assert all(re.fullmatch(r"\d+\.\d+\.\d+", v) for v in marked), marked
+    newest = max(marked, key=lambda v: tuple(int(p) for p in v.split(".")))
+    total = operations.as_json()["mcp_tool_count"]
+    assert operations.released_tool_count(newest) == total
+    assert operations.released_tool_count("0.0.0") < total
