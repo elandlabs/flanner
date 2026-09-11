@@ -1528,10 +1528,16 @@ def mem_withdraw(memory_id: str, reason: str) -> None:
     console.print()
 
 
+def dispatch(op: str, args: dict[str, Any]) -> dict[str, Any]:
+    """Run a write through the service layer, recorded as done from the CLI."""
+    from .services import dispatch as run
+
+    return run(op, args, surface="cli")
+
+
 def _dispatch_or_exit(op: str, args: dict[str, Any]) -> dict[str, Any]:
     """Run a memory write, or print why it was refused and stop."""
     _open_store()
-    from .services import dispatch
 
     result = dispatch(op, args)
     if result.get("error"):
@@ -1550,6 +1556,134 @@ def _whoami() -> str:
         return getpass.getuser()
     except Exception:  # noqa: BLE001 - a nameless user is still a user
         return "you"
+
+
+@cli.group()
+def actions() -> None:
+    """What was done through the CLI, web UI and agents, and what waits on you"""
+
+
+def _action_or_exit(session: Any, given: str) -> Any:
+    """An action by id, or by the first characters of one."""
+    from . import actions as history
+
+    found = history.get(session, given)
+    if found is None:
+        matches = [
+            row for row in history.recent(session, limit=0) if str(row.id).startswith(given)
+        ]
+        found = matches[0] if len(matches) == 1 else None
+    if found is None:
+        tui.bad(f"No single action matches {given}.")
+        tui.hint(f"  {tui.command('flanner actions list')} shows the ids.")
+        raise SystemExit(1)
+    return found
+
+
+@actions.command("list")
+@click.option("--pending", is_flag=True, help="Only what an agent asked for and nobody decided")
+@click.option("--limit", default=30, show_default=True, help="How many, newest first; 0 for all")
+@click.option("--output", type=click.Choice(["table", "json"]), default="table")
+def actions_list(pending: bool, limit: int, output: str) -> None:
+    """Newest first, with where each came from and who it was for"""
+    import json
+
+    from . import actions as history
+
+    session = _require_session()
+    state = history.PENDING if pending else None
+    rows = [history.view(row) for row in history.recent(session, limit=limit, state=state)]
+    if output == "json":
+        click.echo(json.dumps(rows))
+        return
+
+    console.print()
+    if not rows:
+        tui.note("Nothing waiting on you." if pending else "Nothing recorded yet.")
+        console.print()
+        return
+    listing = tui.table("When", "Via", "For", "Action", "State", "Id")
+    for row in rows:
+        listing.add_row(
+            Text((row["at"] or "")[:16].replace("T", " "), style="muted"),
+            Text(row["surface"], style="muted"),
+            Text(row["person"], style="muted"),
+            Text(row["subject"] or row["operation"], style="value"),
+            Text(row["state"], style="warn" if row["state"] == history.PENDING else "muted"),
+            Text(row["id"][:8], style="muted"),
+        )
+    console.print(listing)
+    waiting = sum(1 for row in rows if row["state"] == history.PENDING)
+    if waiting:
+        tui.hint(f"  {waiting} waiting. {tui.command('flanner actions show <id>')} previews one.")
+    console.print()
+
+
+@actions.command("show")
+@click.argument("action_id")
+def actions_show(action_id: str) -> None:
+    """One action in full, with the preview when an agent asked for it"""
+    from . import actions as history
+
+    session = _require_session()
+    row = history.view(_action_or_exit(session, action_id))
+    fields: list[tuple[str, Any]] = [
+        ("Id", row["id"]),
+        ("What", row["subject"] or row["operation"]),
+        ("Via", row["surface"]),
+        ("For", row["person"]),
+        ("When", row["at"] or ""),
+        ("State", row["state"]),
+    ]
+    if row["decided_by"]:
+        fields.append(("Decided", f"by {row['decided_by']} in the {row['decided_surface']}"))
+    if row["message"]:
+        fields.append(("Result", row["message"]))
+    console.print()
+    console.print(tui.fields(fields))
+    for change in (row["preview"] or {}).get("changes", []):
+        console.print(f"  - {change}", markup=False)
+    if row["state"] == history.PENDING:
+        short = row["id"][:8]
+        tui.hint(
+            f"  {tui.command('flanner actions apply ' + short)} applies it, "
+            f"{tui.command('flanner actions decline ' + short)} turns it down."
+        )
+    console.print()
+
+
+def _decide_action(action_id: str, approve: bool) -> None:
+    from . import actions as history
+
+    session = _require_session()
+    found = _action_or_exit(session, action_id)
+    result = _dispatch_or_exit(
+        "decide_action", {"action_id": str(found.id), "approve": approve, "surface": "cli"}
+    )
+    console.print()
+    if result["state"] == history.APPLIED:
+        tui.ok(f"Applied: {result['message']}")
+    elif result["state"] == history.DECLINED:
+        tui.ok("Declined. Nothing was changed.")
+    else:
+        tui.bad(f"Not applied, {result['state']}: {result['message']}")
+        console.print()
+        raise SystemExit(1)
+    console.print()
+
+
+@actions.command("apply")
+@click.argument("action_id")
+def actions_apply(action_id: str) -> None:
+    """Do what an agent asked for, if its preview still holds"""
+    _decide_action(action_id, approve=True)
+
+
+@actions.command("decline")
+@click.argument("action_id")
+def actions_decline(action_id: str) -> None:
+    """Turn down what an agent asked for"""
+    _decide_action(action_id, approve=False)
 
 
 @cli.group()
@@ -5353,7 +5487,6 @@ def jira_unlink(plan_name: str, issue: str | None, unlink_all: bool, project: st
 
     # Unlink. A missing link is a warning here, not a failure, so these go
     # through dispatch directly rather than the exit-on-error helper.
-    from .services import dispatch
 
     try:
         if unlink_all or not issue:
@@ -5485,7 +5618,6 @@ def _write(op: str, **args: Any) -> dict[str, Any]:
     executes in-process otherwise. Reports the operation's own message and
     exits 1 on failure, so every CLI write fails the same way.
     """
-    from .services import dispatch
 
     result = dispatch(op, args)
     if result.get("error"):
@@ -5808,7 +5940,6 @@ def linear_unlink(
 
     # As with jira unlink, a missing link is a warning rather than a failure,
     # so this uses dispatch directly instead of the exit-on-error helper.
-    from .services import dispatch
 
     try:
         if unlink_all or not issue:

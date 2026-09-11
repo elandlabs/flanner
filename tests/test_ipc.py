@@ -122,10 +122,17 @@ def test_mcp_write_tools_forward_to_daemon(monkeypatch):
         return {"result": {"forwarded": True}}
 
     monkeypatch.setattr(services.ipc, "call_daemon", fake_call)
-    assert server.create_plan_file_tool("p", "n", "c") == {"forwarded": True}
-    assert server.update_plan_file_tool("p", "c") == {"forwarded": True}
-    assert server.create_project_tool("proj") == {"forwarded": True}
-    assert server.link_plan_to_jira_tool("p", "ABC-1") == {"forwarded": True}
+
+    def forwarded(result: dict) -> dict:
+        # Recorded here, in the process that was asked, so the reply also
+        # names its entry in the action history.
+        assert result.pop("action_id")
+        return result
+
+    assert forwarded(server.create_plan_file_tool("p", "n", "c")) == {"forwarded": True}
+    assert forwarded(server.update_plan_file_tool("p", "c")) == {"forwarded": True}
+    assert forwarded(server.create_project_tool("proj")) == {"forwarded": True}
+    assert forwarded(server.link_plan_to_jira_tool("p", "ABC-1")) == {"forwarded": True}
     assert seen == [
         ("/ipc/call", "create_plan_file"),
         ("/ipc/call", "update_plan_file"),

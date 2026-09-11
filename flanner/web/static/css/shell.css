@@ -339,6 +339,8 @@ a:hover { color: var(--accent-hi); }
 .cols-peers { grid-template-columns: 1fr 150px; }
 .cols-wsaccess { grid-template-columns: 1fr 120px; }
 .cols-review { grid-template-columns: 1.4fr 1fr 110px 130px; }
+/* The action history: when, surface, person, what, state, id. */
+.cols-actions { grid-template-columns: 130px 64px 110px 1fr 96px 90px; }
 /* The memory list. Named in the template since it was written and never
    defined here, so every row fell back to a single 1122px column with its
    four cells stacked on top of each other. Search adds a fifth column for
@@ -900,7 +902,7 @@ kbd {
   .cols-recent, .cols-links, .cols-peers, .cols-wsaccess, .cols-review,
   .cols-memory, .cols-memory-reasoned,
   .cols-skills, .cols-findings, .cols-usage, .cols-installs,
-  .cols-proposals, .cols-clusters, .cols-matrix, .cols-transfers,
+  .cols-proposals, .cols-clusters, .cols-matrix, .cols-transfers, .cols-actions,
   .plan-file-card { grid-template-columns: 1fr; gap: 6px; }
   .grid-head { display: none; }
   .input, .doc, .raw-content { max-width: 100%; }

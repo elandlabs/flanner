@@ -377,6 +377,37 @@ class MemoryEventModel(Base):
         return f"<MemoryEvent({self.action} on {self.memory_id})>"
 
 
+class ActionModel(Base):
+    """One thing somebody did, or asked for, through any surface.
+
+    Appended by every write the service layer runs, and read by the command
+    line, the web UI and the MCP server alike, so one action has one id and
+    one person wherever it is looked at. `detail` holds ids and closed
+    vocabularies only: never a body, a memory or a piece of evidence.
+    """
+
+    __tablename__ = "actions"
+
+    id: Mapped[uuid.UUID] = mapped_column(GUID, primary_key=True, default=uuid.uuid4)
+    at: Mapped[datetime | None] = mapped_column(DateTime, default=_utcnow, index=True)
+    #: agent, cli or web.
+    surface: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    #: Who it was on behalf of: the signed-in user, or this account.
+    person: Mapped[str] = mapped_column(String, nullable=False)
+    operation: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    subject: Mapped[str] = mapped_column(String, nullable=False, default="")
+    #: done or failed; or pending, then applied, declined or stale.
+    state: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    detail: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    message: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    decided_by: Mapped[str] = mapped_column(String, nullable=False, default="")
+    decided_surface: Mapped[str] = mapped_column(String, nullable=False, default="")
+
+    def __repr__(self) -> str:
+        return f"<Action({self.operation} via {self.surface}, {self.state})>"
+
+
 class MemoryAttachmentModel(Base):
     """One file attached to a memory.
 

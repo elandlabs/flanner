@@ -386,6 +386,10 @@ OPERATIONS: tuple[Operation, ...] = (
         "Bring back a forgotten memory",
         "write",
         cli=("mem restore",),
+        mcp=("request_action",),
+        mcp_since="0.13.0",
+        note="An agent only asks, with a preview. You apply it with `flanner actions apply`.",
+        note_since="0.13.0",
         why="Reverses a deliberate decision, which is yours to make.",
     ),
     _op(
@@ -446,6 +450,10 @@ OPERATIONS: tuple[Operation, ...] = (
         "Hand over work to learn from, and see what was handed over",
         "write",
         cli=("skills evidence submit", "skills evidence list"),
+        mcp=("skills_submit_evidence",),
+        mcp_since="0.13.0",
+        note="An agent's report is labelled as its own account wherever it is shown.",
+        note_since="0.13.0",
         why=(
             f"{NOT_YET} Evidence exists because a person submitted it, which keeps learning from "
             f"becoming surveillance."
@@ -456,6 +464,10 @@ OPERATIONS: tuple[Operation, ...] = (
         "Draft, revise and read skill proposals",
         "write",
         cli=("skills propose", "skills revise", "skills proposals", "skills review"),
+        mcp=("skills_propose", "skills_revise"),
+        mcp_since="0.13.0",
+        note="An agent drafts for review. Revising a draft drops any approval it had.",
+        note_since="0.13.0",
         web=("GET /skills/proposals", "POST /skills/proposals/revise"),
         why=f"{NOT_YET} Drafting will come to agents as reviewable proposals, never as installs.",
     ),
@@ -475,6 +487,10 @@ OPERATIONS: tuple[Operation, ...] = (
         "Keep a copy, install it, or put it back",
         "write",
         cli=("skills adopt", "skills install", "skills rollback"),
+        mcp=("request_action",),
+        mcp_since="0.13.0",
+        note="An agent only asks, with a preview. You apply it with `flanner actions apply`.",
+        note_since="0.13.0",
         web=("POST /skills/{name}/adopt", "POST /skills/rollback"),
         why="Writes into the directory your agent reads. A person decides what an agent loads.",
     ),
@@ -490,6 +506,10 @@ OPERATIONS: tuple[Operation, ...] = (
         "Send a skill to the team, or install one that arrived",
         "share",
         cli=("skills share", "skills import"),
+        mcp=("request_action",),
+        mcp_since="0.13.0",
+        note="An agent only asks, with a preview. You apply it with `flanner actions apply`.",
+        note_since="0.13.0",
         web=("POST /skills/{name}/share", "POST /skills/import"),
         why="Receiving is not installing. Both ends are a person's decision.",
     ),
@@ -634,6 +654,22 @@ OPERATIONS: tuple[Operation, ...] = (
             "Called by the agent's own hook system when it writes a file or uses a skill, not by "
             "a person or a tool call."
         ),
+    ),
+    _op(
+        "local",
+        "See what was done, where, and for whom",
+        "read",
+        cli=("actions list", "actions show"),
+        web=("GET /actions",),
+        why="Each agent reply carries its own action id. The history is for you to read.",
+    ),
+    _op(
+        "local",
+        "Apply or decline what an agent asked for",
+        "approve",
+        cli=("actions apply", "actions decline"),
+        web=("POST /actions/{action_id}/decide",),
+        why="The request is the agent's. The decision is yours.",
     ),
     # --- integrations, behind FLANNER_INTEGRATIONS ---------------------------
     _op(

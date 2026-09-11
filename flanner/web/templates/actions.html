@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% import "_empty.html" as empty %}
+{% block title %}Actions{% endblock %}
+
+{% block topbar_main %}
+<h1>Actions</h1>
+<span class="sub">What was done through the CLI, this page and your agents, one id each.</span>
+{% endblock %}
+
+{% block content %}
+<div class="pane">
+
+  {% if said %}<div class="notice">{{ said }}</div>{% endif %}
+
+  {% for row in pending %}
+  <div class="card card-pad">
+    <h2 class="card-title">{{ row.subject }}</h2>
+    <p class="hint" style="margin:0 0 8px">An agent asked for this, for {{ row.person }}.
+      Nothing has changed yet.</p>
+    <ul>
+      {% for change in (row.preview or {}).get('changes', []) %}<li>{{ change }}</li>{% endfor %}
+    </ul>
+    <p class="hint" style="margin:0">{{ row.operation }} · {{ (row.at or '')[:16] | replace('T', ' ') }} · <code>{{ row.id }}</code></p>
+    <div style="display:flex;gap:8px;margin-top:12px">
+      <form method="post" action="/actions/{{ row.id }}/decide">
+        <input type="hidden" name="decision" value="apply">
+        <button class="btn btn-primary">Apply</button>
+      </form>
+      <form method="post" action="/actions/{{ row.id }}/decide">
+        <input type="hidden" name="decision" value="decline">
+        <button class="btn">Decline</button>
+      </form>
+    </div>
+  </div>
+  {% endfor %}
+
+  {% if rows %}
+  <div class="card">
+    <div class="tablewrap">
+      <div class="grid-head cols-actions">
+        <span>When</span><span>Via</span><span>For</span><span>Action</span><span>State</span><span>Id</span>
+      </div>
+      {% for row in rows %}
+      <div class="grid-row cols-actions">
+        <span class="when">{{ (row.at or '')[:16] | replace('T', ' ') }}</span>
+        <span class="when">{{ row.surface }}</span>
+        <span class="when">{{ row.person }}</span>
+        <span>{{ row.subject or row.operation }}
+          {% if row.decided_by %}<span class="hint">decided by {{ row.decided_by }} in the {{ row.decided_surface }}</span>{% endif %}
+          {% if row.state in ('failed', 'stale') and row.message %}<span class="hint">{{ row.message }}</span>{% endif %}</span>
+        <span>
+          {% if row.state in ('done', 'applied') %}<span class="pill pill-fresh">{{ row.state }}</span>
+          {% elif row.state in ('failed', 'stale') %}<span class="pill pill-stale">{{ row.state }}</span>
+          {% else %}<span class="pill pill-quiet">{{ row.state }}</span>{% endif %}
+        </span>
+        <span><code>{{ row.id[:8] }}</code></span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% elif not pending %}
+  {% call empty.state('clear', 'Nothing recorded yet') %}
+    <p class="hint">Every change made through the CLI, this page or an agent appears here,
+      with the person it was for.</p>
+  {% endcall %}
+  {% endif %}
+
+</div>
+{% endblock %}

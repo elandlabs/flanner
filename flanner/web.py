@@ -79,6 +79,9 @@ from .utils import format_relative_time, hash_content
 # Initialize FastAPI app
 logger = logging.getLogger(__name__)
 
+#: Writes from these pages are recorded as done in the web UI.
+dispatch = functools.partial(services.dispatch, surface="web")
+
 app = FastAPI(
     title="Flanner", description="Manage plan files with automatic versioning", version=__version__
 )
@@ -2253,9 +2256,7 @@ async def skill_detail(
     from .skills_adapters import MANIFEST
 
     try:
-        body = (directory / MANIFEST).read_text(
-            encoding="utf-8", errors="replace"
-        )
+        body = (directory / MANIFEST).read_text(encoding="utf-8", errors="replace")
     except OSError:
         body = ""
     _meta, prose = parse_frontmatter(body) if body else ({}, "")
@@ -2513,6 +2514,40 @@ async def memory_pending_page(request: Request) -> HTMLResponse:
     )
 
 
+@app.get("/actions", response_class=HTMLResponse)
+async def actions_page(request: Request, said: str = "") -> HTMLResponse:
+    """What was done here, in the CLI and by agents, and what waits on you."""
+    ensure_db()
+    session = get_session()
+    from . import actions as history
+
+    rows = [history.view(row) for row in await run_in_threadpool(history.recent, session)]
+    return templates.TemplateResponse(
+        request,
+        "actions.html",
+        {
+            "pending": [row for row in rows if row["state"] == history.PENDING],
+            "rows": [row for row in rows if row["state"] != history.PENDING],
+            "said": said,
+            **_nav(session),
+        },
+    )
+
+
+@app.post("/actions/{action_id}/decide")
+async def actions_decide_form(action_id: str, decision: str = Form(...)) -> RedirectResponse:
+    """Apply or decline what an agent asked for, from the page that listed it."""
+    ensure_db()
+    result = await run_in_threadpool(
+        functools.partial(
+            dispatch,
+            "decide_action",
+            {"action_id": action_id, "approve": decision == "apply", "surface": "web"},
+        )
+    )
+    return RedirectResponse(f"/actions?said={quote(str(result.get('message', '')))}", 303)
+
+
 @app.post("/memory/pending/decide")
 async def memory_decide_form(
     request: Request,
@@ -2522,7 +2557,6 @@ async def memory_decide_form(
 ) -> RedirectResponse:
     """Approve or reject one suggestion from the page."""
     ensure_db()
-    from .services import dispatch
 
     await run_in_threadpool(
         functools.partial(
@@ -2550,7 +2584,6 @@ async def memory_share_form(memory_id: str) -> RedirectResponse:
     domain, and offering a control that always fails would be worse.
     """
     ensure_db()
-    from .services import dispatch
 
     result = await run_in_threadpool(
         functools.partial(dispatch, "memory_share", {"memory_id": memory_id, "created_by": "web"})
@@ -2564,7 +2597,6 @@ async def memory_share_form(memory_id: str) -> RedirectResponse:
 async def memory_withdraw_form(memory_id: str, reason: str = Form("")) -> RedirectResponse:
     """Ask peers to stop recalling a shared memory."""
     ensure_db()
-    from .services import dispatch
 
     result = await run_in_threadpool(
         functools.partial(

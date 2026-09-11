@@ -172,6 +172,9 @@ ALLOWED = {
         "agent_hooks",
         "ipc",
         "review",
+        "actions",
+        "requested_actions",
+        "skills_learn",
     },
     "claude_integration": set(),
     # The list of every operation and the surfaces that offer it. Data only,
@@ -212,6 +215,7 @@ ALLOWED = {
     | {
         "database",
         "paging",
+        "actions",
         # The Skills page renders the same report the CLI prints, so the
         # two cannot disagree about what is on disk.
         "skills_ops",

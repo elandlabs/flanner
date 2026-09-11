@@ -13,6 +13,7 @@ from uuid import UUID
 from mcp.server.fastmcp import FastMCP
 
 from . import artifacts, assurance, observe, review
+from . import services as _services
 from .database import (
     artifact_parents,
     get_plan_file,
@@ -26,7 +27,7 @@ from .database import list_projects as db_list_projects
 
 # Import our modules
 from .freshness import compute_freshness
-from .services import dispatch, dispatch_optional, ensure_database
+from .services import ensure_database
 from .storage import (
     load_plan_file,
 )
@@ -37,6 +38,12 @@ F = TypeVar("F", bound=Callable[..., Any])
 
 # Initialize MCP server
 _mcp = FastMCP("flanner")
+
+
+#: Every write an agent makes is recorded as the agent's, for the person this
+#: machine is signed in as. Bound once here, so no tool can forget to say so.
+dispatch = functools.partial(_services.dispatch, surface="agent")
+dispatch_optional = functools.partial(_services.dispatch_optional, surface="agent")
 
 
 class _Observed:
@@ -1982,6 +1989,114 @@ def memory_withdraw(
         "memory_withdraw",
         {"memory_id": memory_id, "reason": reason, "created_by": created_by},
     )
+
+
+@mcp.tool()
+def skills_submit_evidence(
+    summary: str,
+    body: str,
+    kind: str = "procedure",
+    outcome: str = "none",
+    outcome_detail: str = "",
+    session_ref: str = "",
+    project_id: str = "",
+) -> dict[str, Any]:
+    """
+    Report a piece of work a skill could be learned from.
+
+    Use it after a procedure that will recur and that the user would want
+    written down. It is filed as YOUR account of the work and labelled that
+    way wherever it is shown. It becomes nothing by itself: a person decides.
+
+    kind      procedure (the only kind that can become a skill), memory,
+              preference or task
+    outcome   test_passed, user_accepted, rubric_met, or none. Nobody
+              objecting is none.
+    body      the steps, in your words. A credential in it is refused.
+
+    It is kept for a week unless somebody turns it into a proposal.
+    """
+    return dispatch(
+        "skills_submit_evidence",
+        {
+            "summary": summary,
+            "body": body,
+            "kind": kind,
+            "outcome": outcome,
+            "outcome_detail": outcome_detail,
+            "session_ref": session_ref,
+            "project_id": project_id or None,
+        },
+    )
+
+
+@mcp.tool()
+def skills_propose(
+    skill_name: str,
+    body: str,
+    provenance: list[str],
+    action: str = "create",
+    base_hash: str = "",
+    rationale: str = "",
+    project_id: str = "",
+) -> dict[str, Any]:
+    """
+    Draft a new skill, or a change to one, for a person to review.
+
+    This creates a draft and nothing else. It is never installed and never
+    approved by this call; only a person approves, and only the exact text
+    they read.
+
+    provenance   the evidence ids it came from. A draft that names none is
+                 refused, because a reviewer has nothing to check it against.
+    action       create, update or merge. For update and merge, base_hash is
+                 the version being changed.
+    body         the full SKILL.md, frontmatter included.
+    """
+    return dispatch(
+        "skills_propose",
+        {
+            "skill_name": skill_name,
+            "body": body,
+            "provenance": provenance,
+            "action": action,
+            "base_hash": base_hash,
+            "rationale": rationale,
+            "project_id": project_id or None,
+        },
+    )
+
+
+@mcp.tool()
+def skills_revise(proposal_id: str, body: str) -> dict[str, Any]:
+    """
+    Replace the text of a skill draft.
+
+    The draft goes back to review. If it had been approved, the approval
+    stays with the text that was read and does not carry over to this one.
+    """
+    return dispatch("skills_revise", {"proposal_id": proposal_id, "body": body})
+
+
+@mcp.tool()
+def request_action(operation: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    """
+    Ask the user to share, install, roll back or restore something. This
+    never does it.
+
+    You get back a preview of exactly what would change, and an action id.
+    Show the user the preview. They apply it with `flanner actions apply`
+    or on the Actions page, and it is refused if what the preview describes
+    has changed since. Do not apply it yourself.
+
+    operation and arguments:
+      skills_install   {"manifest_hash": ..., "name"?: ..., "agent"?: ..., "force"?: bool}
+      skills_rollback  {"installation_id": ..., "to_hash"?: ...}
+      skills_share     {"manifest_hash": ..., "name"?: ...}
+      skills_import    {"transfer_id": ..., "force"?: bool}
+      memory_restore   {"memory_id": ...}
+    """
+    return dispatch("request_action", {"operation": operation, "arguments": arguments})
 
 
 def main(argv: list[str] | None = None) -> None:

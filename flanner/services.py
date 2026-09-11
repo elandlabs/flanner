@@ -17,6 +17,7 @@ running the call is forwarded to it, otherwise it executes in-process
 
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import Callable
 from typing import Any, NamedTuple, cast
@@ -41,6 +42,8 @@ from .git_integration import find_git_root, update_gitignore, validate_git_repo
 from .plan_ops import create_plan, record_new_version
 from .storage import ensure_plan_directory_exists
 from .utils import hash_content
+
+logger = logging.getLogger(__name__)
 
 
 def ensure_database() -> None:
@@ -1187,6 +1190,128 @@ def _memory_time(value: str | None) -> Any:
     return datetime.fromisoformat(value.replace("Z", "+00:00")).replace(tzinfo=None)
 
 
+def _skills_project(session: Any, project_id: str | None) -> Any:
+    """The project named, or the one this directory belongs to."""
+    from . import memory_ops
+    from .database import get_project
+
+    if project_id:
+        return get_project(session, UUID(project_id))
+    return memory_ops.resolve_project(session)
+
+
+def skills_submit_evidence(
+    summary: str,
+    body: str,
+    kind: str = "procedure",
+    outcome: str = "none",
+    outcome_detail: str = "",
+    session_ref: str = "",
+    project_id: str | None = None,
+) -> dict[str, Any]:
+    """Report work to learn from, labelled as the agent's own account."""
+    from . import skills_learn
+
+    try:
+        ensure_database()
+        session = get_session()
+        project = _skills_project(session, project_id)
+        if project is None:
+            return {"error": True, "message": "no flanner project here to file evidence under"}
+        kept = skills_learn.submit(
+            session,
+            project,
+            summary,
+            body,
+            kind=kind,
+            source=skills_learn.BY_AGENT,
+            session_ref=session_ref,
+            outcome=outcome,
+            outcome_detail=outcome_detail,
+        )
+    except Exception as e:  # noqa: BLE001 - the seam returns, never raises
+        return {"error": True, "message": str(e)}
+    return {**kept, "message": "Filed as the agent's account. A person decides what it becomes."}
+
+
+def skills_propose(
+    skill_name: str,
+    body: str,
+    provenance: list[str],
+    action: str = "create",
+    base_hash: str = "",
+    rationale: str = "",
+    project_id: str | None = None,
+) -> dict[str, Any]:
+    """Draft a skill for review. Never installs, never approves."""
+    from . import skills_learn
+
+    try:
+        ensure_database()
+        session = get_session()
+        project = _skills_project(session, project_id)
+        if project is None:
+            return {"error": True, "message": "no flanner project here to propose into"}
+        drafted = skills_learn.propose(
+            session,
+            project,
+            skill_name,
+            body,
+            action=action,
+            base_hash=base_hash,
+            provenance=provenance,
+            rationale=rationale,
+            created_by=skills_learn.BY_AGENT,
+        )
+    except Exception as e:  # noqa: BLE001 - the seam returns, never raises
+        return {"error": True, "message": str(e)}
+    return {**drafted, "message": "Drafted for review. Only a person can approve it."}
+
+
+def skills_revise(proposal_id: str, body: str) -> dict[str, Any]:
+    """Edit a draft. Any approval it had stays behind on the old text."""
+    from . import skills_learn
+
+    try:
+        ensure_database()
+        revised = skills_learn.revise(get_session(), proposal_id, body)
+    except Exception as e:  # noqa: BLE001 - the seam returns, never raises
+        return {"error": True, "message": str(e)}
+    return {**revised, "message": "Revised. It is a draft again and needs a fresh review."}
+
+
+def request_action(operation: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Ask for a risky action. Stores a preview; changes nothing."""
+    from . import memory_ops, requested_actions
+
+    try:
+        ensure_database()
+        session = get_session()
+        project = memory_ops.resolve_project(session)
+        given = {**arguments, "project_root": project.project_root if project else ""}
+        pending = requested_actions.request(session, operation, given)
+    except Exception as e:  # noqa: BLE001 - the seam returns, never raises
+        return {"error": True, "message": str(e)}
+    return {
+        **pending,
+        "message": (
+            "Nothing was changed. Show the user this preview. They apply it with "
+            f"flanner actions apply {pending['id']}, or on the Actions page."
+        ),
+    }
+
+
+def decide_action(action_id: str, approve: bool, surface: str) -> dict[str, Any]:
+    """Apply or decline a requested action, for a person."""
+    from . import requested_actions
+
+    try:
+        ensure_database()
+        return requested_actions.decide(get_session(), action_id, approve=approve, surface=surface)
+    except Exception as e:  # noqa: BLE001 - the seam returns, never raises
+        return {"error": True, "message": str(e)}
+
+
 REGISTRY: dict[str, Callable[..., Any]] = {
     "create_project": create_project,
     "initialize_project": initialize_project,
@@ -1214,7 +1339,15 @@ REGISTRY: dict[str, Callable[..., Any]] = {
     "memory_gc": memory_gc,
     "memory_share": memory_share,
     "memory_withdraw": memory_withdraw,
+    "skills_submit_evidence": skills_submit_evidence,
+    "skills_propose": skills_propose,
+    "skills_revise": skills_revise,
+    "request_action": request_action,
+    "decide_action": decide_action,
 }
+
+#: Operations that write their own history, so dispatch does not add a row.
+_RECORDS_ITSELF = frozenset({"request_action", "decide_action"})
 
 
 def _run(op: str, args: dict[str, Any]) -> Any:
@@ -1230,11 +1363,46 @@ def _run(op: str, args: dict[str, Any]) -> Any:
     return REGISTRY[op](**args)
 
 
-def dispatch(op: str, args: dict[str, Any]) -> dict[str, Any]:
+def _recorded(op: str, args: dict[str, Any], surface: str) -> Any:
+    """Run an operation and add it to the one action history.
+
+    Recorded here, in the process that was asked, rather than wherever the
+    write ends up running, so a write forwarded to the daemon is recorded
+    once. A history that failed to write must not undo the action it
+    describes, so that failure is logged and swallowed.
+    """
+    result = _run(op, args)
+    if op in _RECORDS_ITSELF:
+        return result
+    from . import actions
+
+    failed = isinstance(result, dict) and bool(result.get("error"))
+    try:
+        ensure_database()
+        session = get_session()
+        row = actions.record(
+            session,
+            surface=surface,
+            operation=op,
+            arguments=args,
+            state=actions.FAILED if failed else actions.DONE,
+            message=str(result.get("message", "")) if isinstance(result, dict) else "",
+        )
+    except Exception:  # noqa: BLE001 - see the docstring
+        logger.warning("could not record %s in the action history", op, exc_info=True)
+        return result
+    if isinstance(result, dict):
+        result = {**result, "action_id": str(row.id)}
+    return result
+
+
+def dispatch(op: str, args: dict[str, Any], *, surface: str = "unknown") -> dict[str, Any]:
     """Run an operation that always reports a result dict."""
-    return cast("dict[str, Any]", _run(op, args))
+    return cast("dict[str, Any]", _recorded(op, args, surface))
 
 
-def dispatch_optional(op: str, args: dict[str, Any]) -> dict[str, Any] | None:
+def dispatch_optional(
+    op: str, args: dict[str, Any], *, surface: str = "unknown"
+) -> dict[str, Any] | None:
     """Run an operation that may report nothing (update with auto-version off)."""
-    return cast("dict[str, Any] | None", _run(op, args))
+    return cast("dict[str, Any] | None", _recorded(op, args, surface))

@@ -99,6 +99,8 @@
       <a href="/review" {% if here.startswith('/review') %}class="active" aria-current="page"{% endif %}>
         {{ ico.icon('review') }} Review
         {% if nav_review %}<span class="n tnum">{{ nav_review }}</span>{% endif %}</a>
+      <a href="/actions" {% if here.startswith('/actions') %}class="active" aria-current="page"{% endif %}>
+        {{ ico.icon('history') }} Actions</a>
       {# Settings is not a team item. It followed the Team group with nothing
          between them, so the heading appeared to cover it. A rule rather
          than a second heading: a labelled group of one is heavier than the
