@@ -406,6 +406,7 @@ OPERATIONS: tuple[Operation, ...] = (
         mcp_since="0.13.0",
         web=("GET /skills", "GET /skills/{name}"),
         note="The agent's read records nothing. `flanner skills scan` records by default.",
+        note_since="0.13.0",
     ),
     _op(
         "skills",
@@ -517,6 +518,7 @@ OPERATIONS: tuple[Operation, ...] = (
         mcp_since="0.13.0",
         web=("GET /mesh",),
         note="The agent's view is offline: it reads the cached session and never contacts a peer.",
+        note_since="0.13.0",
     ),
     _op(
         "mesh",
@@ -551,7 +553,7 @@ OPERATIONS: tuple[Operation, ...] = (
         "See how this device reaches its peers",
         "read",
         cli=("peer status",),
-        why="It contacts peers over the network. mesh_status gives an agent the offline view.",
+        why="It contacts peers over the network, which is never agent-initiated.",
     ),
     _op(
         "mesh",
