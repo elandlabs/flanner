@@ -310,3 +310,35 @@ def test_upsert_global_nudge(monkeypatch, tmp_path):
     text = (tmp_path / ".claude" / "CLAUDE.md").read_text(encoding="utf-8")
     assert "initialize_project_tool" in text
     assert upsert_global_nudge() is False  # idempotent
+
+
+# --- guidance reaches every domain, and both agents ---------------------------
+
+
+def test_the_block_points_at_context_memory_and_skills(db, git_repo):
+    block = agent_md_block(_project(get_session(), git_repo))
+
+    for tool in (
+        "project_context",
+        "memory_recall",
+        "memory_consider",
+        "memory_decide",
+        "skills_report",
+        "skills_usage",
+    ):
+        assert tool in block, tool
+    assert "Do not install, approve, share or roll back a skill yourself" in block
+
+
+def test_both_skills_are_installed_where_each_agent_reads(db, git_repo):
+    from flanner.agent_hooks import SKILL_DIRS, SKILLS
+
+    assert install_skill(str(git_repo)) is True
+    for folder in SKILL_DIRS:
+        for name in SKILLS:
+            assert (git_repo / folder / name / "SKILL.md").exists(), f"{folder}/{name}"
+
+    memory = git_repo / ".agents" / "skills" / "flanner-memory" / "SKILL.md"
+    text = memory.read_text(encoding="utf-8")
+    assert "memory_recall" in text and "memory_consider" in text
+    assert install_skill(str(git_repo)) is False
