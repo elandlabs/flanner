@@ -332,6 +332,19 @@ def _last_text(jsonl: str) -> str:
     return found
 
 
+def _other_codex_servers() -> list[str]:
+    """The MCP servers in the user's own Codex config, other than flanner."""
+    home = Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex")
+    try:
+        import tomllib
+
+        with (home / "config.toml").open("rb") as config:
+            servers = tomllib.load(config).get("mcp_servers", {})
+    except (OSError, ValueError, ImportError):
+        return []
+    return sorted(name for name in servers if name != "flanner")
+
+
 def run_codex(
     cwd: Path, server: dict[str, Any], prompt: str, model: str, timeout: int
 ) -> tuple[str, str]:
@@ -351,6 +364,18 @@ def run_codex(
         f"mcp_servers.flanner.args={json.dumps(server['args'])}",
         "-c",
         f"mcp_servers.flanner.env={env_table}",
+        # `codex exec` cannot ask for approval, so a tool that needs one is
+        # refused. That scored the host's prompt, not the model, so flanner's
+        # tools are approved for the run.
+        "-c",
+        'mcp_servers.flanner.default_tools_approval_mode="approve"',
+        # The user's other servers stay off, so their failures are not in
+        # the transcript and their tools are not in the choice.
+        *[
+            arg
+            for name in _other_codex_servers()
+            for arg in ("-c", f"mcp_servers.{name}.enabled=false")
+        ],
     ]
     if model:
         command += ["-m", model]

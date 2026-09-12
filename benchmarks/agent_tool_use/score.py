@@ -26,9 +26,12 @@ _FIELD = re.compile(r"(\w+)=(\S+)")
 
 MEMORY_READS = frozenset({"memory_recall", "memory_get", "memory_list"})
 CAPTURES = frozenset({"memory_remember", "memory_consider"})
+#: Any apostrophe: agents write "isn’t" with a typographic one as often as not.
+_NOT = "n[o'’]t"
 _ADMITS_UNAVAILABLE = re.compile(
-    r"not available|unavailable|could ?n[o']t|can ?n[o']t|unable|isn't running|not running|"
-    r"failed to|no flanner|not connected|didn't save|did not save|wasn't saved|was not saved",
+    rf"not available|unavailable|isn?{_NOT} available|could ?{_NOT}|can ?{_NOT}|unable|"
+    rf"is{_NOT} running|not running|failed to|no flanner|not connected|did ?{_NOT} save|"
+    rf"was ?{_NOT} saved|nothing was (?:saved|written|created)|no file was created",
     re.IGNORECASE,
 )
 
