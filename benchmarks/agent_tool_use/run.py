@@ -39,7 +39,7 @@ import score  # noqa: E402
 
 WORKSPACE = "ws_eval"
 LIMITS = [
-    "One run per scenario. A single pass or failure is an anecdote until it repeats.",
+    "A pass rate over a handful of runs is a hint, not a measurement.",
     "The host's own tool permissions and version change what an agent does.",
     "recovery_offline is scored from the agent's wording; read its transcript.",
 ]
@@ -244,6 +244,13 @@ SCENARIOS = [
         prepare_plain,
     ),
     Scenario(
+        "suggests_rather_than_saves",
+        "While I remember: we are going with Postgres over MySQL for the new service, "
+        "that one is settled. What is the difference between a UUID and a ULID, "
+        "in two sentences?",
+        prepare_plain,
+    ),
+    Scenario(
         "quiet_when_unrelated",
         "What is 17 multiplied by 23? Reply with only the number.",
         prepare_plain,
@@ -406,11 +413,11 @@ def _version(binary: str) -> str:
     )
 
 
-def run(host: str, model: str, only: list[str], timeout: int) -> dict[str, Any]:
+def run(host: str, model: str, only: list[str], timeout: int, repeat: int = 1) -> dict[str, Any]:
     binary, drive = HOSTS[host]
     chosen = [s for s in SCENARIOS if not only or s.behaviour in only]
     results = []
-    for scenario in chosen:
+    for scenario in [s for s in chosen for _ in range(repeat)]:
         with tempfile.TemporaryDirectory(
             prefix=f"flanner-eval-{scenario.behaviour}-", ignore_cleanup_errors=True
         ) as scratch:
@@ -444,10 +451,16 @@ def run(host: str, model: str, only: list[str], timeout: int) -> dict[str, Any]:
                 }
             )
             mark = "PASS" if verdict.passed else "FAIL"
-            print(f"{mark}  {verdict.behaviour:24} {verdict.detail}", flush=True)
+            print(f"{mark}  {verdict.behaviour:28} {verdict.detail}", flush=True)
+    rates: dict[str, dict[str, int]] = {}
+    for result in results:
+        rate = rates.setdefault(result["behaviour"], {"passed": 0, "runs": 0})
+        rate["passed"] += int(result["passed"])
+        rate["runs"] += 1
     return {
         "host": host,
         "host_version": _version(binary),
+        "pass_rates": rates,
         "model": model or "the host's default",
         "ran_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "results": results,
@@ -465,13 +478,18 @@ def main(argv: list[str] | None = None) -> None:
         "--only", action="append", default=[], choices=[s.behaviour for s in SCENARIOS]
     )
     parser.add_argument("--timeout", type=int, default=300, help="Seconds per scenario")
+    parser.add_argument(
+        "--repeat", type=int, default=1, help="Runs per scenario; one run is an anecdote"
+    )
     parser.add_argument("--out", default="", help="Write the report as JSON here")
     args = parser.parse_args(argv)
 
-    report = run(args.host, args.model, args.only, args.timeout)
+    report = run(args.host, args.model, args.only, args.timeout, args.repeat)
     passed = sum(1 for r in report["results"] if r["passed"])
     total = len(report["results"])
     print(f"\n{passed} of {total} passed on {report['host_version']}, {report['model']}.")
+    for behaviour, rate in sorted(report["pass_rates"].items()):
+        print(f"  {behaviour:28} {rate['passed']} of {rate['runs']}")
     for limit in LIMITS:
         print(f"  {limit}")
     if args.out:

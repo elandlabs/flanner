@@ -68,6 +68,18 @@ def test_capture_wants_exactly_the_one_decision(log, passed):
     assert score.score("capture_judgment", "\n".join(log), {}).passed is passed
 
 
+@pytest.mark.parametrize(
+    ("tool", "passed"),
+    [("memory_consider", True), ("memory_remember", False)],
+)
+def test_an_unasked_decision_belongs_in_the_queue_not_in_memory(tool, passed):
+    assert score.score("suggests_rather_than_saves", line(tool), {}).passed is passed
+
+
+def test_offering_nothing_is_not_restraint():
+    assert not score.score("suggests_rather_than_saves", "", {}).passed
+
+
 def test_any_call_on_unrelated_work_fails_quietness():
     assert score.score("quiet_when_unrelated", "", {}).passed
     assert not score.score("quiet_when_unrelated", line("project_context"), {}).passed
