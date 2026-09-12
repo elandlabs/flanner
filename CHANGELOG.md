@@ -78,10 +78,12 @@ versioning follows [SemVer](https://semver.org/).
 ### Security
 - **Applying what an agent asked for takes more than typing the command.**
   Signed in, flanner actions apply waits for a console confirmation bound to
-  that action and its preview, and the web UI sends you to the terminal. Not
-  signed in, the command refuses inside a shell an agent host started. That
-  check can be evaded, and the web UI still applies, so without an account
-  nothing proves a person applied it.
+  that action and its preview. The web UI never applies one: it shows the
+  command to run, and still lets you decline, which grants nothing. Without
+  an account, applying refuses inside a shell an agent host started, and
+  otherwise asks for the action's code to be typed at a terminal. A
+  determined agent can unset a variable and allocate a terminal, so that is
+  a hurdle rather than proof; an account is the proof on offer.
 - **A teammate's review counts, and only as the person who signed it.** A
   device knew its own role and nobody else's, so every proposal and approval
   a teammate made was dropped. It now reads a roster the control plane signs

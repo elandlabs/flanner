@@ -58,7 +58,8 @@ def test_the_cli_lists_previews_and_applies_what_an_agent_asked_for(asked):
 
     listed = runner.invoke(cli, ["actions", "list", "--pending", "--output", "json"])
     shown = runner.invoke(cli, ["actions", "show", action_id[:8]])
-    applied = runner.invoke(cli, ["actions", "apply", action_id[:8]])
+    typed = action_id[:8] + chr(10)
+    applied = runner.invoke(cli, ["actions", "apply", action_id[:8]], input=typed)
     after = runner.invoke(cli, ["actions", "list", "--output", "json"])
 
     assert [row["id"] for row in json.loads(listed.output)] == [action_id]
@@ -78,16 +79,22 @@ def test_the_cli_declines_without_changing_anything(asked):
     assert not restored(session, memory_id)
 
 
-def test_the_web_page_shows_a_request_and_applies_it_under_the_same_id(asked):
+def test_the_web_page_shows_a_request_and_sends_applying_to_the_terminal(asked):
+    """The page cannot ask anybody anything, so it offers the command instead."""
     session, memory_id, action_id = asked
     client = TestClient(app, base_url=LOCAL_URL, follow_redirects=False)
 
     page = client.get("/actions")
-    decided = client.post(f"/actions/{action_id}/decide", data={"decision": "apply"})
+    refused = client.post(f"/actions/{action_id}/decide", data={"decision": "apply"})
 
     assert page.status_code == 200
     assert "Bring back the memory" in page.text and action_id in page.text
-    assert decided.status_code == 303
-    row = actions.view(actions.get(session, action_id))
-    assert (row["state"], row["decided_surface"]) == ("applied", "web")
-    assert restored(session, memory_id)
+    assert f"flanner actions apply {action_id[:8]}" in page.text
+    assert refused.status_code == 303
+    assert actions.view(actions.get(session, action_id))["state"] == actions.PENDING
+    assert not restored(session, memory_id)
+
+    declined = client.post(f"/actions/{action_id}/decide", data={"decision": "decline"})
+
+    assert declined.status_code == 303
+    assert actions.view(actions.get(session, action_id))["state"] == actions.DECLINED

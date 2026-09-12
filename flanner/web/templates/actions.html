@@ -22,10 +22,10 @@
     </ul>
     <p class="hint" style="margin:0">{{ row.operation }} · {{ (row.at or '')[:16] | replace('T', ' ') }} · <code>{{ row.id }}</code></p>
     <div style="display:flex;gap:8px;margin-top:12px">
-      <form method="post" action="/actions/{{ row.id }}/decide">
-        <input type="hidden" name="decision" value="apply">
-        <button class="btn btn-primary">Apply</button>
-      </form>
+      <div>
+        <p class="hint" style="margin:0 0 4px">Apply it in your terminal, where you can be asked:</p>
+        <code>flanner actions apply {{ row.id[:8] }}</code>
+      </div>
       <form method="post" action="/actions/{{ row.id }}/decide">
         <input type="hidden" name="decision" value="decline">
         <button class="btn">Decline</button>

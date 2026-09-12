@@ -222,6 +222,7 @@ def decide(
     approve: bool,
     surface: str,
     confirmation: str | None = None,
+    at_a_terminal: bool = False,
 ) -> dict[str, Any]:
     """Apply or decline a pending action, for a person.
 
@@ -229,10 +230,16 @@ def decide(
     applies it, so applying asks for more than the command. Signed in, the
     person confirms in the console, where an agent on this machine holds no
     session, and the confirmation is bound to this action and its preview.
-    Not signed in, nothing here can prove a person, so the command line
-    refuses inside a shell an agent host started, and says why.
+    Not signed in, nothing here can prove a person. The command line then
+    refuses inside a shell an agent host started, and refuses unless
+    somebody typed the action's code at a terminal. A determined agent can
+    unset a variable and allocate a terminal, so this is a hurdle rather
+    than proof, and the only proof on offer is an account.
 
-    Declining grants nothing, so it needs neither.
+    The web UI never applies. It cannot reach the console, and a request to
+    it from this machine looks the same whoever made it.
+
+    Declining grants nothing, so it needs none of this.
     """
     if surface not in actions.PERSON_SURFACES:
         raise PermissionError("only a person decides a requested action, in the CLI or web UI")
@@ -242,7 +249,7 @@ def decide(
     if row.state != actions.PENDING:
         raise ValueError(f"that action is {row.state}, not pending")
     if approve:
-        _require_a_person(row, surface, confirmation)
+        _require_a_person(row, surface, confirmation, at_a_terminal)
 
     detail = json.loads(row.detail or "{}")
     arguments = dict(detail.get("request") or {})
@@ -273,15 +280,17 @@ def decide(
     return actions.view(row)
 
 
-def _require_a_person(row: Any, surface: str, confirmation: str | None) -> None:
+def _require_a_person(
+    row: Any, surface: str, confirmation: str | None, at_a_terminal: bool
+) -> None:
     """Refuse an apply nothing shows a person made. See `decide`."""
+    if surface != actions.CLI:
+        raise PermissionError(
+            "applying an agent's request happens in your terminal: "
+            f"run flanner actions apply {str(row.id)[:8]}"
+        )
     held = cache.load()
     if held is not None and held.status().usable:
-        if surface != actions.CLI:
-            raise PermissionError(
-                "signed in, applying an agent's request is confirmed in the console: "
-                f"run flanner actions apply {str(row.id)[:8]} in your terminal"
-            )
         fingerprint = str(
             (json.loads(row.detail or "{}").get("preview") or {}).get("fingerprint", "")
         )
@@ -297,10 +306,15 @@ def _require_a_person(row: Any, surface: str, confirmation: str | None) -> None:
             raise PermissionError("this apply was not confirmed in the console")
         return
     shell = actions.agent_shell()
-    if surface == actions.CLI and shell:
+    if shell:
         raise PermissionError(
             f"this looks like an agent's shell ({shell} is set). "
-            "Apply it from your own terminal or on the Actions page."
+            "Apply it from your own terminal, or sign in and confirm in the console."
+        )
+    if not at_a_terminal:
+        raise PermissionError(
+            "applying needs somebody at the keyboard: run it in a terminal and type the "
+            "code it shows, or sign in so the console can confirm it"
         )
 
 

@@ -132,7 +132,8 @@ def test_an_agent_request_changes_nothing_until_a_person_applies_it(project):
     assert get_memory(session, __import__("uuid").UUID(memory_id)).status != "active"
 
     applied = dispatch(
-        "decide_action", {"action_id": asked["id"], "approve": True, "surface": "cli"}
+        "decide_action",
+        {"action_id": asked["id"], "approve": True, "surface": "cli", "at_a_terminal": True},
     )
 
     assert applied["id"] == asked["id"], "one action, one id, from request to decision"
@@ -170,7 +171,9 @@ def test_a_preview_that_no_longer_holds_is_not_applied(project):
     asked = requested_actions.request(session, "memory_restore", {"memory_id": memory_id})
     dispatch("memory_restore", {"memory_id": memory_id}, surface=actions.CLI)
 
-    decided = requested_actions.decide(session, asked["id"], approve=True, surface="cli")
+    decided = requested_actions.decide(
+        session, asked["id"], approve=True, surface="cli", at_a_terminal=True
+    )
 
     assert decided["state"] == actions.STALE
 
@@ -196,7 +199,8 @@ def test_an_install_request_previews_the_target_and_applies_only_when_approved(p
     assert not target.exists()
 
     applied = dispatch(
-        "decide_action", {"action_id": asked["id"], "approve": True, "surface": "web"}
+        "decide_action",
+        {"action_id": asked["id"], "approve": True, "surface": "cli", "at_a_terminal": True},
     )
 
     assert applied["state"] == actions.APPLIED, applied
@@ -216,7 +220,9 @@ def test_an_install_is_stale_when_the_target_changed_after_the_preview(project):
     target.mkdir(parents=True)
     (target / "SKILL.md").write_text("---\nname: release-notes\n---\nHand edited.\n", "utf-8")
 
-    decided = requested_actions.decide(session, asked["id"], approve=True, surface="cli")
+    decided = requested_actions.decide(
+        session, asked["id"], approve=True, surface="cli", at_a_terminal=True
+    )
 
     assert decided["state"] == actions.STALE
     assert "Hand edited." in (target / "SKILL.md").read_text(encoding="utf-8")

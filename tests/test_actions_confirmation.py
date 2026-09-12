@@ -198,11 +198,26 @@ def test_inside_an_agent_shell_the_command_line_refuses(asked, monkeypatch):
     assert not restored(session, memory_id)
 
 
-def test_without_an_account_the_web_ui_still_applies_which_proves_nobody(asked, monkeypatch):
-    """The limit, kept as a test so nobody mistakes it for a guarantee."""
+def test_the_web_ui_never_applies_even_without_an_account(asked, monkeypatch):
     session, memory_id, action = asked
     monkeypatch.setenv("CLAUDECODE", "1")
 
-    decided = requested_actions.decide(session, action["id"], approve=True, surface="web")
+    with pytest.raises(PermissionError, match="terminal"):
+        requested_actions.decide(session, action["id"], approve=True, surface="web")
+
+    assert not restored(session, memory_id)
+
+
+def test_without_an_account_applying_needs_the_code_typed_at_a_terminal(asked):
+    """The remaining limit: a terminal is a hurdle, not proof. See `decide`."""
+    session, memory_id, action = asked
+
+    with pytest.raises(PermissionError, match="keyboard"):
+        requested_actions.decide(session, action["id"], approve=True, surface="cli")
+
+    decided = requested_actions.decide(
+        session, action["id"], approve=True, surface="cli", at_a_terminal=True
+    )
 
     assert decided["state"] == "applied"
+    assert restored(session, memory_id)

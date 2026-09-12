@@ -1302,7 +1302,11 @@ def request_action(operation: str, arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 def decide_action(
-    action_id: str, approve: bool, surface: str, confirmation: str | None = None
+    action_id: str,
+    approve: bool,
+    surface: str,
+    confirmation: str | None = None,
+    at_a_terminal: bool = False,
 ) -> dict[str, Any]:
     """Apply or decline a requested action, for a person."""
     from . import requested_actions
@@ -1315,6 +1319,7 @@ def decide_action(
             approve=approve,
             surface=surface,
             confirmation=confirmation,
+            at_a_terminal=at_a_terminal,
         )
     except Exception as e:  # noqa: BLE001 - the seam returns, never raises
         return {"error": True, "message": str(e)}

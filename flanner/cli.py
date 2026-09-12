@@ -1696,6 +1696,32 @@ def actions_show(action_id: str) -> None:
     console.print()
 
 
+def _typed_the_code(action_id: str) -> bool:
+    """Ask for the action's code and read the answer back. See `_ask`.
+
+    Not `isatty`: on Windows the null device says that it is a terminal,
+    so `flanner actions apply < NUL` would have passed for somebody typing.
+    Reading the line has no such hole. A closed or empty stream reads as
+    end of input, which is nobody.
+
+    The weakest of the checks, and the only one there is without an
+    account. An agent can read the code off its own screen and write it
+    back, so this catches a careless one and a slip of the hand.
+    """
+    code = action_id[:8]
+    console.print(f"\nThis applies the action {tui.code(code)}.")
+    console.print("Type that code to apply it: ", end="")
+    typed = sys.stdin.readline()
+    if typed == "":
+        tui.bad("Nothing to read: applying needs somebody at the keyboard.")
+        tui.hint("  Run it in your terminal, or sign in so the console can confirm it.")
+        raise SystemExit(1)
+    if typed.strip().lower() != code:
+        tui.bad("That is not the code. Nothing was applied.")
+        raise SystemExit(1)
+    return True
+
+
 def _decide_action(action_id: str, approve: bool) -> None:
     from . import actions as history
     from . import session as cache
@@ -1712,6 +1738,9 @@ def _decide_action(action_id: str, approve: bool) -> None:
             shown["id"],
             str((shown["preview"] or {}).get("fingerprint", "")),
         )
+    at_a_terminal = False
+    if approve and confirmation is None and shown["state"] == history.PENDING:
+        at_a_terminal = _typed_the_code(shown["id"])
     result = _dispatch_or_exit(
         "decide_action",
         {
@@ -1719,6 +1748,7 @@ def _decide_action(action_id: str, approve: bool) -> None:
             "approve": approve,
             "surface": "cli",
             "confirmation": confirmation,
+            "at_a_terminal": at_a_terminal,
         },
     )
     console.print()
