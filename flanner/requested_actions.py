@@ -24,12 +24,14 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from . import actions, memory_ops, skills_manage, skills_mesh, skills_ops
+from . import session as cache
 from .database import (
     SkillInstallationModel,
     SkillTransferModel,
     get_memory,
     get_project_by_root,
 )
+from .entitlements import approval_matches
 from .exceptions import FlannerError
 from .frontmatter import parse_frontmatter
 
@@ -213,8 +215,25 @@ def request(session: Session, operation: str, arguments: dict[str, Any]) -> dict
     return actions.view(row)
 
 
-def decide(session: Session, action_id: str, *, approve: bool, surface: str) -> dict[str, Any]:
-    """Apply or decline a pending action, for a person."""
+def decide(
+    session: Session,
+    action_id: str,
+    *,
+    approve: bool,
+    surface: str,
+    confirmation: str | None = None,
+) -> dict[str, Any]:
+    """Apply or decline a pending action, for a person.
+
+    An agent that asked for something can usually also type the command that
+    applies it, so applying asks for more than the command. Signed in, the
+    person confirms in the console, where an agent on this machine holds no
+    session, and the confirmation is bound to this action and its preview.
+    Not signed in, nothing here can prove a person, so the command line
+    refuses inside a shell an agent host started, and says why.
+
+    Declining grants nothing, so it needs neither.
+    """
     if surface not in actions.PERSON_SURFACES:
         raise PermissionError("only a person decides a requested action, in the CLI or web UI")
     row = actions.get(session, action_id)
@@ -222,6 +241,8 @@ def decide(session: Session, action_id: str, *, approve: bool, surface: str) -> 
         raise ValueError(f"no action with id {action_id}")
     if row.state != actions.PENDING:
         raise ValueError(f"that action is {row.state}, not pending")
+    if approve:
+        _require_a_person(row, surface, confirmation)
 
     detail = json.loads(row.detail or "{}")
     arguments = dict(detail.get("request") or {})
@@ -248,7 +269,39 @@ def decide(session: Session, action_id: str, *, approve: bool, surface: str) -> 
             except (ValueError, OSError, FlannerError, skills_manage.ConflictError) as error:
                 row.state, row.message = actions.FAILED, str(error)
     session.commit()
+    actions.touched(row)
     return actions.view(row)
+
+
+def _require_a_person(row: Any, surface: str, confirmation: str | None) -> None:
+    """Refuse an apply nothing shows a person made. See `decide`."""
+    held = cache.load()
+    if held is not None and held.status().usable:
+        if surface != actions.CLI:
+            raise PermissionError(
+                "signed in, applying an agent's request is confirmed in the console: "
+                f"run flanner actions apply {str(row.id)[:8]} in your terminal"
+            )
+        fingerprint = str(
+            (json.loads(row.detail or "{}").get("preview") or {}).get("fingerprint", "")
+        )
+        if not approval_matches(
+            confirmation or "",
+            held.keyring,
+            workspace_id="",
+            user_id=held.user_id,
+            device_id=held.device_id,
+            proposal_id=str(row.id),
+            target_artifact_id=fingerprint,
+        ):
+            raise PermissionError("this apply was not confirmed in the console")
+        return
+    shell = actions.agent_shell()
+    if surface == actions.CLI and shell:
+        raise PermissionError(
+            f"this looks like an agent's shell ({shell} is set). "
+            "Apply it from your own terminal or on the Actions page."
+        )
 
 
 def _apply(session: Session, operation: str, arguments: dict[str, Any]) -> None:

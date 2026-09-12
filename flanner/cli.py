@@ -1698,11 +1698,28 @@ def actions_show(action_id: str) -> None:
 
 def _decide_action(action_id: str, approve: bool) -> None:
     from . import actions as history
+    from . import session as cache
 
     session = _require_session()
     found = _action_or_exit(session, action_id)
+    shown = history.view(found)
+    confirmation = None
+    held = cache.load()
+    if approve and shown["state"] == history.PENDING and held and held.status().usable:
+        confirmation = _confirm_in_console(
+            f"the action {shown['id'][:8]}",
+            "",
+            shown["id"],
+            str((shown["preview"] or {}).get("fingerprint", "")),
+        )
     result = _dispatch_or_exit(
-        "decide_action", {"action_id": str(found.id), "approve": approve, "surface": "cli"}
+        "decide_action",
+        {
+            "action_id": str(found.id),
+            "approve": approve,
+            "surface": "cli",
+            "confirmation": confirmation,
+        },
     )
     console.print()
     if result["state"] == history.APPLIED:
@@ -4587,7 +4604,7 @@ def review_decide(
         )
         if view is not None and needs_confirmation(authorization, view):
             confirmation = _confirm_in_console(
-                plan_name, authorization.workspace_id, proposal, view.target_artifact_id
+                f"'{plan_name}'", authorization.workspace_id, proposal, view.target_artifact_id
             )
 
     try:
@@ -4623,7 +4640,7 @@ def review_decide(
 APPROVAL_POLL_SECONDS = 2.0
 
 
-def _confirm_in_console(plan_name: str, workspace_id: str, proposal_id: str, target: str) -> str:
+def _confirm_in_console(what: str, workspace_id: str, proposal_id: str, target: str) -> str:
     """Wait for the approver to confirm in the console. Returns its signed record.
 
     Nothing on this machine can show a person approved: an agent with a
@@ -4640,7 +4657,7 @@ def _confirm_in_console(plan_name: str, workspace_id: str, proposal_id: str, tar
         console.print(f"ERROR could not ask the console to confirm: {e}", style="red")
         raise SystemExit(1) from None
 
-    console.print(f"\nApproving '{plan_name}' here needs you to confirm it in the console.")
+    console.print(f"\nApproving {what} here needs you to confirm it in the console.")
     console.print(f"  Open: {opened['url']}", markup=False)
     console.print(f"  Check the page shows the code {opened['code']}", style="cyan")
     console.print("Waiting for your answer. Ctrl-C stops waiting, recording nothing.", style="dim")

@@ -151,3 +151,15 @@ def integrations_on(monkeypatch):
     suite running in a configuration nobody ships.
     """
     monkeypatch.setenv("FLANNER_INTEGRATIONS", "1")
+
+
+@pytest.fixture(autouse=True)
+def _not_inside_an_agent_shell(monkeypatch):
+    """Tests run inside agent hosts too, which set the markers `actions` looks for.
+
+    Cleared, so a test sees a person's terminal unless it says otherwise.
+    """
+    from flanner import actions
+
+    for marker in actions.AGENT_SHELL_MARKERS:
+        monkeypatch.delenv(marker, raising=False)

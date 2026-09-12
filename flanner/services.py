@@ -1301,13 +1301,21 @@ def request_action(operation: str, arguments: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def decide_action(action_id: str, approve: bool, surface: str) -> dict[str, Any]:
+def decide_action(
+    action_id: str, approve: bool, surface: str, confirmation: str | None = None
+) -> dict[str, Any]:
     """Apply or decline a requested action, for a person."""
     from . import requested_actions
 
     try:
         ensure_database()
-        return requested_actions.decide(get_session(), action_id, approve=approve, surface=surface)
+        return requested_actions.decide(
+            get_session(),
+            action_id,
+            approve=approve,
+            surface=surface,
+            confirmation=confirmation,
+        )
     except Exception as e:  # noqa: BLE001 - the seam returns, never raises
         return {"error": True, "message": str(e)}
 
