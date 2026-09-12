@@ -19,14 +19,22 @@ from __future__ import annotations
 
 import getpass
 import json
+import logging
+import os
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy.orm import Session
 
+from . import operations
 from . import session as cache
-from .database import ActionModel
+from .database import ActionModel, get_session
+
+logger = logging.getLogger(__name__)
 
 #: Where an action came from.
 AGENT = "agent"
@@ -111,6 +119,7 @@ def record(
     session.add(row)
     session.commit()
     session.refresh(row)
+    touched(row)
     return row
 
 
@@ -149,3 +158,87 @@ def view(row: ActionModel) -> dict[str, Any]:
         "decided_by": row.decided_by or None,
         "decided_surface": row.decided_surface or None,
     }
+
+
+#: Commands an agent's own hooks run on every file write and skill use.
+#: Recording them would bury every decision a person made under noise.
+_UNRECORDED = frozenset({"hook guard-write", "hook skill-use"})
+
+#: Set by agent hosts in the shells they run commands in. A person's own
+#: terminal carries none of them. Deleting one is easy, so finding one is
+#: evidence of an agent and not finding one proves nothing.
+AGENT_SHELL_MARKERS = ("CLAUDECODE", "AI_AGENT", "CODEX_SANDBOX", "CODEX_SANDBOX_NETWORK_DISABLED")
+
+_scope: ContextVar[list[str] | None] = ContextVar("flanner_action_scope", default=None)
+
+
+def agent_shell() -> str:
+    """The first agent-host marker in this environment, or an empty string."""
+    return next((marker for marker in AGENT_SHELL_MARKERS if os.environ.get(marker)), "")
+
+
+@contextmanager
+def watching() -> Iterator[list[str]]:
+    """Collect what is recorded while one command or one request runs.
+
+    A write through dispatch records itself, with its arguments. The command
+    line and the web UI also record writes they make directly, and this is
+    how they tell whether dispatch already did, so nothing is recorded twice.
+    """
+    seen: list[str] = []
+    token = _scope.set(seen)
+    try:
+        yield seen
+    finally:
+        _scope.reset(token)
+
+
+def touched(row: ActionModel) -> None:
+    """Note that this command or request already has its entry."""
+    seen = _scope.get()
+    if seen is not None:
+        seen.append(str(row.id))
+
+
+def failed(message: str) -> None:
+    """Mark the write in progress as refused, for a surface that answers with a page."""
+    seen = _scope.get()
+    if seen is not None:
+        seen.append("failed:" + message)
+
+
+def written_by(surface: str, name: str) -> operations.Operation | None:
+    """The registry operation a CLI command or web route performs, if it writes."""
+    if name in _UNRECORDED:
+        return None
+    for op in operations.OPERATIONS:
+        if name in (op.cli if surface == CLI else op.web) and op.access != "read":
+            return op
+    return None
+
+
+def record_unless_recorded(
+    seen: list[str],
+    *,
+    surface: str,
+    name: str,
+    ok: bool,
+    arguments: dict[str, Any] | None = None,
+) -> None:
+    """Record a direct write, unless it wrote through dispatch or wrote nothing."""
+    op = written_by(surface, name)
+    if op is None or any(not entry.startswith("failed:") for entry in seen):
+        return
+    refusals = [entry.removeprefix("failed:") for entry in seen if entry.startswith("failed:")]
+    try:
+        record(
+            get_session(),
+            surface=surface,
+            operation=name,
+            arguments=arguments or {},
+            state=DONE if ok and not refusals else FAILED,
+            message=refusals[0] if refusals else "",
+            subject=op.action,
+        )
+    except Exception:  # noqa: BLE001 - a history that cannot be written must not fail the write
+        logger.warning("could not record %s in the action history", name, exc_info=True)

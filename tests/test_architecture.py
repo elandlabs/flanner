@@ -182,12 +182,21 @@ ALLOWED = {
     "setup_check": FOUNDATION
     | {"claude_integration", "database", "memory_ops", "operations", "session", "skills_observe"},
     # The one history. Needs the table, and the cached session to say who.
-    "actions": {"database", "session"},
+    "actions": {"database", "operations", "session"},
     # Previews and applies what an agent may only ask for. Reaches the same
     # domain functions the CLI and web UI call, so applying here does what
     # doing it there does.
     "requested_actions": FOUNDATION
-    | {"actions", "database", "memory_ops", "skills_manage", "skills_mesh", "skills_ops"},
+    | {
+        "actions",
+        "database",
+        "entitlements",
+        "memory_ops",
+        "session",
+        "skills_manage",
+        "skills_mesh",
+        "skills_ops",
+    },
     # The list of every operation and the surfaces that offer it. Data only,
     # imported by the tests that check it against the CLI, web app and MCP
     # server, and by nothing that would make it a dependency.

@@ -129,6 +129,23 @@ def get_peer_pid_file() -> Path:
     return get_mcp_dir() / "peer.pid"
 
 
+def _command_path(group: click.Group, ctx: click.Context) -> str:
+    """`skills install`, worked out from the words typed, running nothing."""
+    words = [*getattr(ctx, "_protected_args", []), *ctx.args]
+    path: list[str] = []
+    current: click.Command = group
+    try:
+        while isinstance(current, click.Group) and words:
+            name, found, words = current.resolve_command(ctx, words)
+            if found is None:
+                break
+            path.append(found.name or name or "")
+            current = found
+    except click.ClickException:
+        return ""
+    return " ".join(path)
+
+
 class Sectioned(click.Group):
     """A help screen grouped by what a command is for.
 
@@ -189,6 +206,33 @@ class Sectioned(click.Group):
         # the integrations flag and hidden, so the heading would sit over
         # nothing. It comes back with them.
     )
+
+    def invoke(self, ctx: click.Context) -> Any:
+        """Run a command, and put it in the action history if it changed something.
+
+        Writes through the service layer are recorded there, with their
+        arguments. This catches the commands that call the domain directly,
+        so the history does not depend on which path a command happens to
+        take. Whether it failed is read from how it exited.
+        """
+        from . import actions
+
+        name = _command_path(self, ctx)
+        ok = False
+        with actions.watching() as seen:
+            try:
+                result = super().invoke(ctx)
+                ok = True
+                return result
+            except SystemExit as stop:
+                ok = stop.code in (0, None)
+                raise
+            except click.exceptions.Exit as stop:
+                ok = stop.exit_code == 0
+                raise
+            finally:
+                if name:
+                    actions.record_unless_recorded(seen, surface=actions.CLI, name=name, ok=ok)
 
     def format_commands(self, ctx: click.Context, formatter: click.HelpFormatter) -> None:
         listed: set[str] = set()

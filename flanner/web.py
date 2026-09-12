@@ -37,7 +37,7 @@ from sqlalchemy import func
 from starlette.concurrency import run_in_threadpool
 from starlette.responses import StreamingResponse
 
-from . import __version__, features, ipc, services
+from . import __version__, actions, features, ipc, services
 from .database import (
     PlanFileModel,
     SkillEvalCaseModel,
@@ -328,6 +328,34 @@ async def block_foreign_requests(request: Request, call_next: Any) -> Response:
 
     result: Response = await call_next(request)
     return result
+
+
+@app.middleware("http")
+async def record_direct_writes(request: Request, call_next: Any) -> Any:
+    """Put a write made from these pages in the action history.
+
+    Writes through dispatch record themselves. The skill buttons and other
+    forms that call the domain directly are caught here, by the route they
+    matched, so every page lands in the same history. A page that reports a
+    refusal by redirecting marks it with `actions.failed`, since the status
+    code of a redirect cannot say.
+    """
+    if request.method not in _UNSAFE_METHODS:
+        return await call_next(request)
+    with actions.watching() as seen:
+        response = await call_next(request)
+        route = request.scope.get("route")
+        await run_in_threadpool(
+            functools.partial(
+                actions.record_unless_recorded,
+                seen,
+                surface=actions.WEB,
+                name=f"{request.method} {getattr(route, 'path', '')}",
+                ok=response.status_code < 400,
+                arguments=dict(request.path_params),
+            )
+        )
+    return response
 
 
 _STATUS_LABELS = {400: "Bad Request", 404: "Not Found", 500: "Server Error"}
@@ -1895,6 +1923,7 @@ async def skills_observe_form(
 
     root = find_git_root(str(Path.cwd()))
     if root is None:
+        actions.failed("not a repository")
         return RedirectResponse("/skills?said=not+a+repository", status_code=303)
 
     try:
@@ -1909,6 +1938,7 @@ async def skills_observe_form(
             await run_in_threadpool(remove_observe_hook, root)
             said = "stopped+watching"
     except ValueError as error:
+        actions.failed(str(error))
         return RedirectResponse(f"/skills?said={quote(str(error))}", status_code=303)
     return RedirectResponse(f"/skills?said={said}", status_code=303)
 
@@ -1941,6 +1971,7 @@ async def skills_rollback_form(
     try:
         await run_in_threadpool(skills_manage.rollback, session, installation_id, None)
     except (ValueError, OSError) as error:
+        actions.failed(str(error))
         return RedirectResponse(f"{where}?said={quote(str(error))}", status_code=303)
     return RedirectResponse(f"{where}?said=rolled+back", status_code=303)
 
@@ -2030,6 +2061,7 @@ async def skills_decide_form(
             skills_learn.decide, session, proposal_id, decision, actor="web", note=note
         )
     except ValueError as error:
+        actions.failed(str(error))
         return RedirectResponse(f"/skills/proposals?said={quote(str(error))}", status_code=303)
     return RedirectResponse(
         f"/skills/proposals?open_id={proposal_id}&said={decision}", status_code=303
@@ -2052,6 +2084,7 @@ async def skills_revise_form(
     try:
         await run_in_threadpool(skills_learn.revise, session, proposal_id, body)
     except ValueError as error:
+        actions.failed(str(error))
         return RedirectResponse(f"/skills/proposals?said={quote(str(error))}", status_code=303)
     return RedirectResponse(
         f"/skills/proposals?open_id={proposal_id}&said=revised", status_code=303
@@ -2079,6 +2112,7 @@ async def skills_import_form(
     where = _skills_back(back)
     root = find_git_root(str(Path.cwd()))
     if root is None:
+        actions.failed("not a repository")
         return RedirectResponse(f"{where}?said=not+a+repository", status_code=303)
 
     try:
@@ -2093,6 +2127,7 @@ async def skills_import_form(
             )
         )
     except Exception as error:  # noqa: BLE001 - every refusal is shown, not raised
+        actions.failed(str(error))
         return RedirectResponse(f"{where}?said={quote(str(error))}", status_code=303)
     return RedirectResponse(f"{where}?said=installed", status_code=303)
 
@@ -2115,6 +2150,7 @@ async def skills_channel_form(
     workspace = getattr(project, "workspace_id", "") if project else ""
     where = _skills_back(back)
     if not workspace:
+        actions.failed("this project has not joined a workspace")
         return RedirectResponse(
             f"{where}?said=this+project+has+not+joined+a+workspace", status_code=303
         )
@@ -2177,6 +2213,7 @@ async def skill_adopt_form(name: str, agent: str = Form("claude-code")) -> Redir
             )
         )
     except (ValueError, OSError) as error:
+        actions.failed(str(error))
         return RedirectResponse(f"/skills/{quote(name)}?said={quote(str(error))}", status_code=303)
     said = f"kept {kept['files']} file(s) as {kept['manifest_hash'][:19]}…"
     return RedirectResponse(f"/skills/{quote(name)}?said={quote(said)}", status_code=303)
@@ -2202,6 +2239,7 @@ async def skill_share_form(
     project = get_project_by_root(session, root) if root else None
     workspace = getattr(project, "workspace_id", "") if project else ""
     if not workspace:
+        actions.failed("this project has not joined a workspace")
         return RedirectResponse(
             f"/skills/{quote(name)}?said=this+project+has+not+joined+a+workspace",
             status_code=303,
@@ -2214,6 +2252,7 @@ async def skill_share_form(
             )
         )
     except (ValueError, OSError) as error:
+        actions.failed(str(error))
         return RedirectResponse(f"/skills/{quote(name)}?said={quote(str(error))}", status_code=303)
     said = f"signed {sent['bytes']} bytes for your workspace; flanner peer sync sends it on"
     return RedirectResponse(f"/skills/{quote(name)}?said={quote(said)}", status_code=303)
