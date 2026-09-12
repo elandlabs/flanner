@@ -12,6 +12,8 @@ versioning follows [SemVer](https://semver.org/).
   `flanner actions list` and the Actions page show the same record, and an
   agent's reply carries the id. Ids and closed vocabularies are kept; a plan
   body, a memory or a piece of evidence never is.
+  Commands and pages that write without the service layer, such as a skill
+  rollback, are recorded too, by the command or route that made the change.
 - **Agents can ask for risky actions, and only ask.** `request_action` covers
   installing, rolling back, sharing and importing a skill, and restoring a
   memory. It stores a preview and changes nothing. You apply or decline it
@@ -74,6 +76,12 @@ versioning follows [SemVer](https://semver.org/).
   none of them. Running comparisons is on the roadmap.
 
 ### Security
+- **Applying what an agent asked for takes more than typing the command.**
+  Signed in, flanner actions apply waits for a console confirmation bound to
+  that action and its preview, and the web UI sends you to the terminal. Not
+  signed in, the command refuses inside a shell an agent host started. That
+  check can be evaded, and the web UI still applies, so without an account
+  nothing proves a person applied it.
 - **A teammate's review counts, and only as the person who signed it.** A
   device knew its own role and nobody else's, so every proposal and approval
   a teammate made was dropped. It now reads a roster the control plane signs
