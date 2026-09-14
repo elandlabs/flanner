@@ -15,9 +15,8 @@ versioning follows [SemVer](https://semver.org/).
   - **Team card.** Settings links to the console this device signed in to, for members, invitations, devices, workspaces and billing.
   - **Sharing and sync.** A project page shows its workspace and your role there, and whether this device accepts pushes.
 - **`flanner peer pushes on|off`** replaces the `FLANNER_ACCEPT_PUSHES` environment variable as the everyday switch. The project page flips the same setting. The variable still works and, when set, decides.
-
-### Changed
-- The Linear and Jira page is now called Issue trackers. The old name clashed with the agent integration settings.
+- **You can see whether an agent has actually reached flanner.** "Registered" only meant a config file named flanner. Settings, the setup check and `flanner status` now show "last call 2 minutes ago", or "not yet used" with a prompt to try: ask the agent to list your flanner projects. `flanner init` ends on the same prompt.
+- **The dashboard opens with what needs you.** Agent requests, memory suggestions, review items and agents that have not connected replace the project, plan and weekly counts.
 - **One action history.** Every write through the CLI, the web UI or an agent
   is recorded with an id, where it came from, and the person it was for.
   `flanner actions list` and the Actions page show the same record, and an
@@ -39,7 +38,7 @@ versioning follows [SemVer](https://semver.org/).
 - **A harness for automatic tool use**, in `benchmarks/agent_tool_use`. It
   scores recall, capture judgment, quietness, choosing the right project,
   self-approval and recovery for Claude Code and Codex, from the calls
-  flanner logged. No results have been recorded yet.
+  flanner logged. Both hosts pass all seven, three runs out of three.
 
 - **`flanner init` asks whether to record which skills your agents use**, and
   Enter means yes. Opt-in made the feature useless: the counts only mean
@@ -82,6 +81,7 @@ versioning follows [SemVer](https://semver.org/).
   pager when stdout is a terminal; piped output is unchanged.
 
 ### Changed
+- The Linear and Jira page is now called Issue trackers. The old name clashed with the agent integration settings.
 - **Evaluations say what they are.** `flanner skills eval` stores comparison
   results that somebody else produced, and every report now says flanner ran
   none of them. Running comparisons is on the roadmap.
@@ -111,6 +111,8 @@ versioning follows [SemVer](https://semver.org/).
   maintainer exists. Solo review is unchanged.
 
 ### Fixed
+- **Agents offer a settled decision for approval.** Codex saved decisions nobody asked it to keep, and Claude Code acknowledged them without offering anything. The tool descriptions, the managed instructions and the memory skill now say which tool is for what, and when. Both hosts then passed both capture checks three times out of three.
+- **A form that fails keeps what you typed.** Two new-project errors came back empty, a plan edit whose save failed lost the edit, and a refused skill draft revision dropped the edited body.
 - A project's plan list counted hidden plans out and listed them anyway; the
   count and the rows now agree.
 - **`remember` is refused when capture is off**, from the CLI and from the

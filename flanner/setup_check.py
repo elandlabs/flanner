@@ -40,6 +40,8 @@ def agents(cwd: Path) -> dict[str, Any]:
 
 #: Part of the name each agent gives itself when it connects, and the agent
 #: it means. Matched as a fragment, because hosts add versions and suffixes.
+#: Seen from the hosts themselves: claude-code and codex-mcp-client in the
+#: agent harness, claude-ai in Claude Desktop's own MCP logs.
 _CLIENTS = (
     ("codex", "codex"),
     ("claude-code", "claude_code"),
