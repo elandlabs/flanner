@@ -59,3 +59,39 @@ def test_report_and_task_pages_use_the_centred_column(template):
 
     assert '<div class="pane narrow">' in source
     assert "data-tabs" not in source
+
+
+@pytest.mark.parametrize(
+    ("template", "titles"),
+    [
+        ("mesh.html", ["How syncing actually works"]),
+        ("review.html", ["Deciding from here", "What the marks mean"]),
+    ],
+)
+def test_explainers_are_collapsed_with_a_one_line_summary(template, titles):
+    """Explanations a person reads once start closed and say what is inside."""
+    source = (WEB / "templates" / template).read_text(encoding="utf-8")
+
+    found = re.findall(
+        r'<details class="card explainer">\s*<summary>\s*<h2 class="card-title">([^<]+)</h2>'
+        r'\s*<span class="gist">[^<]+</span>',
+        source,
+    )
+    assert found == titles
+    assert "card-prose" not in source
+    assert 'class="footnote"' not in source or template == "mesh.html"
+
+
+def test_review_explainers_render_closed(client):
+    page = client.get("/review").text
+
+    assert page.count('<details class="card explainer">') == 2
+    assert '<details class="card explainer" open' not in page
+
+
+def test_explainers_sit_in_the_middle_at_one_width():
+    css = (WEB / "static" / "css" / "shell.css").read_text(encoding="utf-8")
+
+    rule = re.search(r"\.explainer \{([^}]*)\}", css)
+    assert rule is not None
+    assert "margin-inline: auto" in rule.group(1) and "max-width" in rule.group(1)

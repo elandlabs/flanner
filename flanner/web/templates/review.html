@@ -78,8 +78,12 @@
   {% endcall %}
   {% endif %}
 
-  <div class="card card-pad card-prose">
-    <h2 class="card-title">Deciding from here</h2>
+  <details class="card explainer">
+    <summary>
+      <h2 class="card-title">Deciding from here</h2>
+      <span class="gist">Accept or reject at the command line, where this machine's key signs the decision.</span>
+    </summary>
+    <div class="explainer-body">
     <p>
       Reviewing is a signed record, not a form post, so it happens at the
       command line where this machine's key lives. A browser session cannot
@@ -105,32 +109,35 @@
     <p class="hint">Then <code class="mono">flanner review decide &lt;plan&gt; --accept</code>
        or <code class="mono">--reject</code>. The decision syncs to your peers
        like any other version.</p>
-  </div>
+    </div>
+  </details>
 
-  <div class="footnote">
-    <span class="i" aria-hidden="true">i</span>
-    <b>n notes</b> are comments from the mesh, each signed by a teammate's
-    device. A <b>+n</b> counts notes returned in a review packet by somebody
-    outside the team; those are unsigned, so they are recorded as received
-    rather than authored. Neither kind moves a plan's accepted baseline —
-    pointing at a paragraph is not the same as deciding about it.
-  </div>
-
-  <div class="footnote">
-    <span class="i" aria-hidden="true">i</span>
-    <b>advisory</b> marks a project whose roles are local to this machine.
-    Review still runs and every decision is still signed, but the role map is
-    editable by whoever holds this device, so accepting a plan <i>records</i> a
-    decision rather than authorizing one. Roles become enforced once the
-    project joins a workspace and this device holds a valid entitlement.
-  </div>
-
-  <div class="footnote">
-    <span class="i" aria-hidden="true">i</span>
-    Review decisions never reach the control plane. It holds accounts, devices
-    and access; what anyone thinks of a plan stays on the machines that hold
-    the plan. <a href="/mesh">How syncing works</a>.
-  </div>
+  {#
+    These were three footnotes running the full width of the page, lines far
+    too long to read. They explain the marks in the table, so they are one
+    explainer now, at the same width as the one above.
+  #}
+  <details class="card explainer">
+    <summary>
+      <h2 class="card-title">What the marks mean</h2>
+      <span class="gist">Notes, +n, advisory, and where review decisions go.</span>
+    </summary>
+    <div class="explainer-body">
+    <p>
+      <b>n notes</b> are comments from the mesh, each signed by a teammate's
+      device. A <b>+n</b> counts notes returned in a review packet by somebody
+      outside the team; those are unsigned, so they are recorded as received
+      rather than authored. Neither kind moves a plan's accepted baseline —
+      pointing at a paragraph is not the same as deciding about it.</p>
+    <p>
+      <b>advisory</b> marks a project whose roles are local to this machine.
+      Review still runs and every decision is still signed, but the role map is
+      editable by whoever holds this device, so accepting a plan <i>records</i> a
+      decision rather than authorizing one. Roles become enforced once the
+      project joins a workspace and this device holds a valid entitlement.</p>
+    <p>Review decisions never reach the control plane. It holds accounts, devices and access; what anyone thinks of a plan stays on the machines that hold the plan. <a href="/mesh">How syncing works</a>.</p>
+    </div>
+  </details>
 
 </div>
 {% endblock %}
