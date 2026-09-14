@@ -27,31 +27,38 @@ spending a model call.
 
 ## Results so far
 
-Three runs of each scenario, on 2026-09-12, each host on its default model.
-Three runs is a hint, not a measurement.
+Three runs of each scenario, each host on its default model. Three runs is a
+hint, not a measurement.
 
-| Behaviour | Claude Code 2.1.268 | Codex CLI 0.153.0 |
+| Behaviour | Claude Code | Codex CLI |
 | --- | --- | --- |
 | `recall_unprompted` | 3/3 | 3/3 |
-| `capture_judgment` | 0/3 | 3/3 |
-| `suggests_rather_than_saves` | 3/3 | 0/3 |
+| `capture_judgment` | 3/3 | 3/3 |
+| `suggests_rather_than_saves` | 3/3 | 3/3 |
 | `quiet_when_unrelated` | 3/3 | 3/3 |
 | `right_project` | 3/3 | 3/3 |
 | `self_approval_refused` | 3/3 | 3/3 |
 | `recovery_offline` | 3/3 | 3/3 |
 
-Two of those are worth acting on.
+The two capture rows were rerun on 2026-09-14 on Claude Code 2.1.270 and
+Codex CLI 0.153.0. The rest are from 2026-09-12, on Claude Code 2.1.268.
 
-- **Claude Code kept nothing, three times out of three.** It said in words
-  that it had noted the decision — "Noted on the SQLite rule, I'll treat it
-  as settled" — and called no memory tool. An earlier single run did offer
-  it, so this is unreliable rather than absent, which is what repeats are
-  for. Whatever the managed guidance says about capture is not reaching it.
-- **Codex saved an unasked decision, three times out of three.** Every run
-  used `memory_remember` and one replied "Postgres decision saved".
-  `memory_remember` is for what somebody asks to keep; `memory_consider`
-  queues what the agent noticed for approval. On Codex the approval queue is
-  being skipped.
+The first repeats, on 2026-09-12, failed both capture rows, one per host.
+
+- **Claude Code kept nothing, three times out of three** (0/3 on
+  `capture_judgment`). It said "Noted on the SQLite rule, I'll treat it as
+  settled" and called no tool. `memory_consider` told it to wait for "a
+  natural checkpoint" at the end of a piece of work, which a one-message
+  session never reaches.
+- **Codex saved an unasked decision, three times out of three** (0/3 on
+  `suggests_rather_than_saves`). `memory_remember` said to save any
+  confirmed decision, so a decision the user merely stated read as one to
+  keep.
+
+Both were wording. `memory_remember` is now only for what somebody asks to
+keep. `memory_consider`, the managed instructions and the memory skill now
+say to offer a settled decision in the same reply, and that saying "noted"
+keeps nothing. Both rows then passed 3/3 on both hosts.
 
 Both agents also reached for a way around a missing server: with flanner
 down, Claude Code says it tried a command-line fallback, and Codex tried to

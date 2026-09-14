@@ -1532,11 +1532,13 @@ def memory_remember(
     created_by: str = "claude",
 ) -> dict[str, Any]:
     """
-    Save one durable fact so a later session can find it.
+    Save one durable fact the user asked you to keep.
 
-    Call this when the user says to remember something, or when a decision,
-    constraint or lesson is confirmed and future work would be worse
-    without it.
+    Call this only when the user asks for something to be remembered, in
+    whatever words: "remember", "note that", "keep this for later". A
+    decision the user merely states, even one they call final or settled,
+    is not a request to save it. Offer that with `memory_consider`, which
+    puts it in front of them instead of keeping it behind their back.
 
     WHAT BELONGS HERE: one atomic claim that changes how future work should
     be done. A decision and why the alternatives lost. A stable preference.
@@ -1752,9 +1754,12 @@ def memory_consider(
     matters: `memory_remember` is somebody's instruction, this is your
     suggestion, and a suggestion gets checked before it is kept.
 
-    Call it at a natural checkpoint: after a decision is settled, after a
-    failed approach is understood, at the end of a piece of work. Not after
-    every message.
+    Call it in the same reply where you notice the thing, even while you
+    answer something else. The clearest case is a decision the user states
+    as settled: offer it, with confidence "confirmed". Do not wait for the
+    end of the work. A session can end after one message, and a decision
+    you only acknowledged in words is lost; saying "noted" keeps nothing.
+    Offer what outlives the conversation, not every message.
 
     Each candidate is a dict:
       content       one atomic claim, in your own words, under 2000 chars

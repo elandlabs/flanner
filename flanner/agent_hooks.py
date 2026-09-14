@@ -175,11 +175,14 @@ def agent_md_block(project: ProjectModel) -> str:
         f"- At the start of a task, call `memory_recall(query=...)` with the "
         f"task's key terms. Do it again before assuming anything about this "
         f"project you cannot see in the code.\n"
-        f"- When the user says to remember something, call `memory_remember`.\n"
-        f"- When YOU notice something durable that the user did not ask "
-        f"you to save -- a decision settled, an approach that failed and "
-        f"why -- call `memory_consider` instead. It is checked against this "
-        f"project's policy and waits for approval rather than being kept.\n"
+        f"- Call `memory_remember` only when the user asks you to remember "
+        f"something.\n"
+        f"- When the user states a decision is settled, or YOU notice "
+        f"something durable they did not ask you to save -- an approach that "
+        f"failed and why -- call `memory_consider` in that same reply, even "
+        f"while answering something else. It is checked against this "
+        f"project's policy and waits for approval. Saying you noted it keeps "
+        f"nothing.\n"
         f"- Correct a memory with `memory_supersede` rather than remembering "
         f"something that contradicts it.\n"
         f"- Approve or reject a suggestion with `memory_decide` only after the "
@@ -448,8 +451,8 @@ description: >
   Recall and keep durable project context through flanner. Use at the start
   of a task in a flanner project, before assuming anything about this
   project you cannot see in the code, when the user says to remember
-  something, and when you notice a decision, constraint or lesson worth
-  keeping.
+  something, when the user states a decision is settled, and when you
+  notice a constraint or lesson worth keeping.
 ---
 
 # Project memory through flanner
@@ -457,10 +460,13 @@ description: >
 1. Recall first. Call `memory_recall(query=...)` with the task's key terms
    before you start, and again before assuming a convention you cannot see.
    Cite the memory id when you rely on one.
-2. When the user says to remember something, call `memory_remember`.
-3. When you notice something durable yourself -- a decision settled, an
-   approach that failed and why -- call `memory_consider`. It is checked
-   against the project's policy and usually waits for approval.
+2. Call `memory_remember` only when the user asks you to remember
+   something.
+3. When the user states a decision is settled, or you notice something
+   durable yourself -- an approach that failed and why -- call
+   `memory_consider` in that same reply, even while answering something
+   else. It is checked against the project's policy and usually waits for
+   approval. Saying you noted it keeps nothing.
 4. Approve or reject a suggestion with `memory_decide` only after the user
    has told you what they decided. Some categories are refused there; a
    person approves those with `flanner mem approve`.
