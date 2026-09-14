@@ -112,7 +112,7 @@
     <form method="post" action="/skills/proposals/revise">
       <input type="hidden" name="proposal_id" value="{{ open.id }}">
       <textarea class="input mono" name="body" rows="14"
-                style="width:100%">{{ open.draft_body }}</textarea>
+                style="width:100%">{{ draft if draft is not none else open.draft_body }}</textarea>
       <div class="listctl" style="margin-top:10px">
         <button class="btn btn-sm">Save this edit</button>
         <span class="hint">Saving sends it back for another look; the approval

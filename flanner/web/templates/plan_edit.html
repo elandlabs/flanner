@@ -22,6 +22,7 @@
 
 {% block content %}
 <div class="pane">
+  {% if error %}<div class="notice bad" role="alert">{{ error }}</div>{% endif %}
   <form method="POST" action="/plans/{{ plan_file.id }}/edit" id="plan-edit-form"
         class="editor-shell" data-full-load>
 
@@ -34,7 +35,7 @@
     <div class="field">
       <label class="field-label" for="notes">What changed <span class="opt">(optional)</span></label>
       <textarea class="textarea" id="notes" name="notes" rows="2"
-                placeholder="One line, so the history reads as a story."></textarea>
+                placeholder="One line, so the history reads as a story.">{{ notes or '' }}</textarea>
     </div>
 
     <div class="footnote">

@@ -516,3 +516,30 @@ def test_the_page_can_review_approve_and_invalidate(repo):
     assert edited.status_code == 303
     after = json.loads(runner.invoke(cli, ["skills", "proposals", "--json"]).output)
     assert after[0]["installable"] is False
+
+
+def test_a_revision_that_is_refused_keeps_the_edited_body(repo, monkeypatch):
+    """A refusal used to redirect, and the edited draft went with it."""
+    from starlette.testclient import TestClient
+
+    from flanner import skills_learn
+    from flanner.web import app
+
+    runner, where = repo
+    proposal_id = a_proposal(runner, where)
+
+    def refuse(*args, **kwargs):
+        raise ValueError("that draft is too long")
+
+    monkeypatch.setattr(skills_learn, "revise", refuse)
+    client = TestClient(app, base_url="http://127.0.0.1:8000")
+
+    page = client.post(
+        "/skills/proposals/revise",
+        data={"proposal_id": proposal_id, "body": "---\nname: x\n---\n\nmy careful edit\n"},
+        follow_redirects=False,
+    )
+
+    assert page.status_code == 422
+    assert "that draft is too long" in page.text
+    assert "my careful edit" in page.text

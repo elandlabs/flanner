@@ -1092,11 +1092,20 @@ async def create_project_post(
                 request,
                 session,
                 "Could not find git repository. Please specify project root manually.",
+                name=name,
+                description=description,
+                plan_directory=plan_directory,
             )
 
     if not validate_git_repo(project_root):
         return _new_project_error(
-            request, session, f"{project_root} is not a valid git repository"
+            request,
+            session,
+            f"{project_root} is not a valid git repository",
+            name=name,
+            description=description,
+            project_root=project_root,
+            plan_directory=plan_directory,
         )
 
     try:
@@ -1454,7 +1463,7 @@ async def plan_edit(request: Request, plan_file_id: str) -> HTMLResponse:
 @app.post("/plans/{plan_file_id}/edit")
 async def plan_update(
     request: Request, plan_file_id: str, content: str = Form(...), notes: str = Form("")
-) -> RedirectResponse:
+) -> Response:
     """Update a plan file (creates new version)"""
     ensure_db()
     session = get_session()
@@ -1490,14 +1499,35 @@ async def plan_update(
         return RedirectResponse(url=f"/plans/{plan_file_id}?message=no_changes", status_code=303)
 
     # Create new version (locked: refreshes, picks the next free number, commits)
-    record_new_version(
-        session,
-        project=project,
-        plan_file=plan_file,
-        content=content,
-        created_by="user",
-        notes=notes,
-    )
+    try:
+        record_new_version(
+            session,
+            project=project,
+            plan_file=plan_file,
+            content=content,
+            created_by="user",
+            notes=notes,
+        )
+    except (DatabaseError, OSError) as error:
+        # A lock that timed out or a file that could not be written used to
+        # end in a server error page, and the edit went with it. The text is
+        # still in this request, so it goes back into the editor.
+        actions.failed(str(error))
+        return templates.TemplateResponse(
+            request,
+            "plan_edit.html",
+            {
+                **_nav(session),
+                "request": request,
+                "project": project,
+                "plan_file": plan_file,
+                "version": latest_version,
+                "content": content,
+                "notes": notes,
+                "error": f"Not saved: {error}. Your changes are still here; try again.",
+            },
+            status_code=409,
+        )
 
     return RedirectResponse(url=f"/plans/{plan_file_id}", status_code=303)
 
@@ -2005,6 +2035,19 @@ async def skills_proposals_page(
     page rather than the sidebar: it is the same area, and a second rail
     entry for an inbox that is empty on most machines earns nothing.
     """
+    return await _proposals_view(request, open_id=open_id, suite=suite, said=said)
+
+
+async def _proposals_view(
+    request: Request,
+    *,
+    open_id: str = "",
+    suite: str = "",
+    said: str = "",
+    draft: str | None = None,
+    status_code: int = 200,
+) -> HTMLResponse:
+    """The proposals page. `draft` puts back an edit that was not saved."""
     ensure_db()
     session = get_session()
     from . import skills_eval, skills_learn
@@ -2026,8 +2069,10 @@ async def skills_proposals_page(
                 "suites": [],
                 "suite": "",
                 "said": said,
+                "draft": draft,
                 "no_project": True,
             },
+            status_code=status_code,
         )
 
     rows = await run_in_threadpool(skills_learn.proposals, session, project, None)
@@ -2054,8 +2099,10 @@ async def skills_proposals_page(
             "suites": suites,
             "suite": suite,
             "said": said,
+            "draft": draft,
             "no_project": False,
         },
+        status_code=status_code,
     )
 
 
@@ -2090,7 +2137,7 @@ async def skills_decide_form(
 @app.post("/skills/proposals/revise")
 async def skills_revise_form(
     request: Request, proposal_id: str = Form(...), body: str = Form(...)
-) -> RedirectResponse:
+) -> Response:
     """Edit a draft, which puts it back in review.
 
     Editing after approval is meant to invalidate the approval. That is
@@ -2103,8 +2150,12 @@ async def skills_revise_form(
     try:
         await run_in_threadpool(skills_learn.revise, session, proposal_id, body)
     except ValueError as error:
+        # Redirecting dropped the edited body, which can be a whole skill.
+        # Rendering the page again keeps it in the editor beside the reason.
         actions.failed(str(error))
-        return RedirectResponse(f"/skills/proposals?said={quote(str(error))}", status_code=303)
+        return await _proposals_view(
+            request, open_id=proposal_id, said=str(error), draft=body, status_code=422
+        )
     return RedirectResponse(
         f"/skills/proposals?open_id={proposal_id}&said=revised", status_code=303
     )
