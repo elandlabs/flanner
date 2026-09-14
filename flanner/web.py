@@ -2909,20 +2909,48 @@ async def memory_pending_page(request: Request) -> HTMLResponse:
 
 
 @app.get("/actions", response_class=HTMLResponse)
-async def actions_page(request: Request, said: str = "") -> HTMLResponse:
-    """What was done here, in the CLI and by agents, and what waits on you."""
+async def actions_page(request: Request, said: str = "", q: str = "") -> HTMLResponse:
+    """What was done here, in the CLI and by agents, and what waits on you.
+
+    Paged and searchable like every other list. It showed the newest fifty
+    and stopped, so anything older could not be reached from the page at
+    all. Search runs over the whole history before paging, so a match on an
+    old page is still found. Requests waiting on a decision stay above the
+    table, every one of them: they are what somebody came here to act on.
+    """
     ensure_db()
     session = get_session()
     from . import actions as history
 
-    rows = [history.view(row) for row in await run_in_threadpool(history.recent, session)]
+    # ponytail: loads the whole history to search it; move the filter into
+    # SQL if a machine's history grows past a few thousand rows.
+    rows = [
+        history.view(row)
+        for row in await run_in_threadpool(functools.partial(history.recent, session, limit=0))
+    ]
+    done = _search(
+        [row for row in rows if row["state"] != history.PENDING],
+        q,
+        lambda row: [
+            row["subject"] or "",
+            row["operation"] or "",
+            row["person"] or "",
+            row["surface"] or "",
+            row["state"] or "",
+            row["id"],
+        ],
+    )
+    listed = _paginate(request, done)
     return templates.TemplateResponse(
         request,
         "actions.html",
         {
+            "request": request,
             "pending": [row for row in rows if row["state"] == history.PENDING],
-            "rows": [row for row in rows if row["state"] != history.PENDING],
+            "rows": listed.items,
+            "q": q,
             "said": said,
+            **_pager_context(request, listed),
             **_nav(session),
         },
     )

@@ -342,8 +342,12 @@ a:hover { color: var(--accent-hi); }
 .cols-peers { grid-template-columns: 1fr 150px; }
 .cols-wsaccess { grid-template-columns: 1fr 120px; }
 .cols-review { grid-template-columns: 1.4fr 1fr 110px 130px; }
-/* The action history: when, surface, person, what, state, id. */
-.cols-actions { grid-template-columns: 130px 64px 110px 1fr 96px 90px; }
+/* The action history: when, surface, person, what, state, ID. The person
+   is an email address, which a fixed 110px track could not hold, so it ran
+   into the action beside it. It now takes a share of the width and cuts
+   off with an ellipsis, the full address in its title. */
+.cols-actions { grid-template-columns: 130px 64px 1fr 2fr 96px 90px; }
+.cell-cut { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* The memory list. Named in the template since it was written and never
    defined here, so every row fell back to a single 1122px column with its
    four cells stacked on top of each other. Search adds a fifth column for

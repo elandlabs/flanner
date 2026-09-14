@@ -4,7 +4,15 @@
 
 {% block topbar_main %}
 <h1>Actions</h1>
-<span class="sub">What was done through the CLI, this page and your agents, one id each.</span>
+<span class="sub">What was done through the CLI, this page and your agents, one ID each.</span>
+{% endblock %}
+
+{% block topbar_actions %}
+<form method="get" action="/actions" class="listctl">
+  <label class="sr-only" for="acq">Search</label>
+  <input class="input input-sm" type="search" data-search-submit id="acq" name="q" value="{{ q }}"
+         placeholder="Search actions" autocomplete="off">
+</form>
 {% endblock %}
 
 {% block content %}
@@ -38,13 +46,13 @@
   <div class="card">
     <div class="tablewrap">
       <div class="grid-head cols-actions">
-        <span>When</span><span>Via</span><span>For</span><span>Action</span><span>State</span><span>Id</span>
+        <span>When</span><span>Via</span><span>For</span><span>Action</span><span>State</span><span>ID</span>
       </div>
       {% for row in rows %}
       <div class="grid-row cols-actions">
         <span class="when">{{ (row.at or '')[:16] | replace('T', ' ') }}</span>
         <span class="when">{{ row.surface }}</span>
-        <span class="when">{{ row.person }}</span>
+        <span class="when cell-cut" title="{{ row.person }}">{{ row.person }}</span>
         <span>{{ row.subject or row.operation }}
           {% if row.decided_by %}<span class="hint">decided by {{ row.decided_by }} in the {{ row.decided_surface }}</span>{% endif %}
           {% if row.state in ('failed', 'stale') and row.message %}<span class="hint">{{ row.message }}</span>{% endif %}</span>
@@ -56,8 +64,14 @@
         <span><code>{{ row.id[:8] }}</code></span>
       </div>
       {% endfor %}
+      {% include "_pager.html" %}
     </div>
   </div>
+  {% elif q %}
+  {% call empty.state('clear', 'No match') %}
+    <p>No recorded action matches “{{ q }}”.</p>
+    <a class="btn" href="/actions">Show every action</a>
+  {% endcall %}
   {% elif not pending %}
   {% call empty.state('clear', 'Nothing recorded yet') %}
     <p class="hint">Every change made through the CLI, this page or an agent appears here,
