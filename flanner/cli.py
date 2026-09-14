@@ -1248,40 +1248,20 @@ def mem_mode(capture_mode: str | None, project: str | None) -> None:
         return
 
     path = Path(proj.project_root) / ".flanner" / POLICY_FILENAME
-    _set_capture_mode(path, capture_mode)
+    effective = memory_ops.set_capture_mode(proj, capture_mode)
 
-    after = memory_ops.policy_for(proj)
     console.print()
-    if after.capture_mode != capture_mode:
+    if effective != capture_mode:
         # The merge refuses anything that would loosen the global policy,
         # so saying "set" here would be a lie the next run exposes.
         tui.warn(
-            f"Written, but the effective mode is still {after.capture_mode}: "
+            f"Written, but the effective mode is still {effective}: "
             "a project may only tighten what the global policy allows."
         )
     else:
         tui.ok(f"Capture mode is now {capture_mode} for {proj.name}")
     console.print(f"  {tui.code(str(path))}", style="muted")
     console.print()
-
-
-def _set_capture_mode(path: Path, capture_mode: str) -> None:
-    """Write one key into a project policy file, keeping the rest.
-
-    Rewritten with yaml rather than edited as text, because a hand-edited
-    file may have comments in places no line-based edit can predict, and
-    losing somebody's comments is a worse outcome than losing formatting.
-    """
-    import yaml
-
-    from .memory_policy import read_file
-    from .storage import atomic_write_text
-
-    data = read_file(path)
-    data.setdefault("version", 1)
-    data["capture_mode"] = capture_mode
-    path.parent.mkdir(parents=True, exist_ok=True)
-    atomic_write_text(path, yaml.dump(data, default_flow_style=False, sort_keys=False))
 
 
 @mem.group("policy")

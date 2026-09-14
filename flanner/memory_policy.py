@@ -33,6 +33,8 @@ OFF = "off"
 EXPLICIT = "explicit"
 SUGGEST = "suggest"
 AUTO_SAFE = "auto_safe"
+#: Every capture mode, from capturing least to most.
+CAPTURE_MODES = (OFF, EXPLICIT, SUGGEST, AUTO_SAFE)
 MODES = (OFF, EXPLICIT, SUGGEST, AUTO_SAFE)
 
 #: Retrieval modes. Recorded and read by the agent instructions rather than

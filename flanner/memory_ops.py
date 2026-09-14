@@ -1279,6 +1279,39 @@ def refuse_when_capture_is_off(project: ProjectModel | None) -> None:
         )
 
 
+#: Re-exported so a surface offering the choice need not reach the policy parser.
+CAPTURE_MODES = memory_policy.CAPTURE_MODES
+
+
+def set_capture_mode(project: ProjectModel, capture_mode: str) -> str:
+    """Write the capture mode into this project's policy file, keeping the rest.
+
+    The one writer `flanner mem mode` and the web page share, so both leave
+    the same bytes. Returns the mode in force afterwards, which differs from
+    the one written when the global policy is stricter: a project may only
+    tighten what the global policy allows.
+
+    Rewritten with yaml rather than edited as text, because a hand-edited
+    file may have comments in places no line-based edit can predict, and
+    losing somebody's comments is a worse outcome than losing formatting.
+    """
+    import yaml
+
+    if capture_mode not in memory_policy.CAPTURE_MODES:
+        raise ValidationError(
+            f"capture mode must be one of {', '.join(memory_policy.CAPTURE_MODES)}"
+        )
+    if not project.project_root:
+        raise ValidationError("this project has no directory, so it has no policy file")
+    path = Path(project.project_root) / ".flanner" / memory_policy.POLICY_FILENAME
+    data = memory_policy.read_file(path)
+    data.setdefault("version", 1)
+    data["capture_mode"] = capture_mode
+    path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_text(path, yaml.dump(data, default_flow_style=False, sort_keys=False))
+    return policy_for(project).capture_mode
+
+
 # --- attachments --------------------------------------------------------------
 #
 # A memory says why something matters; an attachment is the evidence. The
