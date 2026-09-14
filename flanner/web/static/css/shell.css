@@ -664,6 +664,10 @@ details.lede > summary:hover::after { text-decoration: underline; }
 
 .switch-row { display: flex; align-items: center; gap: 12px; padding: 11px 0; flex-wrap: wrap; }
 .switch-row .body { min-width: 0; }
+/* A row's description can be long. Letting it take the free space, and
+   shrink, keeps the control beside it instead of wrapping onto a line alone. */
+.switch-row > .body { flex: 1 1 0; }
+.switch-row > .btn, .switch-row > .pill, .switch-row > select { flex: none; }
 .switch-row + .switch-row { border-top: 1px solid var(--divider); }
 .switch-row .body { font-size: 13px; font-weight: 600; }
 .switch-row .body span { display: block; font-weight: 400; font-size: 12px; color: var(--text-3);
