@@ -75,7 +75,7 @@
   </div>
 
   {% if mesh.reason %}
-  <div class="notice {{ 'bad' if mesh.status not in ('valid', 'in_grace') else 'info' }}">
+  <div class="notice {{ 'bad' if mesh.status not in ('valid', 'in_grace') else 'warn' }}">
     {{ mesh.reason }}
   </div>
   {% endif %}

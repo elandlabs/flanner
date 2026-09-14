@@ -156,21 +156,37 @@ a:hover { color: var(--accent-hi); }
 .pane.centred { align-items: center; }
 
 /* A standing statement about the page, as opposed to `.alert`, which is
-   feedback about something you just did and can be dismissed. The rule was
-   missing from this stylesheet while two templates already used the class,
-   so those blocks rendered as unstyled text. */
+   feedback about something you just did and can be dismissed.
+
+   An icon on a tint, with no border. It was a coloured left bar on a
+   rounded card, so the corner radius bent the bar into a curve, and the
+   other three sides were grey. The icon carries the tone as well as the
+   colour, so the tone does not rest on telling red from green.
+
+   Four tones, from least to most urgent: info (neutral, the default),
+   good (done), warn (advice: nothing is broken, but read this) and bad
+   (something failed). The icons are Lucide 0.562.0, the pack _icon.html
+   inlines, drawn as a mask so they take the tone's colour. */
 .notice {
-  border: 1px solid var(--border); border-left-width: 3px;
-  border-radius: 10px; padding: 12px 14px; font-size: 13px; line-height: 1.55;
-  background: var(--card); color: var(--text-2);
+  position: relative; border: 0; border-radius: 10px;
+  padding: 11px 14px 11px 40px; font-size: 13px; line-height: 1.55;
+  background: var(--chip); color: var(--text-2);
+  --notice-ink: var(--text-3);
+  --notice-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M12 16v-4'/%3E%3Cpath d='M12 8h.01'/%3E%3C/svg%3E");
+}
+.notice::before {
+  content: ""; position: absolute; left: 14px; top: 13px; width: 16px; height: 16px;
+  background: var(--notice-ink);
+  -webkit-mask: var(--notice-icon) center / contain no-repeat;
+  mask: var(--notice-icon) center / contain no-repeat;
 }
 .notice p { margin: 0 0 8px; }
 .notice p:last-child { margin-bottom: 0; }
 .notice b, .notice strong { color: var(--text); }
 .notice code { overflow-wrap: anywhere; }
-.notice.good { border-left-color: var(--fresh); background: var(--fresh-bg); }
-.notice.bad  { border-left-color: var(--stale); background: var(--stale-bg); }
-.notice.info { border-left-color: var(--suspect); background: var(--suspect-bg); }
+.notice.good { background: var(--fresh-bg); --notice-ink: var(--fresh-text); --notice-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='m9 12 2 2 4-4'/%3E%3C/svg%3E"); }
+.notice.warn { background: var(--suspect-bg); --notice-ink: var(--suspect-text); --notice-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3'/%3E%3Cpath d='M12 9v4'/%3E%3Cpath d='M12 17h.01'/%3E%3C/svg%3E"); }
+.notice.bad  { background: var(--stale-bg); --notice-ink: var(--stale-text); --notice-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='m15 9-6 6'/%3E%3Cpath d='m9 9 6 6'/%3E%3C/svg%3E"); }
 
 /* ------------------------------------------------------------ site footer */
 

@@ -46,7 +46,7 @@
   {% endif %}
 
   {% if report.summary.defects %}
-  <div class="notice bad" style="margin-bottom:14px">
+  <div class="notice warn" style="margin-bottom:14px">
     {{ report.summary.defects }} defect{{ '' if report.summary.defects == 1 else 's' }}
     found. Nothing is broken on its own, but an agent may be loading a copy
     you did not mean it to. <a href="#tab-health" data-tab-jump>Read them under

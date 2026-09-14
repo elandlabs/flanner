@@ -97,3 +97,32 @@ def test_explainers_span_the_page_and_cap_only_their_text():
     assert rule is not None
     assert "width: 100%" in rule.group(1) and "max-width" not in rule.group(1)
     assert re.search(r"\.explainer-body p \{[^}]*max-width: 66ch", css)
+
+
+def test_notices_are_an_icon_on_a_tint_with_no_side_bar():
+    """The coloured left bar was bent into a curve by the corner radius."""
+    css = (WEB / "static" / "css" / "shell.css").read_text(encoding="utf-8")
+
+    base = re.search(r"\.notice \{([^}]*)\}", css)
+    assert base is not None
+    assert "border-left" not in base.group(1) and "border: 0" in base.group(1)
+    for tone in ("good", "warn", "bad"):
+        rule = re.search(r"\.notice\." + tone + r" +\{([^}]*)\}", css)
+        assert rule is not None, tone
+        assert "--notice-icon: url(" in rule.group(1), tone
+    assert "border-left-color" not in css.split(".notice {", 1)[1].split("/* ---", 1)[0]
+
+
+@pytest.mark.parametrize(
+    ("template", "marker"),
+    [
+        ("skills.html", "found. Nothing is broken on its own"),
+        ("memory_pending.html", "This may contradict"),
+        ("plan_view.html", "This plan is retired."),
+    ],
+)
+def test_advice_uses_the_amber_tone_not_the_failure_tone(template, marker):
+    source = (WEB / "templates" / template).read_text(encoding="utf-8")
+
+    opening = source[: source.index(marker)].rsplit("<div", 1)[1]
+    assert 'class="notice warn"' in opening
