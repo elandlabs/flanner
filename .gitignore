@@ -73,3 +73,7 @@ log.txt
 
 # Local design drafts (not tracked)
 docs/cloud-design.md
+
+# Project memory and policy written by flanner itself. Local to this machine
+# for this repository: capture mode changes from the web UI land here.
+.flanner/
