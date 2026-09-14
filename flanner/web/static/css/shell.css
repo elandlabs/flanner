@@ -254,45 +254,19 @@ a:hover { color: var(--accent-hi); }
    inside; open, the full text at a readable width. It used to be a card of
    open paragraphs, half the page wide and pinned left, which gave text a
    returning reader already knows the same weight as the data above it.
-   Centred, and one width, so every explainer on a page lines up. */
-.explainer {
-  width: 100%; max-width: calc(66ch + 36px); margin-inline: auto;
-  box-sizing: border-box; padding: 0;
-}
-.explainer > summary {
-  display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px;
-  padding: 14px 18px; cursor: pointer; list-style: none;
-}
-.explainer > summary::-webkit-details-marker { display: none; }
-.explainer > summary .card-title { margin: 0; }
-.explainer > summary .gist { flex: 1 1 16ch; min-width: 0; color: var(--text-3); font-size: 12.5px; }
-.explainer > summary::after {
-  content: "Show"; margin-left: auto;
-  font-size: 12px; font-weight: 600; color: var(--accent-ink);
-}
-.explainer[open] > summary::after { content: "Hide"; }
-.explainer > summary:hover::after { text-decoration: underline; }
-.explainer > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: inherit; }
-.explainer-body { padding: 0 18px 16px; }
-.explainer-body p { margin: 0 0 12px; color: var(--text-2); }
-.explainer-body > :last-child { margin-bottom: 0; }
 
-/* An explanation somebody reads once. Closed, it is one line saying what is
-   inside; open, the full text at a readable width. It used to be a card of
-   open paragraphs, half the page wide and pinned left, which gave text a
-   returning reader already knows the same weight as the data above it.
-   Centred, and one width, so every explainer on a page lines up. */
-.explainer {
-  width: 100%; max-width: calc(66ch + 36px); margin-inline: auto;
-  box-sizing: border-box; padding: 0;
-}
+   The card is as wide as the cards around it, so its edges line up with the
+   rest of the page. A narrower centred card lined up with nothing on pages
+   whose data spans the full width. Only the text is capped, at a length
+   that still reads. */
+.explainer { width: 100%; box-sizing: border-box; padding: 0; }
 .explainer > summary {
   display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px;
   padding: 14px 18px; cursor: pointer; list-style: none;
 }
 .explainer > summary::-webkit-details-marker { display: none; }
 .explainer > summary .card-title { margin: 0; }
-.explainer > summary .gist { flex: 1 1 16ch; min-width: 0; color: var(--text-3); font-size: 12.5px; }
+.explainer > summary .gist { flex: 1 1 16ch; min-width: 0; max-width: 66ch; color: var(--text-3); font-size: 12.5px; }
 .explainer > summary::after {
   content: "Show"; margin-left: auto;
   font-size: 12px; font-weight: 600; color: var(--accent-ink);
@@ -301,7 +275,8 @@ a:hover { color: var(--accent-hi); }
 .explainer > summary:hover::after { text-decoration: underline; }
 .explainer > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: inherit; }
 .explainer-body { padding: 0 18px 16px; }
-.explainer-body p { margin: 0 0 12px; color: var(--text-2); }
+.explainer-body p { margin: 0 0 12px; max-width: 66ch; color: var(--text-2); }
+.explainer-body .cmd { max-width: 66ch; }
 .explainer-body > :last-child { margin-bottom: 0; }
 .card-prose p { margin: 0 0 12px; color: var(--text-2); }
 .card-prose p:last-child, .card-prose > :last-child { margin-bottom: 0; }

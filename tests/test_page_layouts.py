@@ -89,9 +89,11 @@ def test_review_explainers_render_closed(client):
     assert '<details class="card explainer" open' not in page
 
 
-def test_explainers_sit_in_the_middle_at_one_width():
+def test_explainers_span_the_page_and_cap_only_their_text():
+    """As wide as the cards around them, so their edges line up."""
     css = (WEB / "static" / "css" / "shell.css").read_text(encoding="utf-8")
 
     rule = re.search(r"\.explainer \{([^}]*)\}", css)
     assert rule is not None
-    assert "margin-inline: auto" in rule.group(1) and "max-width" in rule.group(1)
+    assert "width: 100%" in rule.group(1) and "max-width" not in rule.group(1)
+    assert re.search(r"\.explainer-body p \{[^}]*max-width: 66ch", css)
