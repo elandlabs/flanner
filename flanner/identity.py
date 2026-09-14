@@ -48,6 +48,39 @@ def flanner_home() -> Path:
     return Path(os.environ.get("FLANNER_HOME", Path.home() / ".flanner"))
 
 
+#: Set by an operator to decide push acceptance for this machine outright.
+ACCEPT_PUSHES_ENV = "FLANNER_ACCEPT_PUSHES"
+#: Present when somebody switched pushes off from the CLI or the web UI.
+REFUSE_PUSHES_MARKER = "refuse-pushes"
+_NO = {"0", "no", "false", "off"}
+
+
+def pushes_preference() -> tuple[bool, str]:
+    """Whether this device takes work pushed to it, and what decided that.
+
+    The environment variable wins, so a machine its operator configured
+    stays configured whatever a page says. Without it, a marker file that
+    `flanner peer pushes` and the web UI both write. On by default: every
+    peer is an authorised teammate, and accepting overwrites nothing.
+    """
+    raw = os.environ.get(ACCEPT_PUSHES_ENV, "").strip().lower()
+    if raw:
+        return raw not in _NO, ACCEPT_PUSHES_ENV
+    if (flanner_home() / REFUSE_PUSHES_MARKER).exists():
+        return False, "setting"
+    return True, "default"
+
+
+def set_accepting_pushes(accept: bool) -> None:
+    """Record the choice. `pushes_preference` says whether it is in force."""
+    marker = flanner_home() / REFUSE_PUSHES_MARKER
+    if accept:
+        marker.unlink(missing_ok=True)
+        return
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.touch()
+
+
 def device_key_path() -> Path:
     return flanner_home() / KEY_FILENAME
 

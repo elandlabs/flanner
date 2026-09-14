@@ -193,18 +193,13 @@ def accepting_pushes() -> bool:
 
     On by default: every peer in a mesh is already an authorised teammate,
     and accepting cannot overwrite anything. A laptop on a metered
-    connection can opt out with ``FLANNER_ACCEPT_PUSHES=0``, and saying no
-    is a plain answer rather than an error — a device that refuses pushes
-    is still a good citizen and still serves every read.
+    connection can opt out with `flanner peer pushes off`, the web UI, or
+    ``FLANNER_ACCEPT_PUSHES=0``. Saying no is a plain answer rather than an
+    error: a device that refuses pushes still serves every read.
     """
-    import os
+    from .identity import pushes_preference
 
-    return os.environ.get("FLANNER_ACCEPT_PUSHES", "1").strip().lower() not in {
-        "0",
-        "no",
-        "false",
-        "off",
-    }
+    return pushes_preference()[0]
 
 
 #: Rate limiting is per process and per device. Module level so it survives
