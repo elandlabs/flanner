@@ -492,6 +492,48 @@ def codex_installed() -> bool:
     return codex_config_path().parent.is_dir() or shutil.which("codex") is not None
 
 
+def _codex_change(server_name: str = "flanner") -> tuple[str, str, str]:
+    """What registering with Codex would write, without writing it.
+
+    Returns `(outcome, detail, updated)`. `updated` is the whole new file
+    when the outcome is `registered`, and empty otherwise. Shared by the
+    write and by the preview the web UI shows, so the diff somebody
+    confirms is the text that lands.
+    """
+    path = codex_config_path()
+    if not codex_installed():
+        return "not-installed", "Codex was not found on this machine", ""
+
+    try:
+        text = path.read_text(encoding="utf-8") if path.exists() else ""
+    except OSError as error:
+        return "left-alone", f"{path} could not be read ({error})", ""
+
+    loads = _toml_loads()
+    if text.strip():
+        if loads is None:
+            if f"[mcp_servers.{server_name}]" in text:
+                return "already", str(path), ""
+            return "left-alone", "Python 3.10 cannot check a TOML file, so it was not edited", ""
+        try:
+            existing = loads(text)
+        except Exception:
+            return "left-alone", f"{path} does not parse, so it was not edited", ""
+        if server_name in (existing.get("mcp_servers") or {}):
+            return "already", str(path), ""
+
+    separator = "" if not text else ("\n" if text.endswith("\n") else "\n\n")
+    updated = text + separator + CODEX_SNIPPET
+    if loads is not None:
+        try:
+            added = loads(updated)["mcp_servers"][server_name]
+        except Exception:
+            return "left-alone", "adding the entry would not have parsed, so nothing changed", ""
+        if added.get("command") != "flanner-mcp":
+            return "left-alone", "adding the entry did not read back as written", ""
+    return "registered", str(path), updated
+
+
 def ensure_codex_registration(server_name: str = "flanner") -> tuple[str, str]:
     """Add flanner to Codex's config, or say exactly why not.
 
@@ -512,38 +554,11 @@ def ensure_codex_registration(server_name: str = "flanner") -> tuple[str, str]:
     import os
     import tempfile
 
+    outcome, detail, updated = _codex_change(server_name)
+    if outcome != "registered":
+        return outcome, detail
+
     path = codex_config_path()
-    if not codex_installed():
-        return "not-installed", "Codex was not found on this machine"
-
-    try:
-        text = path.read_text(encoding="utf-8") if path.exists() else ""
-    except OSError as error:
-        return "left-alone", f"{path} could not be read ({error})"
-
-    loads = _toml_loads()
-    if text.strip():
-        if loads is None:
-            if f"[mcp_servers.{server_name}]" in text:
-                return "already", str(path)
-            return "left-alone", "Python 3.10 cannot check a TOML file, so it was not edited"
-        try:
-            existing = loads(text)
-        except Exception:
-            return "left-alone", f"{path} does not parse, so it was not edited"
-        if server_name in (existing.get("mcp_servers") or {}):
-            return "already", str(path)
-
-    separator = "" if not text else ("\n" if text.endswith("\n") else "\n\n")
-    updated = text + separator + CODEX_SNIPPET
-    if loads is not None:
-        try:
-            added = loads(updated)["mcp_servers"][server_name]
-        except Exception:
-            return "left-alone", "adding the entry would not have parsed, so nothing changed"
-        if added.get("command") != "flanner-mcp":
-            return "left-alone", "adding the entry did not read back as written"
-
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temp = tempfile.mkstemp(dir=path.parent, prefix=".config.", suffix=".toml")
     try:
@@ -554,3 +569,54 @@ def ensure_codex_registration(server_name: str = "flanner") -> tuple[str, str]:
         Path(temp).unlink(missing_ok=True)
         return "left-alone", f"{path} could not be written ({error})"
     return "registered", str(path)
+
+
+#: The agents the web UI may register, by the names `flanner status` uses.
+#: Claude Code is not one: its config is written by its own CLI, so there is
+#: no file here to show a diff of.
+PREVIEWABLE = ("claude-desktop", "codex")
+
+
+def _read_text(path: Path | None) -> str:
+    try:
+        return path.read_text(encoding="utf-8") if path and path.exists() else ""
+    except OSError:
+        return ""
+
+
+def registration_preview(agent: str) -> dict[str, Any]:
+    """What registering flanner with `agent` would change, without changing it.
+
+    `fingerprint` is a hash of the file as it is now. A confirmation carries
+    it back, so a file that changed between looking and confirming is
+    refused rather than overwritten with a diff nobody saw.
+    """
+    import hashlib
+
+    if agent == "claude-desktop":
+        path = get_claude_config_path()
+        before = _read_text(path)
+        config = read_claude_config()
+        already = "flanner" in config["mcpServers"]
+        if not already:
+            config["mcpServers"]["flanner"] = get_local_server_config()
+        after = before if already else json.dumps(config, indent=2)
+        problem = "" if path else "Claude Desktop's config location is unknown on this system"
+    elif agent == "codex":
+        path = codex_config_path()
+        before = _read_text(path)
+        outcome, detail, updated = _codex_change()
+        already = outcome == "already"
+        after = updated if outcome == "registered" else before
+        problem = detail if outcome in ("not-installed", "left-alone") else ""
+    else:
+        raise ValueError(f"cannot preview registering with {agent}")
+    return {
+        "agent": agent,
+        "path": str(path) if path else "",
+        "before": before,
+        "after": after,
+        "already": already,
+        "problem": problem,
+        "fingerprint": hashlib.sha256(before.encode("utf-8")).hexdigest(),
+    }
