@@ -969,16 +969,50 @@ async def nav_attention(request: Request) -> dict[str, int]:
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request) -> HTMLResponse:
-    """Dashboard - show all projects"""
+    """What is waiting on you, then your projects and what changed lately.
+
+    It opened with three counts: projects, plan files, updated this week.
+    None of them said whether anything needed doing. The first card is now
+    the decisions that are waiting, each linking to where it is made.
+    """
     ensure_db()
     session = get_session()
+    from . import setup_check
 
     # Aggregates in SQL; loading every plan file to count them is O(rows)
     # in Python and an N+1 query per project.
     total_projects = db_count_projects(session)
-    total_plans = db_count_plan_files(session, exclude=_hidden(session))
-    updated_this_week = db_count_plan_files_recent(session, days=7, exclude=_hidden(session))
     plan_counts = plan_file_counts_by_project(session, exclude=_hidden(session))
+    nav = _nav(session)
+    found = await run_in_threadpool(setup_check.agents, Path.cwd())
+    used = await run_in_threadpool(setup_check.last_used)
+    candidates = (
+        {
+            "count": len(actions.recent(session, limit=0, state=actions.PENDING)),
+            "what": "agent request",
+            "verb": "waiting for you to apply or decline",
+            "href": "/actions",
+        },
+        {
+            "count": nav["nav_memory_pending"],
+            "what": "memory suggestion",
+            "verb": "waiting for approval",
+            "href": "/memory/pending",
+        },
+        {
+            "count": nav["nav_review"],
+            "what": "item",
+            "verb": "waiting in Review",
+            "href": "/review",
+        },
+        {
+            "count": sum(1 for _, _, key in _AGENTS if found[key] and key not in used),
+            "what": "registered agent",
+            "verb": "that has not reached flanner yet",
+            "href": "/setup",
+        },
+    )
+    waiting = [row for row in candidates if row["count"]]
 
     projects = db_list_projects(session, limit=12)
 
@@ -991,13 +1025,12 @@ async def dashboard(request: Request) -> HTMLResponse:
         request,
         "dashboard.html",
         {
-            **_nav(session),
+            **nav,
             "plan_counts": plan_counts,
             "request": request,
             "projects": projects,
             "total_projects": total_projects,
-            "total_plans": total_plans,
-            "updated_this_week": updated_this_week,
+            "waiting": waiting,
             "recent_activity": recent_activity,
         },
     )

@@ -117,3 +117,17 @@ def test_a_call_in_the_log_shows_the_agent_as_connected(repo):
 
 def test_init_ends_on_something_to_try(repo):
     assert "list my flanner projects" in repo.init
+
+
+def test_the_dashboard_lists_an_agent_that_has_not_connected(repo):
+    """`init` registered Claude Code and nothing has called, so that is waiting."""
+    page = " ".join(html.unescape(repo.client.get("/").text).split())
+
+    assert "Needs you" in page
+    assert "1 registered agent that has not reached flanner yet" in page
+
+    observe.tool_call("list_projects", ms=1.0, ok=True, client="claude-code")
+    after = " ".join(html.unescape(repo.client.get("/").text).split())
+
+    assert "registered agent" not in after
+    assert "Nothing is waiting on you" in after

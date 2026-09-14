@@ -14,10 +14,21 @@
 <div data-live-list hidden></div>
 <div class="pane">
 
-  <div class="stat-grid">
-    <div class="stat"><div class="v tnum">{{ total_projects }}</div><div class="k">Projects</div></div>
-    <div class="stat"><div class="v tnum">{{ total_plans }}</div><div class="k">Plan files</div></div>
-    <div class="stat"><div class="v tnum">{{ updated_this_week }}</div><div class="k">Updated this week</div></div>
+  {#
+    Decisions waiting on a person, not totals. A row appears only when
+    something is waiting, and each links to where the decision is made.
+  #}
+  <div class="card card-pad">
+    <h2 class="card-title" style="margin-bottom:2px">Needs you</h2>
+    {% for row in waiting %}
+    <div class="switch-row">
+      <div class="body">{{ row.count }} {{ row.what }}{{ 's' if row.count != 1 else '' }} {{ row.verb }}</div>
+      <a class="btn btn-sm" href="{{ row.href }}">Open</a>
+    </div>
+    {% else %}
+    <p class="hint">Nothing is waiting on you. Agent requests, memory suggestions,
+       reviews and agents that have not connected appear here when they need you.</p>
+    {% endfor %}
   </div>
 
   {% if projects %}

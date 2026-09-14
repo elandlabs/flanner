@@ -302,8 +302,8 @@ def test_tier3_craft_signals(client, plan_id):
     home = client.get("/")
     assert 'rel="icon"' in home.text and "favicon.svg" in home.text
     assert 'name="theme-color"' in home.text and "prefers-color-scheme: dark" in home.text
-    # dashboard shows a real "updated this week" count, not the capped-list length
-    assert "Updated this week" in home.text
+    # the dashboard opens with what is waiting on a person, not with totals
+    assert "Needs you" in home.text and "Updated this week" not in home.text
     css = client.get("/static/css/shell.css").text
     assert "@media print" in css  # print a plan as a document
     assert "tabular-nums" in css  # aligned numeric figures
