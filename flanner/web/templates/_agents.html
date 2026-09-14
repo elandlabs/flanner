@@ -6,11 +6,24 @@
 #}
 {% macro rows(agents) %}
 {% for agent in agents %}
-  {% if agent.registered %}
+  {% if agent.registered and agent.used %}
   <div class="switch-row">
     <div class="body">{{ agent.label }}
-      <span>Registered{% if agent.where %} · {{ agent.where }}{% endif %}</span></div>
-    <span class="pill pill-fresh" style="margin-left:auto">ready</span>
+      <span>Registered{% if agent.where %} · {{ agent.where }}{% endif %} · last call {{ agent.used }}</span></div>
+    <span class="pill pill-fresh" style="margin-left:auto">connected</span>
+  </div>
+  {% elif agent.registered %}
+  {#
+    Registered is a config file naming flanner, not proof the agent got
+    through. Until a call arrives, say so, and give the one prompt that
+    settles it.
+  #}
+  <div class="switch-row">
+    <div class="body">{{ agent.label }}
+      <span>Registered{% if agent.where %} · {{ agent.where }}{% endif %}, but no call has
+        reached flanner yet. To check, restart {{ agent.label }} and ask it to
+        “list my flanner projects”.</span></div>
+    <span class="pill pill-quiet" style="margin-left:auto">not yet used</span>
   </div>
   {% elif agent.from_page %}
   <div class="switch-row">

@@ -701,6 +701,23 @@ def init(
         if sync:
             _import_existing_plans(project_root)
 
+    _first_thing_to_try(adopted=bool(project_root))
+
+
+def _first_thing_to_try(adopted: bool) -> None:
+    """End on something to do, rather than on a list of what was configured.
+
+    The prompt is the one that proves the connection: listing projects is a
+    tool call, so it lands in the log `flanner status` reads.
+    """
+    console.print()
+    if not adopted:
+        tui.note("No repository here, so no project was adopted.")
+        tui.hint(f"Run {tui.command('flanner init')} inside a repository to adopt it.")
+        return
+    tui.note('Try it: restart your agent here and ask it to "list my flanner projects".')
+    tui.hint(f"{tui.command('flanner status')} then shows the call arrived.")
+
 
 def _setup_agent_integration(project_root: str) -> None:
     """Wire the CLAUDE.md block, guard-write hook, and skill for this repo."""
@@ -2052,7 +2069,18 @@ def _catalog_rows(db_path: Path) -> list[tuple[str, Any]]:
     return rows
 
 
-def _claude_code_row() -> Text:
+def _with_use(row: Text, used: str | None) -> Text:
+    """Add whether a registered agent has actually called, when that is known."""
+    if used is None:
+        return row
+    if used:
+        row.append(f"  last call {used}", style="muted")
+    else:
+        row.append("  no call yet: ask it to list your flanner projects", style="muted")
+    return row
+
+
+def _claude_code_row(used: str | None = None) -> Text:
     """Whether Claude Code will find the server, checked where it looks.
 
     Not Claude Desktop's file. `status` read claude_desktop_config.json and
@@ -2067,7 +2095,7 @@ def _claude_code_row() -> Text:
     if where:
         row = tui.dot("ok", label="registered")
         row.append(f"  {where}", style="muted")
-        return row
+        return _with_use(row, used)
     row = tui.dot("unknown", label="not registered")
     row.append("  run ", style="muted")
     row.append("flanner init", style="accent")
@@ -2076,12 +2104,12 @@ def _claude_code_row() -> Text:
     return row
 
 
-def _codex_row() -> Text:
+def _codex_row(used: str | None = None) -> Text:
     """Codex reads the AGENTS.md block, but registers MCP servers itself."""
     from .claude_integration import codex_config_path, codex_registration
 
     if codex_registration():
-        return tui.dot("ok", label="registered")
+        return _with_use(tui.dot("ok", label="registered"), used)
     row = tui.dot("unknown", label="not registered")
     row.append("  run ", style="muted")
     row.append("flanner setup", style="accent")
@@ -2089,10 +2117,10 @@ def _codex_row() -> Text:
     return row
 
 
-def _claude_row(claude_status: dict[str, Any]) -> Text:
+def _claude_row(claude_status: dict[str, Any], used: str | None = None) -> Text:
     """Whether Claude Desktop is registered, and whether its config still matches."""
     if claude_status["registered"] and claude_status["config_valid"]:
-        return tui.dot("ok", label="registered")
+        return _with_use(tui.dot("ok", label="registered"), used)
     if claude_status["registered"]:
         registered = tui.dot("warn", label="registered")
         registered.append("  config is out of date", style="warn")
@@ -2153,13 +2181,14 @@ def status() -> None:
     claude_status = check_server_status()
     rows: list[tuple[str, Any]] = [("MCP server", _server_row(get_pid_file()))]
     rows.extend(_catalog_rows(get_mcp_dir() / "data.db"))
-    rows.append(("Claude Desktop", _claude_row(claude_status)))
-    rows.append(("Claude Code", _claude_code_row()))
-    rows.append(("Codex", _codex_row()))
+    from . import setup_check
+
+    used = setup_check.last_used()
+    rows.append(("Claude Desktop", _claude_row(claude_status, used.get("claude_desktop", ""))))
+    rows.append(("Claude Code", _claude_code_row(used.get("claude_code", ""))))
+    rows.append(("Codex", _codex_row(used.get("codex", ""))))
     rows.append(("Desktop config", Text(str(claude_status["config_path"]), style="muted")))
     if (get_mcp_dir() / "data.db").exists():
-        from . import setup_check
-
         rows.extend(_setup_rows(setup_check.check(get_session())))
 
     console.print()

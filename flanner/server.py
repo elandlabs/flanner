@@ -81,6 +81,7 @@ class _Observed:
                         ms=(time.perf_counter() - started) * 1000,
                         ok=False,
                         error=f"{type(e).__name__}: {e}",
+                        client=_client_name(),
                         **_loggable(call_kwargs),
                     )
                     raise
@@ -93,6 +94,7 @@ class _Observed:
                     ms=(time.perf_counter() - started) * 1000,
                     ok=not failed,
                     error=str(result.get("message", "")) if failed else "",
+                    client=_client_name(),
                     **_loggable(call_kwargs),
                 )
                 return result
@@ -128,6 +130,23 @@ def _loggable(kwargs: dict[str, Any]) -> dict[str, Any]:
         "status",
     )
     return {key: kwargs[key] for key in allowed if key in kwargs}
+
+
+def _client_name() -> str:
+    """The name the connected agent gave itself, or "" outside a request.
+
+    Recorded so the setup check can say an agent actually reached flanner,
+    not only that its config names it. One word, so the log stays one
+    field per `key=value`.
+    """
+    try:
+        from mcp.server.lowlevel.server import request_ctx
+
+        params = request_ctx.get().session.client_params
+    except (LookupError, AttributeError):
+        return ""
+    info = getattr(params, "clientInfo", None)
+    return str(getattr(info, "name", "") or "").replace(" ", "-")
 
 
 mcp = _Observed(_mcp)

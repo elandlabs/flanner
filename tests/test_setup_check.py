@@ -34,7 +34,15 @@ def adopted(db, tmp_path, monkeypatch):
 def test_the_check_names_everything_a_setup_question_needs(adopted):
     found = setup_check.check(adopted)
 
-    assert set(found) == {"agents", "tools", "project", "capture_mode", "watching", "peers"}
+    assert set(found) == {
+        "agents",
+        "last_used",
+        "tools",
+        "project",
+        "capture_mode",
+        "watching",
+        "peers",
+    }
     assert set(found["agents"]) == {"claude_desktop", "claude_code", "codex"}
     assert found["project"]["name"] == "shop"
     assert found["capture_mode"] == "suggest"

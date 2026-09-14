@@ -36,10 +36,12 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -232,6 +234,44 @@ def tool_call(tool: str, *, ms: float, ok: bool, error: str = "", **fields: Any)
     if error:
         parts.append(f"error={_safe(error)}")
     log.info(" ".join(parts))
+
+
+#: A tool log line that names its client: the logger's local time, then the call.
+_CLIENT_LINE = re.compile(
+    r"^(?P<when>\d{4}-\d\d-\d\d \d\d:\d\d:\d\d,\d+) tool=\S+ .*?\bclient=(?P<client>\S+)"
+)
+
+
+def last_calls() -> dict[str, datetime]:
+    """When each MCP client last called a tool, in UTC, keyed by its own name.
+
+    Read from the tool log and its one rotated copy. A log that cannot be
+    read is an empty answer rather than an error, because this feeds a
+    status line. Reads the whole file each time.
+    """
+    # ponytail: rereads up to two 2 MB files per call; keep a cursor if a
+    # page ever calls this in a loop.
+    path = _log_path()
+    if path is None:
+        return {}
+    seen: dict[str, datetime] = {}
+    for candidate in (path.with_name(path.name + ".1"), path):
+        try:
+            text = candidate.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for line in text.splitlines():
+            match = _CLIENT_LINE.match(line)
+            if match is None:
+                continue
+            try:
+                local = datetime.strptime(match["when"], "%Y-%m-%d %H:%M:%S,%f")
+            except ValueError:
+                continue
+            when = local.astimezone(timezone.utc).replace(tzinfo=None)
+            if when > seen.get(match["client"], datetime.min):
+                seen[match["client"]] = when
+    return seen
 
 
 def served(operation: str, *, ms: float, ok: bool, peer: str = "", reason: str = "") -> None:

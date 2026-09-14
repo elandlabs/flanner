@@ -446,6 +446,9 @@ def run(host: str, model: str, only: list[str], timeout: int, repeat: int = 1) -
                     **asdict(verdict),
                     "seconds": round(time.monotonic() - started, 1),
                     "calls": [call.tool for call in score.calls(log_text)],
+                    "clients": sorted(
+                        {c.fields["client"] for c in score.calls(log_text) if "client" in c.fields}
+                    ),
                     "answer": answer[:600],
                     "transcript_tail": transcript[-1200:],
                 }

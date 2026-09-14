@@ -2422,14 +2422,15 @@ _REGISTER_COMMANDS = {
 }
 
 
-def _agent_rows(found: dict[str, Any]) -> list[dict[str, Any]]:
-    """One row per agent: whether it will find flanner, and how to fix it if not."""
+def _agent_rows(found: dict[str, Any], used: dict[str, str]) -> list[dict[str, Any]]:
+    """One row per agent: whether it will find flanner, whether it has, and how to fix it."""
     return [
         {
             "slug": slug,
             "label": label,
             "registered": bool(found[key]),
             "where": found[key] if isinstance(found[key], str) else "",
+            "used": used.get(key, ""),
             "from_page": slug in _REGISTER_COMMANDS,
             "why": (
                 "Claude Code writes its own config through its CLI, so there is no file "
@@ -2509,6 +2510,7 @@ async def settings_page(request: Request) -> HTMLResponse:
     from .database import get_db_path
 
     found = await run_in_threadpool(setup_check.agents, Path.cwd())
+    used = await run_in_threadpool(setup_check.last_used)
     return templates.TemplateResponse(
         request,
         "settings.html",
@@ -2516,7 +2518,7 @@ async def settings_page(request: Request) -> HTMLResponse:
             "db_path": get_db_path(),
             "port": request.url.port or 8080,
             "version": __version__,
-            "agents": _agent_rows(found),
+            "agents": _agent_rows(found, used),
             "team": _team(),
             "storage": _storage_view(session),
             **_nav(session),
@@ -2542,7 +2544,7 @@ async def setup_page(request: Request, said: str = "") -> HTMLResponse:
         "setup.html",
         {
             "check": check,
-            "agents": _agent_rows(check["agents"]),
+            "agents": _agent_rows(check["agents"], check["last_used"]),
             "watched": [scope["agent"] for scope in check["watching"] if scope["observing"]],
             "modes": memory_ops.CAPTURE_MODES,
             "said": said,

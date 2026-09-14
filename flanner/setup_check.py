@@ -11,13 +11,15 @@ or writes to the database.
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from sqlalchemy.orm import Session
 
-from . import claude_integration, features, memory_ops, operations, skills_observe
+from . import claude_integration, features, memory_ops, observe, operations, skills_observe
 from . import session as cache
+from .utils import format_relative_time
 
 
 def tools() -> list[str]:
@@ -34,6 +36,31 @@ def agents(cwd: Path) -> dict[str, Any]:
         "claude_code": str(claude_integration.claude_code_registration(cwd) or "") or None,
         "codex": bool(claude_integration.codex_registration()),
     }
+
+
+#: Part of the name each agent gives itself when it connects, and the agent
+#: it means. Matched as a fragment, because hosts add versions and suffixes.
+_CLIENTS = (
+    ("codex", "codex"),
+    ("claude-code", "claude_code"),
+    ("claude-ai", "claude_desktop"),
+    ("claude-desktop", "claude_desktop"),
+)
+
+
+def last_used() -> dict[str, str]:
+    """When each agent last reached flanner on this machine, as "2 minutes ago".
+
+    Registered only says a config file names flanner. A call in the tool log
+    says the agent got through. An agent that never called is left out.
+    """
+    latest: dict[str, datetime] = {}
+    for client, when in observe.last_calls().items():
+        name = client.lower()
+        agent = next((key for fragment, key in _CLIENTS if fragment in name), None)
+        if agent and when > latest.get(agent, datetime.min):
+            latest[agent] = when
+    return {agent: format_relative_time(when) for agent, when in latest.items()}
 
 
 def watching(session: Session, project_root: str | None) -> list[dict[str, Any]]:
@@ -67,6 +94,7 @@ def check(session: Session, cwd: Path | None = None) -> dict[str, Any]:
     names = tools()
     result: dict[str, Any] = {
         "agents": agents(here),
+        "last_used": last_used(),
         "tools": {
             "count": len(names),
             "names": names,
