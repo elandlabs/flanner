@@ -403,6 +403,7 @@ a:hover { color: var(--accent-hi); }
 .diff .add { color: var(--fresh-text); background: var(--fresh-bg); display: block; }
 .diff .cut { color: var(--stale-text); background: var(--stale-bg); display: block; }
 .diff .at  { color: var(--text-4); display: block; }
+.diff > span { display: block; min-height: 1.6em; }
 
 /* ------------------------------------------------------------ freshness */
 

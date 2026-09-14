@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Register with {{ label }}{% endblock %}
+
+{% block topbar_back %}
+<a class="btn back" href="/setup" aria-label="Back to the setup check" title="Back to the setup check"><span aria-hidden="true">←</span></a>
+{% endblock %}
+
+{% block topbar_main %}
+<h1>Register with {{ label }}</h1>
+  <span class="sub">Review the change, then write it</span>
+{% endblock %}
+
+{% block content %}
+<div class="pane narrow">
+
+  {% if said %}<div class="notice bad" role="status">{{ said }}</div>{% endif %}
+
+  <div class="card card-pad">
+    <h2 class="card-title">What changes</h2>
+    <div class="kv"><span>File</span><b class="mono">{{ preview.path or 'unknown' }}</b></div>
+
+    {% if preview.problem %}
+    <div class="notice bad" style="margin-top:12px">{{ preview.problem }}. Nothing will be written.</div>
+    {% elif preview.already %}
+    <div class="notice good" style="margin-top:12px">flanner is already in this file, so there is
+      nothing to write. If {{ label }} still cannot reach it, run
+      <code class="mono">{{ command }} --force</code> in a terminal to rewrite the entry.</div>
+    {% else %}
+    <pre class="diff mono" style="margin-top:12px">{% for line in diff %}<span class="{% if line.startswith('+++') or line.startswith('---') or line.startswith('@@') %}at{% elif line.startswith('+') %}add{% elif line.startswith('-') %}cut{% endif %}">{{ line }}</span>{% endfor %}</pre>
+    <p class="hint">The same edit <code class="mono">{{ command }}</code> makes, written by the same
+      function. Nothing is written until you confirm. Restart {{ label }} afterwards.</p>
+    <form method="post" action="/setup/register/{{ preview.agent }}" style="display:flex; gap:8px; margin-top:12px">
+      <input type="hidden" name="seen" value="{{ preview.fingerprint }}">
+      <button class="btn btn-primary" type="submit">Write this change</button>
+      <a class="btn" href="/setup">Cancel</a>
+    </form>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}

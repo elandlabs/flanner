@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% import "_icon.html" as ico %}
 {% import "_empty.html" as empty %}
+{% import "_cli_only.html" as terminal %}
 {% block title %}{{ project.name }}{% endblock %}
 
 {% block topbar_back %}
@@ -37,6 +38,8 @@
 <div data-live-list hidden></div>
 <div class="pane">
 
+  {% if said %}<div class="notice info" role="status">{{ said }}</div>{% endif %}
+
   <div class="card card-pad">
     <div style="display:flex; align-items:flex-start; gap:16px; flex-wrap:wrap">
       <div>
@@ -58,6 +61,29 @@
       {% if project.auto_gitignore %}<span class="ok">.gitignore managed {{ ico.icon('check', 13) }}</span>{% endif %}
     </div>
     {% endif %}
+  </div>
+
+  <div class="card card-pad">
+    <h2 class="card-title" style="margin-bottom:2px">Sharing and sync</h2>
+    {% if sharing.workspace_id %}
+    <div class="kv"><span>Workspace</span><b class="mono">{{ sharing.workspace_id }}</b></div>
+    <div class="kv"><span>Your role</span><b>{{ sharing.role or 'no access yet' }}</b></div>
+    {% if not sharing.role and sharing.reason %}<p class="hint">{{ sharing.reason }}</p>{% endif %}
+    {% else %}
+    <div class="kv"><span>Workspace</span><b>none, so these plans stay on this machine</b></div>
+    {% endif %}
+    {{ terminal.row(cli_only("Bind a repository to a workspace"), 'flanner join <workspace-id> --project "' ~ project.name ~ '"') }}
+    <form method="post" action="/mesh/pushes" class="switch-row">
+      <input type="hidden" name="back" value="/projects/{{ project.id }}">
+      <input type="hidden" name="accept" value="{{ 'off' if sharing.accepting else 'on' }}">
+      <div class="body">Accept pushes · {{ 'on' if sharing.accepting else 'off' }}
+        <span>Set for this device, so for every project on it. A push adds versions to
+          history and never overwrites what you have.{% if sharing.locked %}
+          {{ sharing.env }} is set where flanner web runs, and this page cannot override it.{% endif %}</span></div>
+      <button class="btn btn-sm" type="submit" style="margin-left:auto"
+              {% if sharing.locked %}disabled title="Set by {{ sharing.env }}"{% endif %}>
+        {{ 'Refuse pushes' if sharing.accepting else 'Accept pushes' }}</button>
+    </form>
   </div>
 
   {% if plan_files %}

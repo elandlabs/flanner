@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% import "_agents.html" as agentlist %}
+{% import "_cli_only.html" as terminal %}
+{% block title %}Setup check{% endblock %}
+
+{% block topbar_main %}
+<h1>Setup check</h1>
+  <span class="sub">The answer <code class="mono">flanner status</code> prints</span>
+{% endblock %}
+
+{% block content %}
+<div class="pane narrow">
+
+  {% if said %}<div class="notice info" role="status">{{ said }}</div>{% endif %}
+
+  <div class="card card-pad">
+    <h2 class="card-title" style="margin-bottom:2px">Agents</h2>
+    {{ agentlist.rows(agents) }}
+    <p class="hint">Each agent is checked where that agent looks for its tools.</p>
+  </div>
+
+  <div class="card card-pad">
+    <h2 class="card-title">Tools</h2>
+    <div class="kv"><span>Advertised to agents</span><b class="tnum">{{ check.tools.count }}</b></div>
+    <div class="kv"><span>Linear and Jira</span>
+      <b>{{ 'included' if check.tools.integrations else 'switched off' }}</b></div>
+  </div>
+
+  <div class="card card-pad">
+    <h2 class="card-title">This project</h2>
+    {% if check.project %}
+    <div class="kv"><span>Project</span><b>{{ check.project.name }}</b></div>
+    <div class="kv"><span>Directory</span><b class="mono">{{ check.project.root }}</b></div>
+    <div class="kv"><span>Skill use recorded for</span>
+      <b>{{ watched | join(', ') if watched else 'no agent' }}</b></div>
+    <form method="post" action="/memory/mode" class="switch-row">
+      <div class="body">Capture mode
+        <span>How much agents may keep here. Saved to this project's policy
+          file, the same write <code class="mono">flanner mem mode</code> makes.</span></div>
+      <label class="sr-only" for="capture-mode">Capture mode</label>
+      <select class="btn btn-sm" id="capture-mode" name="capture_mode" style="margin-left:auto">
+        {% for mode in modes %}
+        <option value="{{ mode }}" {% if mode == check.capture_mode %}selected{% endif %}>{{ mode }}</option>
+        {% endfor %}
+      </select>
+      <button class="btn btn-sm" type="submit">Save</button>
+    </form>
+    {% if check.capture_mode not in modes %}
+    <p class="hint bad">{{ check.capture_mode }}</p>
+    {% endif %}
+    {% else %}
+    <p class="hint">flanner web was started outside any flanner project, so there is
+      no project, capture mode or skill watching to show. Start it from inside a
+      repository flanner manages, or run <code class="mono">flanner init</code> there.</p>
+    {% endif %}
+  </div>
+
+  <div class="card card-pad">
+    <h2 class="card-title" style="margin-bottom:2px">Peers</h2>
+    {% if check.peers.signed_in %}
+    <div class="kv"><span>Signed in as</span><b>{{ check.peers.user_id }}</b></div>
+    <div class="kv"><span>Other devices known</span><b class="tnum">{{ check.peers.known_devices }}</b></div>
+    <div class="kv"><span>Access</span><b>{{ check.peers.entitlement }}</b></div>
+    {% else %}
+    <p class="hint">Not signed in. Everything above works without an account.</p>
+    {{ terminal.row(cli_only("Enrol this machine"), "flanner login <code>") }}
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}

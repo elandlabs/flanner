@@ -7,6 +7,17 @@ versioning follows [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **The web UI sets up what the CLI sets up.**
+  - **Settings.** Agents now come from the same check `flanner status` runs, so the page no longer calls a Claude Code user unregistered.
+  - **Setup check page.** A new page shows agents, tools, the project, capture mode, watched agents and peers. Capture mode can be changed there, writing the same policy file `flanner mem mode` writes.
+  - **Registering agents.** Claude Desktop and Codex can be registered from the page. It shows the exact diff first, and a file that changed since the preview is refused. The result is byte for byte what `flanner register` or `flanner setup` leaves.
+  - **Terminal-only actions.** Actions the page cannot take, such as enrolling a device or joining a workspace, are shown disabled, with the reason and the command.
+  - **Team card.** Settings links to the console this device signed in to, for members, invitations, devices, workspaces and billing.
+  - **Sharing and sync.** A project page shows its workspace and your role there, and whether this device accepts pushes.
+- **`flanner peer pushes on|off`** replaces the `FLANNER_ACCEPT_PUSHES` environment variable as the everyday switch. The project page flips the same setting. The variable still works and, when set, decides.
+
+### Changed
+- The Linear and Jira page is now called Issue trackers. The old name clashed with the agent integration settings.
 - **One action history.** Every write through the CLI, the web UI or an agent
   is recorded with an id, where it came from, and the person it was for.
   `flanner actions list` and the Actions page show the same record, and an

@@ -7070,6 +7070,33 @@ def peer_stop() -> None:
     _stop_pid(get_peer_pid_file(), "Peer server")
 
 
+@peer.command("pushes")
+@click.argument("choice", required=False, type=click.Choice(["on", "off"]))
+def peer_pushes(choice: str | None) -> None:
+    """Show or set whether teammates may push work to this device
+
+    Refusing pushes still serves every read, so teammates can pull from you.
+    The web UI's project page flips the same setting.
+    """
+    from . import identity
+
+    if choice is not None:
+        identity.set_accepting_pushes(choice == "on")
+    accepting, source = identity.pushes_preference()
+    state = "accepts" if accepting else "refuses"
+    console.print()
+    if choice is not None and accepting != (choice == "on"):
+        tui.warn(
+            f"Saved, but {identity.ACCEPT_PUSHES_ENV} is set here and decides: "
+            f"this device still {state} pushes."
+        )
+    else:
+        tui.ok(f"This device {state} pushes")
+        if source == identity.ACCEPT_PUSHES_ENV:
+            console.print(f"  set by {identity.ACCEPT_PUSHES_ENV}", style="muted")
+    console.print()
+
+
 @peer.command("status")
 @click.argument("device_id", required=False)
 def peer_status(device_id: str | None) -> None:

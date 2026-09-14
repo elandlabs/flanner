@@ -54,6 +54,10 @@ class Operation:
     #: The same, for the note: a rule that has not shipped is not one to
     #: describe to somebody installing the current release.
     note_since: str = ""
+    #: Why the web UI shows this as a terminal-only row. Required wherever a
+    #: page names the operation that way, so a disabled control always says
+    #: why it is disabled.
+    why_not_web: str = ""
 
 
 def _op(
@@ -69,9 +73,10 @@ def _op(
     note: str = "",
     mcp_since: str = "",
     note_since: str = "",
+    why_web: str = "",
 ) -> Operation:
     return Operation(
-        domain, action, access, cli, mcp, web, why, gated, note, mcp_since, note_since
+        domain, action, access, cli, mcp, web, why, gated, note, mcp_since, note_since, why_web
     )
 
 
@@ -345,6 +350,7 @@ OPERATIONS: tuple[Operation, ...] = (
         "Change the capture mode",
         "admin",
         cli=("mem mode",),
+        web=("POST /memory/mode",),
         why=(
             "Decides how much your agent may capture. Letting it widen its own permission "
             "defeats the setting."
@@ -570,6 +576,10 @@ OPERATIONS: tuple[Operation, ...] = (
             "Generates a key and binds the machine to your account. An agent must never enrol a "
             "device."
         ),
+        why_web=(
+            "The invitation code is spent where the key is made, so it is typed in a terminal "
+            "on this machine."
+        ),
     ),
     _op(
         "mesh",
@@ -577,6 +587,18 @@ OPERATIONS: tuple[Operation, ...] = (
         "admin",
         cli=("join",),
         why="Decides what syncs to whom. A scope decision belongs to a person.",
+        why_web=(
+            "Joining re-signs every plan in the project into the workspace, and reports on each "
+            "one as it goes."
+        ),
+    ),
+    _op(
+        "mesh",
+        "Accept or refuse work teammates push to this device",
+        "admin",
+        cli=("peer pushes",),
+        web=("POST /mesh/pushes",),
+        why="Decides what may arrive on this machine. That is the owner's call, not an agent's.",
     ),
     _op(
         "mesh",
@@ -619,6 +641,7 @@ OPERATIONS: tuple[Operation, ...] = (
         "Register flanner with your agents",
         "admin",
         cli=("setup", "register", "unregister"),
+        web=("GET /setup/register/{agent}", "POST /setup/register/{agent}"),
         why=(
             "Edits where your editors look for tools. An agent must not rewire its own connection."
         ),
@@ -628,6 +651,7 @@ OPERATIONS: tuple[Operation, ...] = (
         "See whether agents can reach flanner",
         "read",
         cli=("status", "claude-info"),
+        web=("GET /setup",),
         why="Answers whether an agent is connected, which an agent calling a tool already knows.",
     ),
     _op(

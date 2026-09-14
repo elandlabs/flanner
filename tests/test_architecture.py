@@ -278,6 +278,12 @@ ALLOWED = {
         # is answered here, so the page asks rather than guessing from the
         # role map it was handed.
         "authz",
+        # Settings and the setup check page render the answer `flanner
+        # status` prints, from the same function. Local reads only.
+        "setup_check",
+        # Terminal-only rows take their reason from the registry, which
+        # imports nothing.
+        "operations",
     },
     "agent_hooks": FOUNDATION | {"database"},
     # `identity` so a received version can be told from one written here.

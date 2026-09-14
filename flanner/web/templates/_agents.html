@@ -1,0 +1,25 @@
+{% import "_cli_only.html" as terminal %}
+{#
+  Whether each agent will find flanner, from the setup check `flanner
+  status` prints. Settings and the setup page both render this, so they
+  cannot disagree with each other or with the terminal.
+#}
+{% macro rows(agents) %}
+{% for agent in agents %}
+  {% if agent.registered %}
+  <div class="switch-row">
+    <div class="body">{{ agent.label }}
+      <span>Registered{% if agent.where %} · {{ agent.where }}{% endif %}</span></div>
+    <span class="pill pill-fresh" style="margin-left:auto">ready</span>
+  </div>
+  {% elif agent.from_page %}
+  <div class="switch-row">
+    <div class="body">{{ agent.label }}
+      <span>Not registered, so it will not find flanner's tools</span></div>
+    <a class="btn btn-sm" style="margin-left:auto" href="/setup/register/{{ agent.slug }}">Review the change</a>
+  </div>
+  {% else %}
+  {{ terminal.row({"action": agent.label ~ " · not registered", "why": agent.why}, agent.command) }}
+  {% endif %}
+{% endfor %}
+{% endmacro %}

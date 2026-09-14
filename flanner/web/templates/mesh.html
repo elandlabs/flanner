@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% import "_empty.html" as empty %}
+{% import "_cli_only.html" as terminal %}
 {% block title %}Mesh{% endblock %}
 
 {% block topbar_main %}
@@ -42,6 +43,9 @@
         <span><span class="what">Run <code class="mono">flanner peer pull &lt;device-id&gt;</code></span><span class="why">to take their work</span></span>
       </div>
     </div>
+  </div>
+  <div class="card card-pad">
+    {{ terminal.row(cli_only("Enrol this machine"), "flanner login <code>") }}
   </div>
   {% else %}
 
@@ -175,8 +179,8 @@
       Pushes are still checked. The sender needs the right role for what
       they sent, every artifact is verified against the key of whoever
       <em>wrote</em> it rather than whoever handed it over, and a machine
-      can decline pushes entirely with
-      <code class="mono">FLANNER_ACCEPT_PUSHES=0</code> while still serving
+      can decline pushes entirely, from its project page or with
+      <code class="mono">flanner peer pushes off</code>, while still serving
       every read.</p>
     <p>
       You never edit on somebody else's computer, and there is no live

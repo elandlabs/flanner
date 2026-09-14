@@ -64,7 +64,7 @@ from .database import count_plan_files_recent as db_count_plan_files_recent
 from .database import count_projects as db_count_projects
 from .database import list_plan_files as db_list_plan_files
 from .database import list_projects as db_list_projects
-from .exceptions import DatabaseError
+from .exceptions import DatabaseError, ValidationError
 from .freshness import compute_freshness
 from .freshness import head_commit as freshness_head
 from .freshness import peek as freshness_peek
@@ -243,6 +243,23 @@ templates.env.globals["nav_plans"] = None
 templates.env.globals["nav_attention"] = 0
 templates.env.globals["nav_signed_in"] = False
 templates.env.globals["nav_peers"] = 0
+
+
+def _cli_only(action: str) -> dict[str, str]:
+    """An operation a page names but leaves to the terminal, with the registry's reason.
+
+    Raises when the registry gives none, so a disabled row with no
+    explanation fails a test instead of reaching somebody's screen.
+    """
+    from .operations import OPERATIONS
+
+    op = next(o for o in OPERATIONS if o.action == action)
+    if not op.why_not_web:
+        raise LookupError(f"{action!r} is shown as terminal-only with no reason in the registry")
+    return {"action": op.action, "why": op.why_not_web}
+
+
+templates.env.globals["cli_only"] = _cli_only
 templates.env.globals["nav_review"] = 0
 templates.env.globals["app_version"] = __version__
 # Stamped once at import. A footer year that re-read the clock on every
@@ -1108,7 +1125,7 @@ async def create_project_post(
 
 
 @app.get("/projects/{project_id}", response_class=HTMLResponse)
-async def project_detail(request: Request, project_id: str) -> HTMLResponse:
+async def project_detail(request: Request, project_id: str, said: str = "") -> HTMLResponse:
     """Show project detail with a page of plan files"""
     ensure_db()
     session = get_session()
@@ -1151,6 +1168,8 @@ async def project_detail(request: Request, project_id: str) -> HTMLResponse:
             **_pager_context(request, Page(plan_files, page, per, total)),
             "total": total,
             "linear_counts": linear_counts,
+            "sharing": _sharing(project),
+            "said": said,
         },
     )
 
@@ -2388,30 +2407,108 @@ async def skill_detail(
     )
 
 
+#: Each agent a page lists: its name in URLs and `flanner status`, its
+#: label, and its key in the setup check.
+_AGENTS = (
+    ("claude-desktop", "Claude Desktop", "claude_desktop"),
+    ("claude-code", "Claude Code", "claude_code"),
+    ("codex", "Codex", "codex"),
+)
+
+#: The agents this UI registers, with the command that makes the same edit.
+_REGISTER_COMMANDS = {
+    "claude-desktop": ("Claude Desktop", "flanner register"),
+    "codex": ("Codex", "flanner setup"),
+}
+
+
+def _agent_rows(found: dict[str, Any]) -> list[dict[str, Any]]:
+    """One row per agent: whether it will find flanner, and how to fix it if not."""
+    return [
+        {
+            "slug": slug,
+            "label": label,
+            "registered": bool(found[key]),
+            "where": found[key] if isinstance(found[key], str) else "",
+            "from_page": slug in _REGISTER_COMMANDS,
+            "why": (
+                "Claude Code writes its own config through its CLI, so there is no file "
+                "here to show you a change to."
+            ),
+            "command": "flanner setup",
+        }
+        for slug, label, key in _AGENTS
+    ]
+
+
+def _team() -> dict[str, Any] | None:
+    """Where this device's team is managed, or None when it has no team.
+
+    Built from the endpoint the device signed in to, not a fixed address, so
+    a self-hosted control plane links to itself. Only http and https become
+    links: the value comes from a file, and a `javascript:` href is not one.
+    """
+    from urllib.parse import urlsplit
+
+    from . import session as cache
+
+    held = cache.load()
+    if held is None:
+        return None
+    base = held.endpoint.rstrip("/")
+    pages = (
+        ("Organization", "/"),
+        ("Members and invitations", "/members"),
+        ("Devices", "/devices"),
+        ("Workspaces", "/workspaces"),
+        ("Billing", "/billing"),
+    )
+    linkable = urlsplit(base).scheme in ("http", "https")
+    return {
+        "endpoint": base,
+        "organization_id": held.organization_id,
+        "links": [{"label": label, "href": base + path} for label, path in pages]
+        if linkable
+        else [],
+    }
+
+
+def _sharing(project: Any) -> dict[str, Any]:
+    """Where a project's plans go, and whether this device takes teammates' pushes."""
+    from . import authz
+    from .identity import ACCEPT_PUSHES_ENV, pushes_preference
+
+    accepting, source = pushes_preference()
+    state: dict[str, Any] = {
+        "workspace_id": project.workspace_id,
+        "role": None,
+        "reason": "",
+        "accepting": accepting,
+        "locked": source == ACCEPT_PUSHES_ENV,
+        "env": ACCEPT_PUSHES_ENV,
+    }
+    if project.workspace_id:
+        granted = authz.resolve(project)
+        state["role"], state["reason"] = granted.role, granted.reason
+    return state
+
+
 @app.get("/settings", response_class=HTMLResponse)
 async def settings_page(request: Request) -> HTMLResponse:
     """What this install is configured to do. Read-mostly by design.
 
     Anything that would change a project belongs to that project's page;
-    this is the machine-wide view.
+    this is the machine-wide view. Agents come from the setup check `flanner
+    status` prints, which looks where each agent looks. The page used to
+    read Claude Desktop's file alone, so it called somebody using only
+    Claude Code unregistered while the terminal said otherwise.
     """
     ensure_db()
     session = get_session()
-    # The same source `flanner claude-info` reads, so the CLI and the UI
-    # can never disagree about what is installed.
-    from .claude_integration import get_claude_config_info
+    from . import setup_check
     from .database import get_db_path
 
-    try:
-        info = get_claude_config_info()
-    except Exception:  # noqa: BLE001 - a settings page must still render
-        info = {}
-    claude = {
-        "registered": bool(info.get("server_registered")),
-        "state": "registered" if info.get("server_registered") else "not registered",
-        "config_path": info.get("config_path"),
-        "servers": info.get("total_servers"),
-    }
+    found = await run_in_threadpool(setup_check.agents, Path.cwd())
     return templates.TemplateResponse(
         request,
         "settings.html",
@@ -2419,11 +2516,150 @@ async def settings_page(request: Request) -> HTMLResponse:
             "db_path": get_db_path(),
             "port": request.url.port or 8080,
             "version": __version__,
-            "claude": claude,
+            "agents": _agent_rows(found),
+            "team": _team(),
             "storage": _storage_view(session),
             **_nav(session),
         },
     )
+
+
+@app.get("/setup", response_class=HTMLResponse)
+async def setup_page(request: Request, said: str = "") -> HTMLResponse:
+    """Is flanner set up here? The answer `flanner status` prints, as a page.
+
+    Agents, tools, this project and its capture mode, which agents' skill
+    use is watched, and peers, all from `setup_check.check`. The page and
+    the terminal call one function, so they cannot disagree.
+    """
+    ensure_db()
+    session = get_session()
+    from . import memory_ops, setup_check
+
+    check = await run_in_threadpool(setup_check.check, session)
+    return templates.TemplateResponse(
+        request,
+        "setup.html",
+        {
+            "check": check,
+            "agents": _agent_rows(check["agents"]),
+            "watched": [scope["agent"] for scope in check["watching"] if scope["observing"]],
+            "modes": memory_ops.CAPTURE_MODES,
+            "said": said,
+            **_nav(session),
+        },
+    )
+
+
+def _registrable(agent: str) -> tuple[str, str]:
+    if agent not in _REGISTER_COMMANDS:
+        raise HTTPException(status_code=404, detail=f"This page does not register {agent}.")
+    return _REGISTER_COMMANDS[agent]
+
+
+@app.get("/setup/register/{agent}", response_class=HTMLResponse)
+async def register_preview_page(request: Request, agent: str, said: str = "") -> HTMLResponse:
+    """The exact change registering would make to an agent's config, before it is made."""
+    import difflib
+
+    from .claude_integration import registration_preview
+
+    label, command = _registrable(agent)
+    ensure_db()
+    session = get_session()
+    preview = await run_in_threadpool(registration_preview, agent)
+    diff = list(
+        difflib.unified_diff(
+            preview["before"].splitlines(),
+            preview["after"].splitlines(),
+            fromfile=preview["path"],
+            tofile=preview["path"],
+            lineterm="",
+            n=2,
+        )
+    )
+    return templates.TemplateResponse(
+        request,
+        "register.html",
+        {
+            "preview": preview,
+            "diff": diff,
+            "label": label,
+            "command": command,
+            "said": said,
+            **_nav(session),
+        },
+    )
+
+
+@app.post("/setup/register/{agent}")
+async def register_confirm(agent: str, seen: str = Form(...)) -> RedirectResponse:
+    """Write the change the preview showed, and only that one.
+
+    The function the CLI calls does the writing, so the file is byte for
+    byte what `flanner register` or `flanner setup` would leave. A file that
+    changed after the preview is refused: the diff somebody confirmed is no
+    longer the edit that would be made.
+    """
+    import hmac
+
+    from .claude_integration import (
+        ensure_codex_registration,
+        register_mcp_server,
+        registration_preview,
+    )
+
+    label, _ = _registrable(agent)
+    preview = await run_in_threadpool(registration_preview, agent)
+    if preview["problem"]:
+        actions.failed(preview["problem"])
+        return RedirectResponse(f"/setup?said={quote(preview['problem'])}", status_code=303)
+    if preview["already"]:
+        said = f"flanner was already registered with {label}. Nothing was written."
+        return RedirectResponse(f"/setup?said={quote(said)}", status_code=303)
+    if not hmac.compare_digest(seen, preview["fingerprint"]):
+        actions.failed("the config file changed after the preview")
+        said = "The file changed after you looked. Check the new change before writing it."
+        return RedirectResponse(f"/setup/register/{agent}?said={quote(said)}", status_code=303)
+
+    if agent == "codex":
+        outcome, detail = await run_in_threadpool(ensure_codex_registration)
+        ok = outcome == "registered"
+        message = f"Registered with Codex in {detail}. Restart Codex." if ok else detail
+    else:
+        ok, message = await run_in_threadpool(register_mcp_server)
+        message = f"{message}. Restart {label}." if ok else message
+    if not ok:
+        actions.failed(message)
+    return RedirectResponse(f"/setup?said={quote(message)}", status_code=303)
+
+
+@app.post("/mesh/pushes")
+async def mesh_pushes_form(accept: str = Form(...), back: str = Form("/mesh")) -> RedirectResponse:
+    """Accept or refuse teammates' pushes on this device, as `flanner peer pushes` does."""
+    from . import identity
+
+    if accept not in ("on", "off"):
+        raise HTTPException(status_code=400, detail="accept must be on or off")
+    # Put into a Location, so only a path on this site: no scheme, no host,
+    # no pair of slashes a browser would read as a host, and no backslash,
+    # which some browsers read as a slash.
+    safe = back.startswith("/") and not any(bad in back for bad in ("//", ":", chr(92)))
+    where = back if safe else "/mesh"
+    if identity.pushes_preference()[1] == identity.ACCEPT_PUSHES_ENV:
+        said = (
+            f"{identity.ACCEPT_PUSHES_ENV} is set where flanner web runs, and it decides. "
+            "Nothing was changed."
+        )
+        actions.failed(said)
+    else:
+        await run_in_threadpool(identity.set_accepting_pushes, accept == "on")
+        said = (
+            "This device now accepts pushes."
+            if accept == "on"
+            else "This device now refuses pushes. It still serves every read."
+        )
+    return RedirectResponse(f"{where}?said={quote(said)}", status_code=303)
 
 
 @app.get("/integrations", response_class=HTMLResponse)
@@ -2523,6 +2759,39 @@ async def memory_page(request: Request, q: str = "", status: str = "active") -> 
             **_nav(session),
         },
     )
+
+
+@app.post("/memory/mode")
+async def memory_mode_form(capture_mode: str = Form(...)) -> RedirectResponse:
+    """Set how much this project captures, as `flanner mem mode` does.
+
+    Both call `memory_ops.set_capture_mode`, so the policy file is the same
+    either way. When the global policy keeps the mode tighter than the one
+    chosen, the page says so rather than claiming a change that did not
+    take effect.
+    """
+    ensure_db()
+    session = get_session()
+    from . import memory_ops
+
+    project = await run_in_threadpool(memory_ops.resolve_project, session)
+    if project is None:
+        said = "flanner web is not running inside a flanner project, so there is no policy to set."
+        actions.failed(said)
+        return RedirectResponse(f"/setup?said={quote(said)}", status_code=303)
+    try:
+        effective = await run_in_threadpool(memory_ops.set_capture_mode, project, capture_mode)
+    except ValidationError as error:
+        actions.failed(str(error))
+        return RedirectResponse(f"/setup?said={quote(str(error))}", status_code=303)
+    if effective == capture_mode:
+        said = f"Capture mode is now {effective} for {project.name}."
+    else:
+        said = (
+            f"Written, but the mode in force is still {effective}: a project may only "
+            "tighten what the global policy allows."
+        )
+    return RedirectResponse(f"/setup?said={quote(said)}", status_code=303)
 
 
 @app.get("/memory/pending", response_class=HTMLResponse)

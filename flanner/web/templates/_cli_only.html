@@ -1,0 +1,18 @@
+{#
+  An action a page can name but not take, shown disabled rather than
+  hidden. A missing control reads as a missing feature and sends somebody
+  looking for it; a disabled one says where the action lives and why. The
+  reason comes from the operation registry (`cli_only`), so every page gives
+  the same one.
+#}
+{% macro row(op, command) %}
+<div class="switch-row cli-only" aria-disabled="true">
+  <div class="body">{{ op.action }}
+    <span>{{ op.why }}</span></div>
+  <button class="btn btn-sm" type="button" disabled style="margin-left:auto">Terminal only</button>
+  <div class="cmd" style="flex-basis:100%">
+    <span class="p" aria-hidden="true">$</span>
+    <span class="t">{{ command }}</span>
+  </div>
+</div>
+{% endmacro %}

@@ -1,4 +1,6 @@
 {% extends "base.html" %}
+{% import "_agents.html" as agentlist %}
+{% import "_cli_only.html" as terminal %}
 {% block title %}Settings{% endblock %}
 
 {% block topbar_main %}
@@ -60,27 +62,37 @@
   </div>
 
   <div class="card card-pad">
-    <h2 class="card-title" style="margin-bottom:2px">Agent integration</h2>
+    <h2 class="card-title" style="margin-bottom:2px">Agents</h2>
+    {{ agentlist.rows(agents) }}
+    <p class="hint">The same check <code class="mono">flanner status</code> runs, so the two
+       cannot disagree. The <a href="/setup">setup check</a> adds tools, capture and peers.</p>
+  </div>
+
+  {#
+    The team is managed on the control plane, not here, so this card links
+    there. Signed out, it says what a team is and how to join one, rather
+    than disappearing and leaving somebody to wonder where invitations went.
+  #}
+  <div class="card card-pad">
+    <h2 class="card-title" style="margin-bottom:2px">Team</h2>
+    {% if team %}
+    <div class="kv"><span>Organization</span><b class="mono">{{ team.organization_id }}</b></div>
+    <div class="kv"><span>Console</span><b class="mono">{{ team.endpoint }}</b></div>
+    {% for link in team.links %}
     <div class="switch-row">
-      <div class="body">MCP server
-        <span>
-          {% if claude.get('registered') %}
-            Registered with Claude Code · <b style="color:var(--accent-ink)">● {{ claude.get('state', 'ready') }}</b>
-          {% else %}
-            Not registered. Run <code class="mono">flanner register</code>.
-          {% endif %}
-        </span>
-      </div>
-      <a class="btn" style="margin-left:auto" href="/integrations">Details</a>
+      <div class="body">{{ link.label }}</div>
+      <a class="btn btn-sm" style="margin-left:auto" href="{{ link.href }}" target="_blank" rel="noopener noreferrer">Open in the console</a>
     </div>
-    <div class="switch-row">
-      <div class="body">Config file
-        <span class="mono" style="font-size:11.5px">{{ claude.config_path or 'not found' }}</span></div>
-      <span class="pill pill-quiet" style="margin-left:auto">{{ claude.servers or 0 }} servers</span>
-    </div>
-    <p class="hint">Read from the same file <code class="mono">flanner claude-info</code> reads,
-       so the CLI and this page cannot disagree. Change it with
-       <code class="mono">flanner register</code>.</p>
+    {% else %}
+    <p class="hint bad">This device's control plane address is not a web address, so there is nothing to link to.</p>
+    {% endfor %}
+    <p class="hint">Members, invitations, seats and billing live in the console of the
+       control plane this device signed in to.</p>
+    {% else %}
+    <p class="hint">This machine is not signed in, so it has no team. A team adds members,
+       shared workspaces and billing, all managed in the console. Nothing on this page needs one.</p>
+    {{ terminal.row(cli_only("Enrol this machine"), "flanner login <code>") }}
+    {% endif %}
   </div>
 
   <div class="card card-pad">

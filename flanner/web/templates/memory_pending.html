@@ -61,8 +61,8 @@
   {% call empty.state('memory', 'Nothing waiting') %}
     <p>Capture is set to <b>{{ capture_mode }}</b> for this project.</p>
     {% if capture_mode == 'off' %}
-    <p class="hint">Nothing is being captured or suggested. Change it with
-       <code>flanner mem mode suggest</code>.</p>
+    <p class="hint">Nothing is being captured or suggested. Change it on the
+       <a href="/setup">setup check</a> or with <code>flanner mem mode suggest</code>.</p>
     {% elif capture_mode == 'explicit' %}
     <p class="hint">Only what somebody asks to remember is kept, so nothing
        will ever appear here.</p>
