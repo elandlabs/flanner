@@ -8,113 +8,134 @@
   <span class="sub">This machine only</span>
 {% endblock %}
 
+{#
+  Tabs, the same component the Skills page uses, so a page of sections works
+  one way everywhere. Every panel is rendered; with the script off the strip
+  is a row of jump links. The ones people come for, agents and the team,
+  come first. The facts about this machine are reference, so they share a tab.
+#}
 {% block content %}
 <div class="pane narrow">
 
-  <div class="card card-pad">
-    <h2 class="card-title">General</h2>
-    <div class="field-grid">
-      <div class="field">
-        <span class="field-label">Database</span>
-        <div class="input mono" role="text">{{ db_path }}</div>
-      </div>
-      <div class="field">
-        <span class="field-label">Web UI port</span>
-        <div class="input mono" role="text">{{ port }}</div>
-      </div>
-      <div class="field">
-        <span class="field-label">Version</span>
-        <div class="input mono" role="text">flanner {{ version }}</div>
-      </div>
-    </div>
-    <p class="hint">Changed with <code class="mono">flanner web --port</code> or
-       <code class="mono">FLANNER_HOME</code>. Shown here so you know where to look.</p>
-  </div>
+  <nav class="tabs" data-tabs aria-label="Settings sections">
+    <a class="tab" href="#tab-agents" data-tab>Agents</a>
+    <a class="tab" href="#tab-team" data-tab>Team</a>
+    <a class="tab" href="#tab-machine" data-tab>This machine</a>
+    <a class="tab" href="#tab-appearance" data-tab>Appearance</a>
+  </nav>
 
-  {#
-    Nothing here is ever pruned, and that is a decision rather than an
-    oversight — so it is stated, with the number it costs. There is no
-    cleanup button on purpose: keeping every version is what makes history
-    and signatures worth anything, and a control that quietly broke lineage
-    would be worse than a figure that grows.
-  #}
-  <div class="card card-pad">
-    <h2 class="card-title">Storage</h2>
-    <div class="field-grid">
-      <div class="field">
-        <span class="field-label">Plan text</span>
-        <div class="input mono" role="text">{{ storage.plans }}</div>
-      </div>
-      <div class="field">
-        <span class="field-label">Signed history</span>
-        <div class="input mono" role="text">
-          {{ storage.payload }} across {{ storage.artifacts }} artifacts</div>
-      </div>
-      <div class="field">
-        <span class="field-label">Total on this machine</span>
-        <div class="input mono" role="text">{{ storage.total }}</div>
-      </div>
+  <section id="tab-agents" class="tab-stack" data-tab-panel>
+    <div class="card card-pad">
+      <h2 class="card-title" style="margin-bottom:2px">Agents</h2>
+      {{ agentlist.rows(agents) }}
+      <p class="hint">The same check <code class="mono">flanner status</code> runs, so the two
+         cannot disagree. The <a href="/setup">setup check</a> adds tools, capture and peers.</p>
     </div>
-    <p class="hint">Flanner never prunes. Every version, comment and decision
-       is kept, because a history with holes cannot be verified and a plan you
-       need is usually an old one. Retiring a plan hides it; it does not
-       reclaim space.</p>
-  </div>
-
-  <div class="card card-pad">
-    <h2 class="card-title" style="margin-bottom:2px">Agents</h2>
-    {{ agentlist.rows(agents) }}
-    <p class="hint">The same check <code class="mono">flanner status</code> runs, so the two
-       cannot disagree. The <a href="/setup">setup check</a> adds tools, capture and peers.</p>
-  </div>
+  </section>
 
   {#
     The team is managed on the control plane, not here, so this card links
     there. Signed out, it says what a team is and how to join one, rather
     than disappearing and leaving somebody to wonder where invitations went.
   #}
-  <div class="card card-pad">
-    <h2 class="card-title" style="margin-bottom:2px">Team</h2>
-    {% if team %}
-    <div class="kv"><span>Organization</span><b class="mono">{{ team.organization_id }}</b></div>
-    <div class="kv"><span>Console</span><b class="mono">{{ team.endpoint }}</b></div>
-    {% for link in team.links %}
-    <div class="switch-row">
-      <div class="body">{{ link.label }}</div>
-      <a class="btn btn-sm" style="margin-left:auto" href="{{ link.href }}" target="_blank" rel="noopener noreferrer">Open in the console</a>
-    </div>
-    {% else %}
-    <p class="hint bad">This device's control plane address is not a web address, so there is nothing to link to.</p>
-    {% endfor %}
-    <p class="hint">Members, invitations, seats and billing live in the console of the
-       control plane this device signed in to.</p>
-    {% else %}
-    <p class="hint">This machine is not signed in, so it has no team. A team adds members,
-       shared workspaces and billing, all managed in the console. Nothing on this page needs one.</p>
-    {{ terminal.row(cli_only("Enrol this machine"), "flanner login <code>") }}
-    {% endif %}
-  </div>
-
-  <div class="card card-pad">
-    <div style="display:flex; align-items:center; gap:12px">
-      <h2 class="card-title" style="margin:0">Appearance</h2>
-      <div class="segmented" role="group" aria-label="Theme" style="margin-left:auto">
-        <button type="button" data-theme-choice="light" aria-pressed="false">Light</button>
-        <button type="button" data-theme-choice="dark" aria-pressed="false">Dark</button>
-        <button type="button" data-theme-choice="system" aria-pressed="true">System</button>
+  <section id="tab-team" class="tab-stack" data-tab-panel>
+    <div class="card card-pad">
+      <h2 class="card-title" style="margin-bottom:2px">Team</h2>
+      {% if team %}
+      <div class="kv"><span>Organization</span><b class="mono">{{ team.organization_id }}</b></div>
+      <div class="kv"><span>Console</span><b class="mono">{{ team.endpoint }}</b></div>
+      {% for link in team.links %}
+      <div class="switch-row">
+        <div class="body">{{ link.label }}</div>
+        <a class="btn btn-sm" href="{{ link.href }}" target="_blank" rel="noopener noreferrer">Open in the console</a>
       </div>
+      {% else %}
+      <p class="hint bad">This device's control plane address is not a web address, so there is nothing to link to.</p>
+      {% endfor %}
+      <p class="hint">Members, invitations, seats and billing live in the console of the
+         control plane this device signed in to.</p>
+      {% else %}
+      <p class="hint">This machine is not signed in, so it has no team. A team adds members,
+         shared workspaces and billing, all managed in the console. Nothing on this page needs one.</p>
+      {{ terminal.row(cli_only("Enrol this machine"), "flanner login <code>") }}
+      {% endif %}
     </div>
-    <p class="hint">Reading preferences for plan documents — typeface, size and line
-       width — live on the plan page itself, next to the text they change.</p>
-  </div>
+  </section>
 
-  <div class="card card-pad">
-    <h2 class="card-title">Where your data is</h2>
-    <p style="margin:0; color:var(--text-3); font-size:13px">
-      Everything is in one SQLite file and the plan directories inside your own
-      repositories. There is no account and nothing is uploaded. Delete
-      <code class="mono">{{ db_path }}</code> and flanner forgets it ever ran.</p>
-  </div>
+  <section id="tab-machine" class="tab-stack" data-tab-panel>
+    <div class="card card-pad">
+      <h2 class="card-title">General</h2>
+      <div class="field-grid">
+        <div class="field">
+          <span class="field-label">Database</span>
+          <div class="input mono" role="text">{{ db_path }}</div>
+        </div>
+        <div class="field">
+          <span class="field-label">Web UI port</span>
+          <div class="input mono" role="text">{{ port }}</div>
+        </div>
+        <div class="field">
+          <span class="field-label">Version</span>
+          <div class="input mono" role="text">flanner {{ version }}</div>
+        </div>
+      </div>
+      <p class="hint">Changed with <code class="mono">flanner web --port</code> or
+         <code class="mono">FLANNER_HOME</code>. Shown here so you know where to look.</p>
+    </div>
+
+    {#
+      Nothing here is ever pruned, and that is a decision rather than an
+      oversight — so it is stated, with the number it costs. There is no
+      cleanup button on purpose: keeping every version is what makes history
+      and signatures worth anything, and a control that quietly broke lineage
+      would be worse than a figure that grows.
+    #}
+    <div class="card card-pad">
+      <h2 class="card-title">Storage</h2>
+      <div class="field-grid">
+        <div class="field">
+          <span class="field-label">Plan text</span>
+          <div class="input mono" role="text">{{ storage.plans }}</div>
+        </div>
+        <div class="field">
+          <span class="field-label">Signed history</span>
+          <div class="input mono" role="text">
+            {{ storage.payload }} across {{ storage.artifacts }} artifacts</div>
+        </div>
+        <div class="field">
+          <span class="field-label">Total on this machine</span>
+          <div class="input mono" role="text">{{ storage.total }}</div>
+        </div>
+      </div>
+      <p class="hint">Flanner never prunes. Every version, comment and decision
+         is kept, because a history with holes cannot be verified and a plan you
+         need is usually an old one. Retiring a plan hides it; it does not
+         reclaim space.</p>
+    </div>
+
+    <div class="card card-pad">
+      <h2 class="card-title">Where your data is</h2>
+      <p style="margin:0; color:var(--text-3); font-size:13px">
+        Everything is in one SQLite file and the plan directories inside your own
+        repositories. There is no account and nothing is uploaded. Delete
+        <code class="mono">{{ db_path }}</code> and flanner forgets it ever ran.</p>
+    </div>
+  </section>
+
+  <section id="tab-appearance" class="tab-stack" data-tab-panel>
+    <div class="card card-pad">
+      <div style="display:flex; align-items:center; gap:12px">
+        <h2 class="card-title" style="margin:0">Appearance</h2>
+        <div class="segmented" role="group" aria-label="Theme" style="margin-left:auto">
+          <button type="button" data-theme-choice="light" aria-pressed="false">Light</button>
+          <button type="button" data-theme-choice="dark" aria-pressed="false">Dark</button>
+          <button type="button" data-theme-choice="system" aria-pressed="true">System</button>
+        </div>
+      </div>
+      <p class="hint">Reading preferences for plan documents — typeface, size and line
+         width — live on the plan page itself, next to the text they change.</p>
+    </div>
+  </section>
 
 </div>
 {% endblock %}

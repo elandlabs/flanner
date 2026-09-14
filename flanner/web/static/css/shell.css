@@ -149,7 +149,10 @@ a:hover { color: var(--accent-hi); }
 .crumbs .here { font-weight: 600; color: var(--text); }
 
 .pane { padding: 22px 28px; display: flex; flex-direction: column; gap: 20px; }
-.pane.narrow { max-width: 700px; }
+/* A column of short cards, in the middle of the page. It hugged the left
+   edge, which left a wide screen's right half empty and made the page read
+   as unfinished. Every page with this shape shares the rule. */
+.pane.narrow { width: 100%; max-width: 760px; margin-inline: auto; box-sizing: border-box; }
 .pane.centred { align-items: center; }
 
 /* A standing statement about the page, as opposed to `.alert`, which is
@@ -1438,6 +1441,10 @@ code { overflow-wrap: anywhere; }
 }
 .tab .n.n-warn { color: var(--stale-text); background: var(--stale-bg); font-weight: 600; }
 .tab[aria-current="true"] .n { color: var(--text-2); }
+/* A panel holding a stack of cards. `hidden` must still win, or the tab
+   script could not hide a panel whose own display rule is flex. */
+.tab-stack { display: flex; flex-direction: column; gap: 20px; }
+.tab-stack[hidden] { display: none; }
 
 /* ---------------------------------------------------- usage, drawn */
 
