@@ -1068,8 +1068,9 @@ kbd {
   .grid-row > [data-cell="meta"], .plan-file-card > [data-cell="meta"] {
     display: inline; font-size: var(--t-sm); color: var(--text-3); font-family: var(--font-sans); font-weight: 400;
   }
-  .grid-row > [data-cell="meta"] + [data-cell="meta"]::before,
-  .plan-file-card > [data-cell="meta"] + [data-cell="meta"]::before {
+  /* `~`, not `+`: a chip can sit between two meta cells in source order. */
+  .grid-row > [data-cell="meta"] ~ [data-cell="meta"]::before,
+  .plan-file-card > [data-cell="meta"] ~ [data-cell="meta"]::before {
     content: "·"; margin: 0 6px; color: var(--text-4);
   }
   .grid-row > [data-cell="chip"], .plan-file-card > [data-cell="chip"] { position: absolute; right: 16px; top: 12px; }
