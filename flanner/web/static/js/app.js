@@ -419,13 +419,17 @@ onPage(function () {
         const list = group.querySelector('[data-list]');
         if (!list) return;
         // The controls usually sit in the top bar, which is outside the card
-        // they act on, so fall back to the page. Safe because a page carries
-        // at most one list group; if that stops being true, give the controls
-        // a group id to point at.
-        const filter = group.querySelector('[data-list-filter]')
-            || document.querySelector('[data-list-filter]');
-        const sort = group.querySelector('[data-list-sort]')
-            || document.querySelector('[data-list-sort]');
+        // they act on, so fall back to the page, but only to controls that
+        // belong to no list group. The Skills page has two groups, and the
+        // usage table's own search box would otherwise have filtered the
+        // skills table as well.
+        const loose = function (attr) {
+            return Array.from(document.querySelectorAll('[' + attr + ']')).find(function (el) {
+                return !el.closest('[data-listgroup]');
+            }) || null;
+        };
+        const filter = group.querySelector('[data-list-filter]') || loose('data-list-filter');
+        const sort = group.querySelector('[data-list-sort]') || loose('data-list-sort');
         const empty = group.querySelector('[data-list-empty]');
         const items = function () { return Array.from(list.querySelectorAll('[data-list-item]')); };
 

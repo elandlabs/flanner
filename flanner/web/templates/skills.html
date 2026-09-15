@@ -197,19 +197,36 @@
     {% endif %}
   </div>
 
-  <div class="card" style="margin-top:14px">
+  {#
+    Searched, sorted and paged in the browser, like every other list. The
+    rows are one report built for the page, so there is no server query to
+    page, and the Skills tab above already owns the page's `page` address.
+  #}
+  <div class="card" style="margin-top:14px" data-listgroup>
     <div class="card-head">Used in the last {{ usage.window_days }} days
       <span class="note">
         {% if usage.coverage.watching %}{{ usage.rows | length }} skill(s)
-        {% else %}nothing was watching{% endif %}</span></div>
+        {% else %}nothing was watching{% endif %}</span>
+      {% if usage.rows %}
+      <input class="input input-sm sift" type="search" data-list-filter
+             aria-label="Search used skills" placeholder="Search used skills" autocomplete="off">
+      <label class="sr-only" for="usage-sort">Sort</label>
+      <select class="btn btn-sm" id="usage-sort" data-list-sort>
+        <option value="uses:desc">Most used</option>
+        <option value="last:desc">Recently used</option>
+        <option value="name:asc">Name</option>
+      </select>
+      {% endif %}</div>
     {% if usage.rows %}
     {% set busiest = usage.rows | map(attribute='invocations') | max %}
     <div class="grid-row grid-head cols-usage">
       <span>Skill</span><span>Uses</span><span>Over the window</span>
       <span>Last used</span><span>Models</span>
     </div>
+    <div data-list>
     {% for row in usage.rows %}
-    <div class="grid-row cols-usage">
+    <div class="grid-row cols-usage" data-list-item data-name="{{ row.skill }}"
+         data-uses="{{ row.invocations }}" data-last="{{ row.last_used_at }}">
       {# The caveat belongs to the name, not to the count. What is in doubt
          is which package these uses were of, and the number of them is not
          the uncertain part. #}
@@ -235,6 +252,9 @@
       <span class="muted">{% for k, v in row.by_model.items() %}{{ k }} ({{ v }}){% if not loop.last %}, {% endif %}{% endfor %}</span>
     </div>
     {% endfor %}
+    </div>
+    <div class="empty-filter" data-list-empty hidden>No used skill matches that.</div>
+    <div class="pager" data-list-pager hidden></div>
     {% else %}
     {% if usage.coverage.watching %}
       {% call empty.inside('clear', 'Nothing was invoked in this window') %}
