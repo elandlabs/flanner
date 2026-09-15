@@ -97,11 +97,20 @@
       {% if query %}Matches for “{{ query }}”{% else %}Everything remembered{% endif %}
       <span class="note">{{ rows | length }}</span>
     </div>
+    {% set cols = 'cols-memory-reasoned' if show_reason else 'cols-memory' %}
+    <div class="grid-head {{ cols }}">
+      <span>Memory</span><span>Category</span><span>Scope</span><span>By</span>
+      {% if show_reason %}<span>Why it matched</span>{% endif %}
+    </div>
     {% for row in rows %}
-    <div class="grid-row {{ 'cols-memory-reasoned' if show_reason else 'cols-memory' }}" data-list-item>
-      <span><a href="/memory/{{ row.id }}">{{ row.title }}</a>{% if row.status and row.status != 'active' %}
+    {# The title is the first sentence of the body, so the summary under it
+       used to repeat it. Only what the title does not already say is shown. #}
+    {% set head = row.title.rstrip('…') %}
+    {% set rest = (row.summary[(head | length):] | trim) if row.summary.startswith(head) else row.summary %}
+    <div class="grid-row {{ cols }}" data-list-item>
+      <span><a class="name" href="/memory/{{ row.id }}">{{ row.title }}</a>{% if row.status and row.status != 'active' %}
         <span class="pill pill-quiet">{{ row.status }}</span>{% endif %}
-        <span class="hint">{{ row.summary }}</span></span>
+        {% if rest %}<span class="hint">{{ rest }}</span>{% endif %}</span>
       <span data-cell="meta"><span class="pill pill-{{ row.category }}">{{ row.category }}</span></span>
       <span class="muted" data-cell="meta">{{ row.scope }}</span>
       <span class="muted" data-cell="meta">{{ row.created_by }}</span>

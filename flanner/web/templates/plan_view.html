@@ -257,13 +257,11 @@
     <section>
       <h2>Version history</h2>
       {% for v in all_versions %}
-      <div style="display:flex; align-items:center; gap:9px; padding:4px 0">
+      <div class="railrow">
         <span class="vtag {% if v.version == plan_file.current_version %}vtag-current{% endif %}">
           v{{ v.version }}</span>
-        <a href="/plans/{{ plan_file.id }}?version={{ v.version }}"
-           style="font-size:12px; color:var(--text-2)">{{ v.notes or 'no note' }}</a>
-        <span style="margin-left:auto; font-size:11px; color:var(--text-4)">
-          {{ v.created_at | relative_time if v.created_at }}</span>
+        <a class="grow" href="/plans/{{ plan_file.id }}?version={{ v.version }}">{{ v.notes or 'no note' }}</a>
+        <span class="when">{{ v.created_at | relative_time if v.created_at }}</span>
       </div>
       {% endfor %}
       <a class="btn btn-sm" style="margin-top:10px"

@@ -59,7 +59,7 @@
         {{ copies | selectattr('effective') | list | length }} loads
         {%- else %}one copy{% endif %}</span></div>
     <div class="tablewrap">
-      <div class="grid-row grid-head cols-copies">
+      <div class="grid-head cols-copies">
         <span>Agent</span><span>Scope</span><span>Where</span>
         <span>Contents</span><span>Loads</span>
       </div>
@@ -103,7 +103,7 @@
     <div class="card-head">What is wrong
       <span class="note">{{ findings | length }}</span></div>
     <div class="tablewrap">
-      <div class="grid-row grid-head cols-findings">
+      <div class="grid-head cols-findings">
         <span>Finding</span><span>Detail</span><span>What to do</span>
       </div>
       {% for f in findings %}
@@ -167,7 +167,7 @@
     <div class="card-pad card-prose"><p>The manifest could not be read.</p></div>
     {% endif %}
     <div class="tablewrap">
-      <div class="grid-row grid-head cols-files">
+      <div class="grid-head cols-files">
         <span>File</span><span>Size</span>
       </div>
       {% for file in files %}
@@ -191,7 +191,7 @@
     <div class="card-head">Waiting on a decision
       <span class="note">{{ proposals | length }}</span></div>
     <div class="tablewrap">
-      <div class="grid-row grid-head cols-proposals">
+      <div class="grid-head cols-proposals">
         <span>Draft</span><span>Action</span><span>State</span><span>Why</span><span></span>
       </div>
       {% for row in proposals %}

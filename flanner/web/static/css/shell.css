@@ -148,7 +148,9 @@ a:hover { color: var(--accent-hi); }
 .crumbs .sep { color: var(--text-4); }
 .crumbs .here { font-weight: 600; color: var(--text); }
 
-.pane { padding: 24px; display: flex; flex-direction: column; gap: 20px; }
+/* Capped, so an ultrawide screen does not stretch a title column to
+   1200px. Below 1440px nothing changes. */
+.pane { padding: 24px; display: flex; flex-direction: column; gap: 20px; max-width: 1280px; margin-inline: auto; box-sizing: border-box; width: 100%; }
 /* A column of short cards, in the middle of the page. It hugged the left
    edge, which left a wide screen's right half empty and made the page read
    as unfinished. Every page with this shape shares the rule. */
@@ -770,8 +772,10 @@ details.lede > summary:hover::after { text-decoration: underline; }
 /* ---------------------------------------------------------------- forms */
 
 .field { display: flex; flex-direction: column; }
+/* A label steps back from the value it names: medium weight and the
+   second text tier, where it used to be bold in full ink over a plain field. */
 .field > label, .field-label {
-  font-size: var(--t-sm); font-weight: 600; margin-bottom: 6px; color: var(--text);
+  font-size: var(--t-sm); font-weight: 500; margin-bottom: 6px; color: var(--text-2);
 }
 .field-label .opt { font-weight: 400; color: var(--text-4); }
 .input, .textarea, .select {
@@ -842,7 +846,9 @@ details.lede > summary:hover::after { text-decoration: underline; }
 }
 .alert-error   { border-left-color: var(--stale);   background: var(--stale-bg);   color: var(--stale-text); }
 .alert-success { border-left-color: var(--fresh);   background: var(--fresh-bg);   color: var(--fresh-text); }
-.alert-info    { border-left-color: var(--suspect); background: var(--suspect-bg); color: var(--suspect-text); }
+/* Neutral. It was orange, the suspect colour, which made a plain piece
+   of information look like a warning. */
+.alert-info    { border-left-color: var(--accent); background: var(--accent-soft); color: var(--text-2); }
 
 .empty { text-align: center; padding: 48px 20px; color: var(--text-3); }
 .empty h2 { font-size: var(--t-lg); color: var(--text); margin: 0 0 6px; }
@@ -1628,6 +1634,9 @@ code { overflow-wrap: anywhere; }
 .pager-nav { display: inline-flex; align-items: center; gap: 8px; }
 .pager-per { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; }
 .pager select { font: inherit; }
+/* One height for the pager's controls. Its buttons were 26px and its
+   select 23px on a page whose bar controls are 32px. */
+.pager .btn, .pager select { height: 28px; padding-top: 0; padding-bottom: 0; box-sizing: border-box; }
 
 /* -------------------------------------------------------------- tabs */
 

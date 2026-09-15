@@ -98,7 +98,7 @@
       {% if scope %}{{ scope }} skills{% else %}Skills{% endif %}
       <span class="note">{{ rows | length }} of {{ report.summary.packages }}</span>
     </div>
-    <div class="grid-row grid-head cols-skills">
+    <div class="grid-head cols-skills">
       <span>Skill</span><span>Agent</span><span>Scope</span><span>From</span>
       <span>Description</span><span>Files</span>
     </div>
@@ -219,7 +219,7 @@
       {% endif %}</div>
     {% if usage.rows %}
     {% set busiest = usage.rows | map(attribute='invocations') | max %}
-    <div class="grid-row grid-head cols-usage">
+    <div class="grid-head cols-usage">
       <span>Skill</span><span>Uses</span><span>Over the window</span>
       <span>Last used</span><span>Models</span>
     </div>
@@ -298,7 +298,7 @@
       <span class="note">{{ stored | length }} stored ·
         {{ installs | length }} install(s)</span></div>
     {% if installs %}
-    <div class="grid-row grid-head cols-installs">
+    <div class="grid-head cols-installs">
       <span>Installed</span><span>Where</span><span>State</span><span></span>
     </div>
     {% for row in installs %}
@@ -333,7 +333,7 @@
       <span class="note">{{ transfers | length }} arrived ·
         {{ channels | selectattr('subscribed') | list | length }} followed</span></div>
     {% if transfers %}
-    <div class="grid-row grid-head cols-transfers">
+    <div class="grid-head cols-transfers">
       <span>Skill</span><span>State</span><span>From</span><span>How</span><span></span>
     </div>
     {% for row in transfers %}
@@ -387,7 +387,7 @@
       <span class="note">{{ report.summary.defects }}
         defect{{ '' if report.summary.defects == 1 else 's' }},
         {{ report.summary.advice }} advisory</span></div>
-    <div class="grid-row grid-head cols-findings">
+    <div class="grid-head cols-findings">
       <span>Finding</span><span>Skill</span><span>What to do</span>
     </div>
     {% for f in report.findings %}
@@ -415,7 +415,7 @@
         director{{ 'y' if report.coverage.roots | length == 1 else 'ies' }}{% if missing %},
         {{ missing }} not there{% endif %}</span></summary>
     {% for name in report.agents %}
-    <h3 class="card-title" style="font-size:13px;margin-top:12px">{{ name }}</h3>
+    <h3 class="card-title" style="margin-top:12px">{{ name }}</h3>
     <ul>
       {% for r in report.coverage.roots if r.agent == name %}
       <li><code>{{ r.path }}</code>
