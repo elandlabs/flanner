@@ -1641,6 +1641,25 @@ select.btn-sm { padding-right: 8px; }
 @media (prefers-reduced-motion: reduce) {
   @view-transition { navigation: none; }
 }
+/* The boosted swap runs through the same machinery (app.js): 200ms on the
+   site's curve. The rail is its own group, so the page crossfades inside
+   a frame that holds still rather than the whole window blinking. */
+::view-transition-old(root), ::view-transition-new(root) {
+  animation-duration: .2s; animation-timing-function: var(--ease);
+}
+.rail { view-transition-name: rail; }
+::view-transition-old(rail), ::view-transition-new(rail) { animation: none; }
+
+/* The theme switch, eased. `theming` sits on the root for 400ms around the
+   change (app.js, applyTheme); every colour transitions for that long and
+   then nothing does. Last in the file, so it outranks a component's own
+   transition list for the duration. Reduced motion collapses it to a cut
+   through the global rule above. */
+.theming, .theming *, .theming *::before, .theming *::after {
+  transition:
+    background-color .35s var(--ease), color .35s var(--ease),
+    border-color .35s var(--ease), fill .35s var(--ease), stroke .35s var(--ease);
+}
 
 /* Print a plan as a document: drop the chrome, keep the reading column.
    Paper is white in either theme, so these two literals are not a theme

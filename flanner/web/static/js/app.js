@@ -233,6 +233,13 @@ function themeChoice() {
 
 function applyTheme(mode) {
     const d = document.documentElement;
+    // Every colour eases to its new value for the next 350ms (shell.css,
+    // `.theming`) and then stops transitioning, so nothing keeps a
+    // transition it did not ask for. Without this the whole page jumped to
+    // the other theme in one frame.
+    d.classList.add('theming');
+    clearTimeout(applyTheme._settle);
+    applyTheme._settle = setTimeout(function () { d.classList.remove('theming'); }, 400);
     // "system" is the only mode that leaves the attribute off, which is what
     // lets the prefers-color-scheme rules in tokens.css take over.
     if (mode === 'system') { delete d.dataset.theme; } else { d.dataset.theme = mode; }
@@ -807,18 +814,34 @@ onPage(function () {
         // arriving by Back works the same as arriving by click.
         if (incoming.querySelector('[data-full-load]')) { location.href = url; return; }
 
-        current.replaceWith(incoming);
-        document.title = next.title;
-        if (push) history.pushState({ boosted: true }, '', url);
-        window.scrollTo(0, 0);
         busy(false);
+        const swap = function () {
+            current.replaceWith(incoming);
+            document.title = next.title;
+            if (push) history.pushState({ boosted: true }, '', url);
+            window.scrollTo(0, 0);
 
-        // Re-wire the new markup, then put focus where a real navigation
-        // would have left it, so keyboard and screen-reader users are not
-        // stranded at the top of a document that never reloaded.
-        document.dispatchEvent(new CustomEvent('flanner:page'));
-        const main = document.getElementById('main');
-        if (main) main.focus({ preventScroll: true });
+            // Re-wire the new markup, then put focus where a real navigation
+            // would have left it, so keyboard and screen-reader users are not
+            // stranded at the top of a document that never reloaded.
+            document.dispatchEvent(new CustomEvent('flanner:page'));
+            const main = document.getElementById('main');
+            if (main) main.focus({ preventScroll: true });
+        };
+        // The swap crossfades where the browser can do it: the old page and
+        // the new one are painted over each other for 200ms (shell.css sets
+        // the timing) with the rail held still, instead of one frame being
+        // the Overview and the next the Devices page. Everywhere else, and
+        // under reduced motion, it is the cut it always was.
+        if (document.startViewTransition && !prefersReducedMotion()) {
+            document.startViewTransition(swap);
+        } else {
+            swap();
+        }
+    }
+
+    function prefersReducedMotion() {
+        return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     }
 
     // Live updates re-render the current page through this same path. A
