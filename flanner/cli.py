@@ -12,6 +12,7 @@ import os
 import signal
 import sys
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple, NoReturn
@@ -3026,13 +3027,15 @@ def skills_scan(project: str | None, agent: str | None, as_json: bool, record: b
     """
     from . import skills_ops
 
-    root, packages = _skills_scan(project, agent)
-    written: dict[str, int] = {}
-    if record:
-        _open_store()
-        from .database import get_session
+    with tui.working("reading skill packages") as work:
+        root, packages = _skills_scan(project, agent)
+        written: dict[str, int] = {}
+        if record:
+            work.say(f"recording {len(packages)} packages")
+            _open_store()
+            from .database import get_session
 
-        written = skills_ops.record(get_session(), packages)
+            written = skills_ops.record(get_session(), packages)
 
     report = skills_ops.report(root, agent, packages=packages)
     if as_json:
@@ -5291,12 +5294,15 @@ def doctor(project: str | None, repair: bool, output: str, report: bool) -> None
 
     from . import observe
 
-    with observe.step("reconcile catalog"):
-        findings = reconcile_project(session, proj, repair=repair)
-    with observe.step("check memory"):
-        findings += _memory_findings(session)
-    with observe.step("check enrollment"):
-        enrollment = _enrollment_report(proj)
+    with tui.working("checking the catalog against the files on disk") as work:
+        with observe.step("reconcile catalog"):
+            findings = reconcile_project(session, proj, repair=repair)
+        work.say("checking memory")
+        with observe.step("check memory"):
+            findings += _memory_findings(session)
+        work.say("checking the team enrollment")
+        with observe.step("check enrollment"):
+            enrollment = _enrollment_report(proj)
     observe.count(findings=len(findings))
 
     if output == "json":
@@ -5370,7 +5376,8 @@ def freshness(plan_name: str | None, project: str | None, output: str) -> None:
         console.print(f"ERROR Project '{proj.name}' has no project_root configured", style="red")
         raise SystemExit(1)
 
-    results = _freshness_results(session, proj, plans)
+    with tui.working(f"judging {len(plans)} plans") as work:
+        results = _freshness_results(session, proj, plans, progress=work.say)
 
     if output == "json":
         click.echo(
@@ -5391,20 +5398,29 @@ def freshness(plan_name: str | None, project: str | None, output: str) -> None:
 
 
 def _freshness_results(
-    session: Session, proj: ProjectModel, plans: list[Any]
+    session: Session,
+    proj: ProjectModel,
+    plans: list[Any],
+    *,
+    progress: Callable[[str], None] | None = None,
 ) -> list[tuple[Any, Any, dict[str, Any]]]:
     """Judge each plan's newest version against the repository.
 
     A plan whose file is gone is reported as stale rather than skipped. It is
     the most stale a plan can be, and dropping it from the list would make the
     worst case invisible in the summary.
+
+    `progress` is told how far along the scan is, once per plan, for the
+    spinner to say. Judging one plan is several git processes.
     """
     from .database import get_version
     from .freshness import compute_freshness
     from .storage import load_plan_file
 
     results: list[tuple[Any, Any, dict[str, Any]]] = []
-    for plan in plans:
+    for index, plan in enumerate(plans, start=1):
+        if progress:
+            progress(f"judging {index} of {len(plans)} plans")
         version_obj = get_version(session, plan.id, None)
         if not version_obj:
             continue
@@ -7268,17 +7284,19 @@ def peer_pull(address: str, project: str | None) -> None:
 
     from . import observe
 
-    try:
-        with observe.step("resolve peer"):
-            remote = peer_iroh.peer_for(address, proj.workspace_id, cache.load)
-    except peer_transport.PeerError as e:
-        console.print(f"ERROR {e}", style="red")
-        raise SystemExit(1) from None
+    with tui.working(f"reaching {address}") as work:
+        try:
+            with observe.step("resolve peer"):
+                remote = peer_iroh.peer_for(address, proj.workspace_id, cache.load)
+        except peer_transport.PeerError as e:
+            console.print(f"ERROR {e}", style="red")
+            raise SystemExit(1) from None
 
-    with observe.step("fetch and verify"):
-        report = peer_transport.pull(
-            session, address, proj.workspace_id, cache.load, remote=remote, project=proj
-        )
+        work.say("fetching and verifying versions")
+        with observe.step("fetch and verify"):
+            report = peer_transport.pull(
+                session, address, proj.workspace_id, cache.load, remote=remote, project=proj
+            )
     observe.count(
         accepted=len(report.accepted),
         already_held=len(report.already_held),

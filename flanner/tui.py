@@ -231,6 +231,50 @@ def hint(message: str) -> None:
     console.print(Text.from_markup(f"[muted]{message}[/muted]"))
 
 
+class Working:
+    """A spinner for a command that takes a while, saying how far it has got.
+
+    `flanner freshness` reads git for every plan and took thirty seconds on
+    a cold cache, during which the terminal showed nothing. A blank screen
+    for that long reads as a hang, and Ctrl-C is what people reach for.
+
+    Only drawn on a terminal: piped or redirected output, and `--json`, see
+    nothing. `say(...)` replaces the line; the count is the caller's. The
+    Ctrl-C note is on the line because a wait long enough to need a spinner
+    is long enough to be abandoned, and nothing these commands do is half
+    done if it is.
+    """
+
+    def __init__(self, label: str) -> None:
+        self._label = label
+        self._status: Any = None
+
+    def __enter__(self) -> Working:
+        if console.is_terminal:
+            self._status = console.status(self._text(self._label), spinner="dots")
+            self._status.__enter__()
+        return self
+
+    def __exit__(self, *exc: Any) -> None:
+        if self._status is not None:
+            self._status.__exit__(*exc)
+
+    def say(self, label: str) -> None:
+        if self._status is not None:
+            self._status.update(self._text(label))
+
+    @staticmethod
+    def _text(label: str) -> Text:
+        text = Text(label, style="muted")
+        text.append(f"  {MIDDOT} Ctrl-C stops; nothing is written", style="muted")
+        return text
+
+
+def working(label: str) -> Working:
+    """`with tui.working("judging plans") as w: ... w.say("judging 3 of 23 plans")`."""
+    return Working(label)
+
+
 def command(text: str) -> str:
     """Markup for a command someone could type."""
     return f"[accent]{text}[/accent]"
