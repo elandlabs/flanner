@@ -1100,6 +1100,18 @@ onPage(function () {
     if (button) button.hidden = !document.getElementById('listctl');
 });
 
+// Secondary actions marked data-more are a <details> that ships open, so
+// the buttons sit inline wherever there is room. On a phone it starts
+// closed and becomes the ⋯ menu; the markup is the same either way.
+once('more-menus', function () {
+    const phone = window.matchMedia('(max-width: 600px)');
+    function sync() {
+        document.querySelectorAll('details[data-more]').forEach(function (d) { d.open = !phone.matches; });
+    }
+    phone.addEventListener('change', sync);
+    onPage(sync);
+});
+
 // The frontmatter block, collapsed on arrival so the writing starts near the
 // top of the page. Presentation only: the markup is always in the document,
 // so find-in-page and copy still reach it once it is open.

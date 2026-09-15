@@ -54,9 +54,16 @@
         </div>
       </div>
     </div>
-    <a class="btn" href="/plans/{{ plan_file.id }}/history">History</a>
-    <a class="btn" href="/plans/{{ plan_file.id }}/download?version={{ version.version }}"
-       data-no-boost download>Download</a>
+    {# History and Download fold into one button on a phone; Aa and Edit
+       stay out, since they are the two used while reading. #}
+    <details class="more" data-more open>
+      <summary aria-label="More actions" title="More">⋯</summary>
+      <div class="more-menu">
+        <a class="btn" href="/plans/{{ plan_file.id }}/history">History</a>
+        <a class="btn" href="/plans/{{ plan_file.id }}/download?version={{ version.version }}"
+           data-no-boost download>Download</a>
+      </div>
+    </details>
     <a class="btn btn-primary" href="/plans/{{ plan_file.id }}/edit" data-no-boost>Edit</a>
 {% endblock %}
 

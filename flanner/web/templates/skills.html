@@ -8,7 +8,7 @@
 {% endblock %}
 
 {% block topbar_actions %}
-<form method="get" action="/skills" class="listctl">
+<form method="get" action="/skills" class="listctl" id="listctl">
   <label class="sr-only" for="skq">Search</label>
   <input class="input input-sm" type="search" data-search-submit id="skq" name="q" value="{{ q }}"
          placeholder="Search skills" autocomplete="off">

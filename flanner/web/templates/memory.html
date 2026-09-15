@@ -13,7 +13,7 @@
   changes. The selects submit as soon as they change; the button is for the
   search box and for a browser without the script.
 #}
-<form method="get" action="/memory" class="listctl">
+<form method="get" action="/memory" class="listctl" id="listctl">
   <label class="sr-only" for="memq">Search memory</label>
   <input class="input input-sm" type="search" id="memq" name="q" value="{{ query }}"
          placeholder="Search memory…" autocomplete="off" spellcheck="false">

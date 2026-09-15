@@ -1105,6 +1105,34 @@ select.btn-sm { padding-right: 8px; }
 .topbar .actions .segmented a,
 .topbar .actions .segmented button { height: calc(var(--control-h) - 6px); display: inline-flex; align-items: center; }
 
+/* Secondary actions that fold into one button on a phone. A native
+   <details>, open in the markup so the buttons are simply inline where
+   there is room; the script closes it below 600px, and without the script
+   a phone sees the buttons as before. `inline-flex` on the details itself,
+   because `display: contents` on a <details> is not honoured everywhere. */
+.more { display: inline-flex; gap: 8px; align-items: center; }
+.more > summary { display: none; }
+.more > .more-menu { display: contents; }
+@media (max-width: 600px) {
+  .more { position: relative; display: block; }
+  .more > summary {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: var(--control-h, 38px); height: var(--control-h, 38px);
+    list-style: none; cursor: pointer; font-size: 18px; line-height: 1;
+    color: var(--text-2); background: var(--card);
+    border: 1px solid var(--border); border-radius: 8px;
+  }
+  .more > summary::-webkit-details-marker { display: none; }
+  .more[open] > summary { border-color: var(--text-4); }
+  .more > .more-menu {
+    position: absolute; right: 0; top: calc(100% + 6px); z-index: 40;
+    display: flex; flex-direction: column; gap: 2px; min-width: 170px;
+    padding: 6px; background: var(--card); border: 1px solid var(--border);
+    border-radius: 10px; box-shadow: var(--shadow-pop);
+  }
+  .more > .more-menu .btn { justify-content: flex-start; border-color: transparent; height: auto; padding: 9px 12px; }
+}
+
 /* Back to the page above this one. A real parent link, not history.back():
    arriving from a search or a bookmark should still offer the way up. */
 .topbar .back {
@@ -1252,12 +1280,18 @@ select.btn-sm { padding-right: 8px; }
   /* Top bar: back, title, then the two icons. */
   /* Wrapping is what lets a full-width row drop to the next line; without
      it a 100% flex-basis just shrinks back down again. */
-  .topbar { padding: 10px 14px; gap: 7px; flex-wrap: wrap; }
+  /* Not pinned on a phone. With the brand bar above it the two took 118px
+     of every scroll on a list, 202px on a plan and 238px on Memory: over a
+     quarter of the screen. The brand bar already carries menu and search,
+     so the title bar can go with the page. */
+  .topbar { position: static; padding: 10px 14px; gap: 7px; flex-wrap: wrap; }
   .topbar .actions { margin-left: auto; gap: 6px; --control-h: 38px; }
   .filter-toggle { display: inline-flex; width: 40px; height: 40px; font-size: 15px; }
 
-  /* Filter and sort become a sheet, opened by that icon. */
-  .listctl { display: none; }
+  /* Filter and sort become a sheet, opened by that icon. Only the top bar's:
+     the Skills page has two more in its panels, and this rule used to hide
+     those on a phone as well. */
+  .topbar .actions .listctl { display: none; }
   .listctl.is-open {
     position: fixed; inset: auto 0 0 0; z-index: 70;
     display: flex; flex-direction: column; gap: 10px;
