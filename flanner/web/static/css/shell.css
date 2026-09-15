@@ -88,6 +88,7 @@ a:hover { color: var(--accent-hi); }
   padding: 8px 12px; border-radius: var(--r-md);
   color: var(--text-2); font-size: var(--t-base);
 }
+.rail-nav a { transition: background-color var(--dur) var(--ease), color var(--dur) var(--ease); }
 .rail-nav a:hover { background: var(--nav-active); color: var(--text); }
 .rail-nav a.active { background: var(--nav-active); color: var(--text); font-weight: 600; }
 /* Counts line up as a column. Every badge occupies the same box whether or
@@ -226,8 +227,15 @@ a:hover { color: var(--accent-hi); }
   color: var(--text-2); background: var(--card);
   border: 1px solid var(--border); border-radius: var(--r-md);
   padding: 6px 12px; cursor: pointer; white-space: nowrap;
+  transition: color var(--dur) var(--ease), background-color var(--dur) var(--ease),
+              border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease),
+              transform var(--dur) var(--ease);
 }
 .btn:hover { color: var(--text); border-color: var(--text-4); }
+/* A control presses down; it does not lift. The release is faster than
+   the press, so the button is back before the pointer has moved on. */
+.btn:active { transform: translateY(1px); transition-duration: 60ms; }
+.btn-primary:hover { box-shadow: 0 3px 10px -4px color-mix(in srgb, var(--accent) 60%, transparent); }
 .btn-primary {
   font-size: var(--t-md); color: var(--on-accent); background: var(--accent);
   border-color: var(--accent); padding: 8px 16px;
@@ -807,11 +815,11 @@ details.lede > summary:hover::after { text-decoration: underline; }
 .switch input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
 .switch .track {
   display: block; width: 34px; height: 20px; border-radius: 10px;
-  background: var(--border-firm); transition: background .15s;
+  background: var(--border-firm); transition: background-color var(--dur) var(--ease);
 }
 .switch .knob {
   position: absolute; top: 2px; left: 2px; width: 16px; height: 16px;
-  border-radius: 50%; background: var(--on-accent); transition: transform .15s;
+  border-radius: 50%; background: var(--on-accent); transition: transform var(--dur) var(--ease);
   box-shadow: 0 1px 2px rgba(0,0,0,.25);
 }
 .switch input:checked ~ .track { background: var(--accent); }
@@ -870,6 +878,22 @@ details.lede > summary:hover::after { text-decoration: underline; }
 
 dialog { color: var(--text); }
 dialog::backdrop { background: rgba(10, 12, 16, .45); }
+/* A dialog settles from 8px below at 98% as its backdrop fades in. The
+   animation is on the open state, which restarts each time it opens, so
+   showModal() needs no help. Closing stays a cut: nothing to wait for. */
+dialog[open] { animation: dlg-in .22s var(--ease); }
+dialog[open]::backdrop { animation: fade-in .22s var(--ease); }
+@keyframes dlg-in { from { transform: translateY(8px) scale(.98); } }
+@keyframes fade-in { from { opacity: 0; } }
+/* Something that has just appeared settles into place from 6px below
+   (`rise-in`) or, for a menu hanging from a control, from 6px above
+   (`drop-in`). Transform only. On an element that goes from hidden to
+   shown the animation restarts on its own; elsewhere put it on a node that
+   is created fresh. */
+.rise-in { animation: rise-in .25s var(--ease) both; }
+.drop-in { animation: drop-in var(--dur) var(--ease) both; }
+@keyframes rise-in { from { transform: translateY(6px); } }
+@keyframes drop-in { from { transform: translateY(-6px); } }
 
 .cmdk {
   width: min(560px, 92vw); padding: 0; border: 1px solid var(--border);
@@ -990,6 +1014,7 @@ kbd {
   display: flex; flex-direction: column; gap: 12px;
 }
 .reading-panel[hidden] { display: none; }
+.reading-panel { animation: drop-in var(--dur) var(--ease) both; }
 .reading-panel h3 { font-size: var(--t-sm); font-weight: 700; margin: 0; }
 .reading-group { display: flex; flex-direction: column; gap: 6px; }
 .reading-group > span { font-size: var(--t-sm); color: var(--text-3); }
@@ -1203,6 +1228,7 @@ select.btn-sm { padding-right: 8px; }
   .more[open] > summary { border-color: var(--text-4); }
   .more > .more-menu {
     position: absolute; right: 0; top: calc(100% + 6px); z-index: 40;
+    animation: drop-in var(--dur) var(--ease) both;
     display: flex; flex-direction: column; gap: 2px; min-width: 170px;
     padding: 6px; background: var(--card); border: 1px solid var(--border);
     border-radius: 10px; box-shadow: var(--shadow-pop);
@@ -1249,8 +1275,12 @@ select.btn-sm { padding-right: 8px; }
   width: 10px; height: 6px; flex: none; color: var(--text-4);
   fill: none; stroke: currentColor; stroke-width: 1.5;
   stroke-linecap: round; stroke-linejoin: round;
+  transition: transform var(--dur) var(--ease);
 }
 .sel-button[aria-expanded="true"] { border-color: var(--accent); box-shadow: var(--focus); }
+/* The caret turns while the list is open, so the button says which state
+   it is in even before the list has been noticed. */
+.sel-button[aria-expanded="true"] .sel-caret { transform: rotate(180deg); }
 
 .sel-list {
   position: absolute; z-index: 40; top: calc(100% + 5px); left: 0; min-width: 100%;
@@ -1258,6 +1288,7 @@ select.btn-sm { padding-right: 8px; }
   border-radius: 10px; box-shadow: var(--shadow-pop);
   padding: 5px; display: flex; flex-direction: column; gap: 1px;
   max-height: min(320px, 60vh); overflow-y: auto;
+  animation: drop-in var(--dur) var(--ease) both;
 }
 .sel-option {
   display: flex; align-items: center; gap: 8px;
@@ -1340,7 +1371,7 @@ select.btn-sm { padding-right: 8px; }
     background: var(--rail-bg); border-right: 1px solid var(--border);
     box-shadow: var(--shadow-pop);
     transform: translateX(-100%);
-    transition: transform .18s ease-out;
+    transition: transform .2s var(--ease);
     visibility: hidden;
   }
   .rail.is-open .rail-nav { transform: none; visibility: visible; }
@@ -1350,7 +1381,7 @@ select.btn-sm { padding-right: 8px; }
   .scrim {
     position: fixed; inset: 0; z-index: 55;
     background: rgba(10, 12, 16, .45);
-    opacity: 0; pointer-events: none; transition: opacity .18s ease-out;
+    opacity: 0; pointer-events: none; transition: opacity .2s var(--ease);
   }
   .scrim.is-open { opacity: 1; pointer-events: auto; }
 
@@ -1471,7 +1502,7 @@ select.btn-sm { padding-right: 8px; }
    once open so the block still reflows if the window changes. */
 .meta { margin-bottom: 14px; }
 .meta-toggle { gap: 7px; }
-.meta-caret { display: inline-block; transition: transform .2s ease; color: var(--text-4); }
+.meta-caret { display: inline-block; transition: transform var(--dur) var(--ease); color: var(--text-4); }
 .meta.is-open .meta-caret { transform: rotate(90deg); }
 /* On the chip ground the dimmest tier is 4.1:1, so this badge carries its
    own value measured against that tint in both themes. */
@@ -1481,7 +1512,7 @@ select.btn-sm { padding-right: 8px; }
 }
 .meta-body {
   height: 0; overflow: hidden; opacity: 0;
-  transition: height .22s ease, opacity .18s ease;
+  transition: height .22s var(--ease), opacity .18s var(--ease);
 }
 .meta.is-open .meta-body { opacity: 1; }
 .meta .frontmatter { margin-top: 10px; }
@@ -1573,7 +1604,7 @@ select.btn-sm { padding-right: 8px; }
   border-left: 3px solid var(--accent); border-radius: var(--r-md);
   padding: 12px 16px; box-shadow: var(--shadow-pop);
   color: var(--text); font-size: var(--t-base);
-  animation: toast-in .18s ease-out;
+  animation: toast-in .2s var(--ease);
 }
 .toast--success { border-left-color: var(--fresh); }
 .toast--warning { border-left-color: var(--aging); }
@@ -1584,7 +1615,7 @@ select.btn-sm { padding-right: 8px; }
   color: var(--text-4); font: var(--t-lg)/1 var(--font-mono);
 }
 .toast__close:hover { color: var(--text); }
-.toast.is-leaving { animation: toast-out .18s ease-in forwards; }
+.toast.is-leaving { animation: toast-out .18s var(--ease) forwards; }
 @keyframes toast-in  { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 @keyframes toast-out { to { opacity: 0; transform: translateY(8px); } }
 @media (prefers-reduced-motion: reduce) {
@@ -1654,6 +1685,7 @@ code { overflow-wrap: anywhere; }
   padding: 9px 13px; margin-bottom: -1px;
   border-bottom: 2px solid transparent;
   color: var(--text-3); font-size: var(--t-md); font-weight: 500;
+  transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease);
 }
 .tab:hover { color: var(--text); }
 .tab[aria-current="true"] {
@@ -1668,7 +1700,7 @@ code { overflow-wrap: anywhere; }
 .tab[aria-current="true"] .n { color: var(--text-2); }
 /* A panel holding a stack of cards. `hidden` must still win, or the tab
    script could not hide a panel whose own display rule is flex. */
-.tab-stack { display: flex; flex-direction: column; gap: 20px; }
+.tab-stack { display: flex; flex-direction: column; gap: 20px; animation: rise-in .25s var(--ease) both; }
 .tab-stack[hidden] { display: none; }
 /* On a phone the strip stays on one row and scrolls, with a fade to say
    so. Wrapped, the Health tab and its red count were the ones that fell

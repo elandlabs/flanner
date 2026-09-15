@@ -40,6 +40,12 @@
   --t-xl:   20px;   /* a thing's title in the pane */
   --t-2xl:  24px;   /* a stat */
 
+  /* Motion. One curve and one duration, so a hover, a menu and a dialog
+     all settle the same way. shell.css used ease, ease-out, ease-in-out
+     and linear at five durations, and buttons had no transition at all. */
+  --ease: cubic-bezier(.2, .7, .2, 1);
+  --dur:  160ms;
+
   /* Surfaces */
   --app-bg:      #f7f7f8;
   --rail-bg:     #fbfbfc;
