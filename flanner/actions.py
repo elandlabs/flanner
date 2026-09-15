@@ -32,8 +32,7 @@ from sqlalchemy.orm import Session
 
 from . import operations
 from . import session as cache
-from .database import ActionModel, get_session
-from .exceptions import DatabaseError
+from .database import ActionModel, get_session, store_open
 
 logger = logging.getLogger(__name__)
 
@@ -231,9 +230,7 @@ def record_unless_recorded(
     if op is None or any(not entry.startswith("failed:") for entry in seen):
         return
     refusals = [entry.removeprefix("failed:") for entry in seen if entry.startswith("failed:")]
-    try:
-        session = get_session()
-    except DatabaseError:
+    if not store_open():
         # No store is open. A command that exited before opening one -- a
         # `--help`, `mesh status` on a machine that has not run `init` --
         # has no history to write into, and saying so with a stack trace
@@ -242,7 +239,7 @@ def record_unless_recorded(
         return
     try:
         record(
-            session,
+            get_session(),
             surface=surface,
             operation=name,
             arguments=arguments or {},

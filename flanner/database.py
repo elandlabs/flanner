@@ -1253,6 +1253,15 @@ def init_database(db_path: str | None = None) -> None:
     logger.info("Database initialized at: %s", db_path)
 
 
+def store_open() -> bool:
+    """Whether init_database has run, so a caller can decline rather than raise.
+
+    The action recorder runs after every command, including ones that exit
+    before a store exists; it asks this rather than catching the error.
+    """
+    return _SessionLocal is not None
+
+
 def get_session() -> Session:
     """
     Get a database session.
