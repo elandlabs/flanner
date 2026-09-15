@@ -29,6 +29,17 @@
   --font-sans: "Geist", -apple-system, "Segoe UI", Roboto, Helvetica, sans-serif;
   --font-mono: "Geist Mono", ui-monospace, "SF Mono", Consolas, monospace;
 
+  /* Seven type sizes. There were thirteen in shell.css, eleven of them a
+     half-pixel apart, which a reader cannot see and a stylesheet cannot
+     keep straight. Body text is --t-base. */
+  --t-xs:   11px;   /* chips, counts, the pager */
+  --t-sm:   12px;   /* labels, table headers, hints */
+  --t-md:   13px;   /* buttons, card titles, notes */
+  --t-base: 14px;   /* body */
+  --t-lg:   16px;   /* the page's title in the bar, empty-state headings */
+  --t-xl:   20px;   /* a thing's title in the pane */
+  --t-2xl:  24px;   /* a stat */
+
   /* Surfaces */
   --app-bg:      #f7f7f8;
   --rail-bg:     #fbfbfc;
