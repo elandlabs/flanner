@@ -969,7 +969,16 @@ dialog[open]::backdrop { animation: fade-in .22s var(--ease); }
 .cmd-copy .ic-done { display: none; }
 .cmd-copy.is-copied { color: var(--term-ok); border-color: var(--term-ok); }
 .cmd-copy.is-copied .ic-copy { display: none; }
-.cmd-copy.is-copied .ic-done { display: block; }
+.cmd-copy.is-copied .ic-done { display: block; animation: tick-pop .35s var(--ease); }
+/* The tick pops, and the block the command lives in takes a ring for as
+   long as the tick shows: feedback on the thing copied, not only on the
+   13px icon beside it, which was easy to miss against the dark ground.
+   The same feedback the marketing site's copy button gives. */
+.cmd { transition: box-shadow .4s var(--ease); }
+.cmd:has(.is-copied) {
+  box-shadow: 0 0 0 1px var(--term-ok), 0 0 0 4px color-mix(in srgb, var(--term-ok) 18%, transparent);
+}
+@keyframes tick-pop { 30% { transform: scale(1.35); } to { transform: none; } }
 
 kbd {
   font: 500 var(--t-xs) var(--font-mono); border: 1px solid var(--border);
