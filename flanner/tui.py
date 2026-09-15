@@ -168,35 +168,39 @@ def fields(pairs: list[tuple[str, Any]], *, width: int = 14) -> Table:
 # --- lines ------------------------------------------------------------------------
 
 
-def _line(glyph: str, style: str, message: str) -> Text:
-    text = Text()
+def _line(glyph: str, style: str, message: str, indent: int = 0) -> Text:
+    text = Text(" " * indent)
     text.append(f"{glyph} ", style=style)
     text.append_text(Text.from_markup(message))
     return text
 
 
-def ok(message: str) -> None:
+# `indent` puts a line under the one above it: evidence under a verdict,
+# a path under the reason that cites it. Two spaces per level.
+
+
+def ok(message: str, *, indent: int = 0) -> None:
     """A step that worked."""
     if QUIET:
         return
-    console.print(_line(TICK, "ok", message))
+    console.print(_line(TICK, "ok", message, indent))
 
 
-def bad(message: str) -> None:
+def bad(message: str, *, indent: int = 0) -> None:
     """A step that did not."""
-    console.print(_line(CROSS, "bad", message))
+    console.print(_line(CROSS, "bad", message, indent))
 
 
-def warn(message: str) -> None:
+def warn(message: str, *, indent: int = 0) -> None:
     """Worth knowing, but nothing failed."""
-    console.print(_line(BANG, "warn", message))
+    console.print(_line(BANG, "warn", message, indent))
 
 
-def note(message: str) -> None:
+def note(message: str, *, indent: int = 0) -> None:
     """Context under a result. Dim, because it is never the point."""
     if QUIET:
         return
-    console.print(Text.from_markup(f"[muted]{message}[/muted]"))
+    console.print(Text.from_markup(f"[muted]{' ' * indent}{message}[/muted]"))
 
 
 def dot(status: str, *, label: str | None = None) -> Text:

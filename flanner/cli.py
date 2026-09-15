@@ -5502,45 +5502,89 @@ def _freshness_results(
     return results
 
 
-# Label and evidence key, in the order a reader wants them: what it was
-# anchored to, how far the code has moved since, then the citations.
-_FRESHNESS_DETAIL = (
-    ("Anchor", "anchored_at_commit"),
-    ("Commits since", "commits_since_anchor"),
-    ("Age (days)", "age_days"),
-    ("Dead refs", "invalid_refs"),
-    ("Cited paths", "referenced_paths"),
-    ("Cited symbols", "referenced_symbols"),
-)
-
-
 def _print_freshness_detail(plan: Any, version_obj: Any, evidence: dict[str, Any]) -> None:
-    """The whole case for one plan's verdict, evidence included."""
+    """The case for one plan's verdict: the verdict, the evidence under it, what to do.
+
+    This is the product's argument in one screen, so it reads in that
+    order. It used to be the verdict, the reasons, and then a table of
+    fields - anchor, commits, age, paths, symbols - which is the evidence
+    as a database sees it. A reader wants the reason with the files it is
+    about under it, the symbols as a sentence, and a way to act on any of
+    it. Fresh plans get told there is nothing to do; aging ones get told
+    that aging is not stale.
+    """
+    status = evidence["status"]
+    age = evidence.get("age_days")
+    anchor = evidence.get("anchored_at_commit")
+    paths = list(evidence.get("referenced_paths") or [])
+    symbols = list(evidence.get("referenced_symbols") or [])
+    dead = set(evidence.get("invalid_refs") or [])
+    say = tui.bad if status == "stale" else tui.warn
+
     console.print()
     headline = Text()
-    headline.append_text(tui.dot(evidence["status"]))
+    headline.append_text(tui.dot(status))
     headline.append("  ")
     headline.append(f"{plan.name}.md", style="value")
     headline.append(f"  v{version_obj.version}", style="muted")
+    if age is not None:
+        days = f"{age} day{'' if age == 1 else 's'} ago"
+        headline.append(f" {tui.MIDDOT} written {days}", style="muted")
     console.print(headline)
     console.print()
 
-    for reason in evidence["reasons"]:
-        tui.bad(reason) if evidence["status"] == "stale" else tui.warn(reason)
-    if not evidence["reasons"]:
-        tui.ok("nothing has drifted since this was written")
+    # The headline already says the age, so the reason that repeats it goes.
+    reasons = [r for r in evidence["reasons"] if not r.startswith("authored ")]
+    for reason in reasons:
+        say(reason, indent=2)
+        if "cited files" in reason:
+            for path in paths:
+                if path not in dead:
+                    tui.note(tui.code(path), indent=4)
+    if not reasons:
+        tui.ok("nothing has drifted since this was written", indent=2)
 
-    rows = []
-    for label, key in _FRESHNESS_DETAIL:
-        got = evidence.get(key)
-        if got in (None, [], ""):
-            continue
-        shown = ", ".join(str(x) for x in got) if isinstance(got, list) else str(got)
-        rows.append((label, Text(shown, style="code")))
-    if rows:
+    if symbols:
         console.print()
-        console.print(tui.fields(rows))
+        gone = [s for s in symbols if s in dead]
+        count = f"{len(symbols)} symbol{'' if len(symbols) == 1 else 's'}"
+        if gone:
+            tui.note(f"It names {count}; {len(gone)} no longer exist.", indent=2)
+        else:
+            tui.note(f"It names {count}; all still exist.", indent=2)
+        tui.note(f" {tui.MIDDOT} ".join(symbols), indent=2)
+    elif paths and not any("cited files" in r for r in reasons):
+        console.print()
+        tui.note(f"It cites {len(paths)} file{'' if len(paths) == 1 else 's'}.", indent=2)
+        tui.note(f" {tui.MIDDOT} ".join(paths), indent=2)
+
     console.print()
+    if status == "fresh":
+        tui.hint("Nothing to do.")
+    else:
+        web = tui.command("flanner web")
+        if anchor:
+            scope = f" -- {' '.join(p for p in paths if p not in dead)}" if paths else ""
+            log = tui.command(f"git log {anchor[:7]}..{scope}")
+            tui.hint(f"Re-read it against those commits: {log}")
+        if status == "aging":
+            tui.hint(f"Then {web} to revise, or leave it: aging is not stale.")
+        else:
+            history_cmd = tui.command(f"flanner history {plan.name}")
+            tui.hint(f"Revise it: {web} opens the editor; {history_cmd} shows what changed.")
+    console.print()
+
+
+def _short_reason(reason: str) -> str:
+    """The table's one-line evidence.
+
+    The full sentence folded every row onto two lines and doubled the
+    table's height; the sentence belongs to `why`. Here the count and the
+    anchor are the whole point.
+    """
+    return reason.replace("commits touched cited files since anchor", "commits since").replace(
+        "commits touched the repo since anchor", "commits across the repo since"
+    )
 
 
 def _print_freshness_table(results: list[tuple[Any, Any, dict[str, Any]]]) -> None:
@@ -5559,11 +5603,12 @@ def _print_freshness_table(results: list[tuple[Any, Any, dict[str, Any]]]) -> No
     for plan, version_obj, evidence in results:
         status = evidence["status"]
         counts[status] = counts.get(status, 0) + 1
+        reason = _short_reason(evidence["reasons"][0]) if evidence["reasons"] else ""
         listing.add_row(
             Text(f"{plan.name}.md", style="value"),
             Text(f"v{version_obj.version}", style="muted"),
             tui.dot(status),
-            Text(evidence["reasons"][0] if evidence["reasons"] else "", style="muted"),
+            Text(reason, style="muted"),
         )
     console.print()
     console.print(listing)
