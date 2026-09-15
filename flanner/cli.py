@@ -901,12 +901,25 @@ def mem_recall(
 
     console.print()
     if not found["memories"]:
+        from .database import count_memories
+
         tui.note(f"Nothing remembered about {query!r}.")
         if found["search"] == "scan":
             console.print(
                 "  This Python's SQLite has no full-text index, so this was a plain scan.",
                 style="muted",
             )
+        # An empty result is a screen too, and it should say what now: how
+        # much there is to browse instead, and how to add the thing that was
+        # missing. It used to end the conversation.
+        kept = count_memories(session)
+        if kept:
+            tui.hint(
+                f"  {kept} memor{'y' if kept == 1 else 'ies'} on this machine: "
+                f"{tui.command('flanner mem list')}"
+            )
+        example = 'flanner mem remember "…" --category decision'
+        tui.hint(f"  Save one: {tui.command(example)}")
         console.print()
         return
 
@@ -4560,16 +4573,76 @@ def _resolve_plan(
         _no_project(project)
     plan_file = next((p for p in proj.plan_files if p.name == plan_name), None)
     if plan_file is None:
-        tui.bad(f"Plan '{plan_name}' not found in '{proj.name}'")
-        # The names, not just the failure. A plan is addressed by name, so
-        # the usual cause is a typo or a half-remembered one, and the list is
-        # short enough to print.
-        if proj.plan_files:
-            console.print(
-                f"  Available plans: {', '.join(p.name for p in proj.plan_files)}", style="yellow"
-            )
-        raise SystemExit(1)
+        _plan_not_found(proj, plan_name)
     return proj, plan_file
+
+
+def _plan_not_found(proj: ProjectModel, plan_name: str) -> NoReturn:
+    """What went wrong, then what to do: the nearest name, and where the list is.
+
+    A plan is addressed by name, so the usual cause is a typo or a
+    half-remembered one. Printing every name was the old answer, and at
+    twenty-three plans it was a paragraph nobody read; one close match and
+    the command that lists them is what a person acts on.
+    """
+    import difflib
+
+    names = [p.name for p in proj.plan_files]
+    tui.bad(f"No plan called {plan_name} in {proj.name}.")
+    here = click.get_current_context().command_path
+    close = difflib.get_close_matches(plan_name, names, n=1, cutoff=0.5)
+    if close:
+        tui.hint(f"  Did you mean {tui.command(f'{here} {close[0]}')}?")
+    if names:
+        tui.hint(f"  {len(names)} plans: {tui.command(f'flanner list --project {proj.name}')}")
+    raise SystemExit(1)
+
+
+def _which_plan(proj: ProjectModel) -> NoReturn:
+    """A command that needs a plan name and was given none: offer the list.
+
+    "Missing argument 'PLAN_NAME'" is click's answer, and it is correct and
+    no help: the person knows a name is needed and does not have one to
+    hand. Recognition over recall, so the names are here, newest first,
+    with the command to run on one of them.
+    """
+    from datetime import datetime
+
+    from .utils import format_relative_time
+
+    here = click.get_current_context().command_path
+    plans = sorted(proj.plan_files, key=lambda p: p.updated_at or datetime.min, reverse=True)
+    console.print()
+    if not plans:
+        tui.note(f"{proj.name} has no plans yet.")
+        console.print()
+        raise SystemExit(2)
+    tui.note(f"Which plan? {len(plans)} in {proj.name}, newest first:")
+    shown = plans[:12]
+    listing = tui.fields(
+        [
+            (
+                f"  {p.name}",
+                Text.assemble(
+                    (f"v{p.current_version}", "muted"),
+                    ("  ", ""),
+                    (format_relative_time(p.updated_at) if p.updated_at else "", "muted"),
+                ),
+            )
+            for p in shown
+        ],
+        width=max(len(p.name) for p in shown) + 4,
+    )
+    console.print(listing)
+    if len(plans) > len(shown):
+        tui.hint(
+            f"  and {len(plans) - len(shown)} more: "
+            f"{tui.command(f'flanner list --project {proj.name}')}"
+        )
+    console.print()
+    tui.hint(f"  {tui.command(f'{here} <plan>')}")
+    console.print()
+    raise SystemExit(2)
 
 
 @review.command("propose")
@@ -4795,14 +4868,19 @@ def _print_external_review(session: Session, plan_file: Any) -> None:
 
 
 @review.command("status")
-@click.argument("plan_name")
+@click.argument("plan_name", required=False)
 @click.option("--project", default=None, help="Project name")
-def review_status(plan_name: str, project: str | None) -> None:
+def review_status(plan_name: str | None, project: str | None) -> None:
     """Show a plan's proposals and its accepted baseline"""
     from . import authz
     from .review import status
 
     session = _require_session()
+    if plan_name is None:
+        proj = _resolve_project_or_cwd(session, project)
+        if not proj:
+            _no_project(project)
+        _which_plan(proj)
     proj, plan_file = _resolve_plan(session, project, plan_name)
     state = status(session, plan_file=plan_file, project=proj)
 
@@ -5345,8 +5423,7 @@ def freshness(plan_name: str | None, project: str | None, output: str) -> None:
     if plan_name:
         plans = [p for p in plans if p.name == plan_name]
         if not plans:
-            tui.bad(f"Plan '{plan_name}' not found in '{proj.name}'")
-            raise SystemExit(1)
+            _plan_not_found(proj, plan_name)
     if not plans:
         console.print(f"No plan files found for project '{proj.name}'", style="yellow")
         return
@@ -7749,14 +7826,19 @@ def _history_row(
 
 
 @cli.command()
-@click.argument("plan_name")
+@click.argument("plan_name", required=False)
 @click.option("--project", default=None, help="Project name")
 @click.option("--limit", default=0, type=int, help="Show only the newest N versions")
-def history(plan_name: str, project: str | None, limit: int) -> None:
+def history(plan_name: str | None, project: str | None, limit: int) -> None:
     """Every version of a plan, newest first"""
     from .database import get_linear_links, list_versions
 
     session = _require_session()
+    if plan_name is None:
+        proj = _resolve_project_or_cwd(session, project)
+        if not proj:
+            _no_project(project)
+        _which_plan(proj)
     proj, plan_file = _resolve_plan(session, project, plan_name)
 
     versions = list_versions(session, plan_file.id)
@@ -7920,16 +8002,22 @@ def diff(
 
 
 @cli.command()
-@click.argument("plan_name")
+@click.argument("plan_name", required=False)
 @click.option("--project", default=None, help="Project name")
 @click.pass_context
-def why(ctx: click.Context, plan_name: str, project: str | None) -> None:
+def why(ctx: click.Context, plan_name: str | None, project: str | None) -> None:
     """Why a plan is judged fresh, aging, suspect or stale
 
     The same evidence `flanner freshness <plan>` prints. Kept as its own
     command because "why is this stale" is the question people actually
     have, and it is not obvious that a command called freshness answers it.
     """
+    if plan_name is None:
+        session = _require_session()
+        proj = _resolve_project_or_cwd(session, project)
+        if not proj:
+            _no_project(project)
+        _which_plan(proj)
     ctx.invoke(freshness, plan_name=plan_name, project=project, output="table")
 
 
