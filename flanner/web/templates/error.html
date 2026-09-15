@@ -18,7 +18,6 @@
 
   {% if status_code == 404 %}
   <div class="card empty">
-    <p class="hint mono" style="margin:0">{{ status_code }} {{ status_label }}</p>
     <h2>Nothing lives at this address</h2>
     <p><code class="mono">{{ path }}</code></p>
     {% if detail and detail != 'Not Found' %}<p>{{ detail }}.</p>{% endif %}

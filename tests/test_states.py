@@ -26,7 +26,8 @@ def test_404_renders_styled_page(client):
     r = client.get(f"/projects/{MISSING_UUID}")
     assert r.status_code == 404
     assert "text/html" in r.headers["content-type"]
-    assert "404 Not Found" in r.text
+    assert "Nothing lives at this address" in r.text
+    assert "404 Not Found" not in r.text
     assert "Back to Dashboard" in r.text
 
 
