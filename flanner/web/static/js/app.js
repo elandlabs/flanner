@@ -1556,3 +1556,38 @@ onPage(function () {
         });
     });
 });
+
+// A file field that also takes a file dropped onto it, and names the file
+// that is about to be attached.
+onPage(function () {
+    document.querySelectorAll('[data-dropzone]').forEach(function (zone) {
+        if (zone.dataset.dropReady) return;
+        zone.dataset.dropReady = '1';
+        const input = zone.querySelector('input[type=file]');
+        const name = zone.querySelector('[data-dropzone-name]');
+        if (!input) return;
+        const show = function () {
+            if (name) name.textContent = input.files.length ? input.files[0].name : '';
+        };
+        input.addEventListener('change', show);
+        ['dragenter', 'dragover'].forEach(function (type) {
+            zone.addEventListener(type, function (event) {
+                event.preventDefault();
+                zone.classList.add('is-dragover');
+            });
+        });
+        ['dragleave', 'drop'].forEach(function (type) {
+            zone.addEventListener(type, function (event) {
+                event.preventDefault();
+                zone.classList.remove('is-dragover');
+            });
+        });
+        zone.addEventListener('drop', function (event) {
+            if (event.dataTransfer && event.dataTransfer.files.length) {
+                input.files = event.dataTransfer.files;
+                show();
+            }
+        });
+    });
+});
+

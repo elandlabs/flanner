@@ -15,13 +15,13 @@ from collections import OrderedDict
 from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 from urllib.parse import quote, urlencode
 from uuid import UUID
 
 import markdown
 import nh3
-from fastapi import FastAPI, Form, HTTPException, Request
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import (
     FileResponse,
@@ -3025,6 +3025,78 @@ async def memory_withdraw_form(memory_id: str, reason: str = Form("")) -> Redire
             dispatch,
             "memory_withdraw",
             {"memory_id": memory_id, "reason": reason, "created_by": "web"},
+        )
+    )
+    return RedirectResponse(
+        f"/memory/{memory_id}?said={quote(str(result.get('message', '')))}", status_code=303
+    )
+
+
+#: The largest upload the memory page accepts. The memory policy still sets
+#: the real limit; this only stops an enormous upload filling the disk while
+#: it is written out before that check runs.
+MAX_UPLOAD_BYTES = 100 * 1024 * 1024
+
+
+@app.post("/memory/{memory_id}/attachments")
+async def memory_attach_form(
+    memory_id: str, file: Annotated[UploadFile, File()], description: str = Form("")
+) -> RedirectResponse:
+    """Attach a file from the page, as `flanner mem attach` does.
+
+    The upload is written to a temporary folder under its own name and then
+    attached through the same service the CLI and agents use, so the
+    project's size and type limits apply unchanged. The store keeps its own
+    copy, and the temporary one goes as soon as the attach returns.
+    """
+    import tempfile
+
+    ensure_db()
+    back = f"/memory/{memory_id}"
+    name = Path(file.filename or "").name or "upload"
+    with tempfile.TemporaryDirectory(prefix="flanner-upload-") as folder:
+        target = Path(folder) / name
+        written = 0
+        with target.open("wb") as handle:
+            while chunk := await file.read(1024 * 1024):
+                written += len(chunk)
+                if written > MAX_UPLOAD_BYTES:
+                    limit = MAX_UPLOAD_BYTES // (1024 * 1024)
+                    said = f"{name} is over {limit} MB, the most this page takes."
+                    actions.failed(said)
+                    return RedirectResponse(f"{back}?said={quote(said)}", status_code=303)
+                handle.write(chunk)
+        if written == 0:
+            said = "Choose a file to attach first. That one was empty."
+            actions.failed(said)
+            return RedirectResponse(f"{back}?said={quote(said)}", status_code=303)
+        result = await run_in_threadpool(
+            functools.partial(
+                dispatch,
+                "memory_attach",
+                {
+                    "memory_id": memory_id,
+                    "path": str(target),
+                    "description": description,
+                    "created_by": "web",
+                },
+            )
+        )
+    said = str(result.get("message", ""))
+    return RedirectResponse(f"{back}?said={quote(said)}", status_code=303)
+
+
+@app.post("/memory/{memory_id}/attachments/{attachment_id}/detach")
+async def memory_detach_form(memory_id: str, attachment_id: str) -> RedirectResponse:
+    """Remove one attachment from the page, as `flanner mem detach` does.
+
+    Only the reference goes. The stored file stays until `flanner mem gc`,
+    because another memory may hold the same one.
+    """
+    ensure_db()
+    result = await run_in_threadpool(
+        functools.partial(
+            dispatch, "memory_detach", {"attachment_id": attachment_id, "created_by": "web"}
         )
     )
     return RedirectResponse(

@@ -248,6 +248,28 @@ a:hover { color: var(--accent-hi); }
 @media (prefers-reduced-motion: reduce) {
   .hold-confirm.is-holding::before { transition: none; transform: scaleX(1); }
 }
+
+/* A file field that also takes a dropped file. The input is still a real,
+   focusable file input, so the form posts the same way without the script. */
+.dropzone { display: grid; gap: 10px; padding: 14px 18px 16px; border-top: 1px solid var(--divider); }
+.dropzone-target {
+  display: grid; place-items: center; gap: 4px; padding: 18px; text-align: center;
+  border: 1px dashed var(--border-firm); border-radius: 10px; background: var(--card-sunken);
+  color: var(--text-3); font-size: 13px; cursor: pointer;
+}
+.dropzone-target b { color: var(--accent-ink); font-weight: 600; }
+.dropzone-name:not(:empty) { color: var(--text); font-weight: 600; }
+.dropzone.is-dragover .dropzone-target { border-color: var(--accent); background: var(--accent-soft); color: var(--text-2); }
+.dropzone-input:focus-visible + .dropzone-target { outline: 2px solid var(--accent); outline-offset: 2px; }
+.dropzone-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.dropzone-row .input { flex: 1 1 220px; min-width: 0; }
+/* One memory's history: what happened, who did it, when. */
+.cols-events { grid-template-columns: 1fr 160px 140px; }
+.cols-events .hint { display: block; }
+/* A card's running text, full width of the card with the line kept readable. */
+.card-text { margin: 0; max-width: 66ch; color: var(--text); line-height: 1.6; }
+/* An attached file: name, type, size, and the control that removes it. */
+.cols-attachments { grid-template-columns: 1fr 140px 70px 96px; }
 .btn-accent { color: var(--accent-ink); border-color: var(--accent-line); }
 .btn-accent:hover { color: var(--accent-ink-hi); border-color: var(--accent); }
 .btn-sm { font-size: 11.5px; padding: 3px 9px; }
@@ -974,6 +996,7 @@ kbd {
   .cols-memory, .cols-memory-reasoned,
   .cols-skills, .cols-findings, .cols-usage, .cols-installs,
   .cols-proposals, .cols-clusters, .cols-matrix, .cols-transfers, .cols-actions,
+  .cols-attachments, .cols-events,
   .plan-file-card { grid-template-columns: 1fr; gap: 6px; }
   .grid-head { display: none; }
   .input, .doc, .raw-content { max-width: 100%; }

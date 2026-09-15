@@ -362,6 +362,10 @@ OPERATIONS: tuple[Operation, ...] = (
         "write",
         cli=("mem attach", "mem detach"),
         mcp=("memory_attach", "memory_detach"),
+        web=(
+            "POST /memory/{memory_id}/attachments",
+            "POST /memory/{memory_id}/attachments/{attachment_id}/detach",
+        ),
     ),
     _op(
         "memory",

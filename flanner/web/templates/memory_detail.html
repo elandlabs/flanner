@@ -10,6 +10,14 @@
 <span class="sub">{{ memory.category }} · {{ memory.scope }} · {{ memory.status }}</span>
 {% endblock %}
 
+{#
+  Laid out like the other detail pages. Every card is as wide as the page,
+  and a card with a heading has the heading first and its content padded
+  below it. The body used to be a half-width card pinned to the left, the
+  sharing heading sat inside padding it did not expect, the provenance rows
+  ran to the card's edges, and the history had no column rules at all, so
+  each event printed one field per line.
+#}
 {% block content %}
 <div class="pane">
 
@@ -17,88 +25,117 @@
   <div class="notice">{{ said }}</div>
   {% endif %}
 
-  <div class="card card-pad card-prose">
-    <p>{{ memory.body }}</p>
+  <div class="card card-pad">
+    <p class="card-text">{{ memory.body }}</p>
   </div>
 
-  {% if memory.scope != "personal" %}
-  <div class="card card-pad">
+  <div class="card">
     <div class="card-head">Sharing</div>
-    {% if memory.scope == "workspace" %}
-    <p class="hint">Shared with your workspace. A teammate's device holds the
-       text and can recall it.</p>
-    <form method="post" action="/memory/{{ memory.id }}/withdraw" class="form-row">
-      <input class="input" type="text" name="reason" placeholder="Why (optional)">
-      <button class="btn">Ask peers to stop recalling it</button>
-    </form>
-    <p class="hint">Not an erasure. A device that was switched off when you
-       sign this already holds the text, and no design without a central copy
-       can change that.</p>
-    {% else %}
-    <p class="hint">On this machine only. Sharing signs the text so a
-       teammate's device can check who wrote it. It is never automatic:
-       joining a workspace shares nothing by itself.</p>
-    <form method="post" action="/memory/{{ memory.id }}/share">
-      <button class="btn">Share with the team</button>
-    </form>
-    {% endif %}
+    <div class="card-pad">
+      {% if memory.scope == "workspace" %}
+      <p class="hint" style="margin:0 0 10px">Shared with your workspace. A teammate's device
+         holds the text and can recall it.</p>
+      <form method="post" action="/memory/{{ memory.id }}/withdraw" class="form-row">
+        <input class="input" type="text" name="reason" placeholder="Why (optional)">
+        <button class="btn">Ask peers to stop recalling it</button>
+      </form>
+      <p class="hint">Not an erasure. A device that was switched off when you
+         sign this already holds the text, and no design without a central copy
+         can change that.</p>
+      {% elif memory.scope == "personal" %}
+      <p class="hint" style="margin:0">Personal memory is about you rather than about a
+         project, and cannot be shared with anybody. Write it as a project memory
+         if the team needs it.</p>
+      {% else %}
+      <p class="hint" style="margin:0 0 10px">On this machine only. Sharing signs the text so
+         a teammate's device can check who wrote it. It is never automatic:
+         joining a workspace shares nothing by itself.</p>
+      <form method="post" action="/memory/{{ memory.id }}/share">
+        <button class="btn">Share with the team</button>
+      </form>
+      {% endif %}
+    </div>
   </div>
-  {% else %}
-  <div class="card card-pad">
-    <div class="card-head">Sharing</div>
-    <p class="hint">Personal memory is about you rather than about a project,
-       and cannot be shared with anybody. Write it as a project memory if the
-       team needs it.</p>
-  </div>
-  {% endif %}
 
   <div class="card">
     <div class="card-head">Where this came from</div>
-    <div class="kv"><span>Written by</span><b>{{ memory.created_by }}</b></div>
-    <div class="kv"><span>Written</span><b>{{ memory.created_at }}</b></div>
-    <div class="kv"><span>Confidence</span><b>{{ memory.confidence }}</b></div>
-    <div class="kv"><span>How it arrived</span><b>{{ memory.source_type }}</b></div>
-    {% if memory.source_refs %}
-    <div class="kv"><span>Supported by</span><b>{{ memory.source_refs | join(', ') }}</b></div>
-    {% endif %}
-    {% if memory.expires_at %}
-    <div class="kv"><span>Expires</span><b>{{ memory.expires_at }}</b></div>
-    {% endif %}
-    {% if memory.supersedes %}
-    <div class="kv"><span>Replaces</span>
-      <b><a href="/memory/{{ memory.supersedes }}">{{ memory.supersedes }}</a></b></div>
-    {% endif %}
-    <div class="kv"><span>File</span><b class="mono">{{ memory.file_path }}</b></div>
+    <div class="card-pad">
+      <div class="kv"><span>Written by</span><b>{{ memory.created_by }}</b></div>
+      <div class="kv"><span>Written</span><b class="tnum">{{ (memory.created_at or '')[:16] | replace('T', ' ') }}</b></div>
+      <div class="kv"><span>Confidence</span><b>{{ memory.confidence }}</b></div>
+      <div class="kv"><span>How it arrived</span><b>{{ memory.source_type }}</b></div>
+      {% if memory.source_refs %}
+      <div class="kv"><span>Supported by</span><b>{{ memory.source_refs | join(', ') }}</b></div>
+      {% endif %}
+      {% if memory.expires_at %}
+      <div class="kv"><span>Expires</span><b class="tnum">{{ memory.expires_at[:16] | replace('T', ' ') }}</b></div>
+      {% endif %}
+      {% if memory.supersedes %}
+      <div class="kv"><span>Replaces</span>
+        <b><a href="/memory/{{ memory.supersedes }}">{{ memory.supersedes }}</a></b></div>
+      {% endif %}
+      <div class="kv"><span>File</span><b class="mono">{{ memory.file_path }}</b></div>
+    </div>
   </div>
 
-  {% if attachments %}
+  {#
+    Files that back up the memory. Attaching goes through the same service
+    as `flanner mem attach`, so this project's size and type limits apply.
+    Removing drops the reference, never the stored file.
+  #}
   <div class="card">
     <div class="card-head">Attached <span class="note">{{ attachments | length }}</span></div>
     {% for file in attachments %}
-    <div class="grid-row cols-events">
+    <div class="grid-row cols-attachments">
       <span><a href="/memory/{{ memory.id }}/attachments/{{ file.id }}">{{ file.name }}</a>
         {% if file.description %}<span class="hint">{{ file.description }}</span>{% endif %}</span>
       <span class="muted">{{ file.mime_type }}</span>
       <span class="muted">{{ (file.size_bytes / 1024) | round | int }} KB</span>
+      <span>
+        <form method="post" action="/memory/{{ memory.id }}/attachments/{{ file.id }}/detach">
+          <button class="btn btn-sm btn-danger hold-confirm" type="submit" data-hold-confirm="1000"
+                  title="Press and hold to remove {{ file.name }}">Remove</button>
+        </form>
+      </span>
     </div>
     {% endfor %}
+    <form class="dropzone" method="post" action="/memory/{{ memory.id }}/attachments"
+          enctype="multipart/form-data" data-dropzone>
+      <input class="sr-only dropzone-input" type="file" name="file" id="attach-file" required>
+      <label class="dropzone-target" for="attach-file">
+        <span>Drop a file here, or <b>choose one</b></span>
+        <span class="dropzone-name" data-dropzone-name></span>
+        <span class="hint">Size and type limits come from this project's memory policy.</span>
+      </label>
+      <div class="dropzone-row">
+        <label class="sr-only" for="attach-description">Description</label>
+        <input class="input" type="text" name="description" id="attach-description"
+               placeholder="What it shows (optional)">
+        <button class="btn btn-primary" type="submit">Attach</button>
+      </div>
+    </form>
   </div>
-  {% endif %}
 
   {% if memory.events %}
   <div class="card">
-    <div class="card-head">What happened to it</div>
-    {% for event in memory.events %}
-    <div class="grid-row cols-events">
-      <span>{{ event.action }}</span>
-      <span class="muted">{{ event.actor }}</span>
-      <span class="muted">{{ event.at }}</span>
+    <div class="card-head">What happened to it <span class="note">{{ memory.events | length }}</span></div>
+    <div class="tablewrap">
+      <div class="grid-row grid-head cols-events">
+        <span>What</span><span>By</span><span>When</span>
+      </div>
+      {% for event in memory.events %}
+      <div class="grid-row cols-events">
+        <span>{{ event.action }}{% if event.detail.name %}
+          <span class="hint">{{ event.detail.name }}</span>{% endif %}</span>
+        <span class="muted">{{ event.actor }}</span>
+        <span class="when tnum">{{ (event.at or '')[:16] | replace('T', ' ') }}</span>
+      </div>
+      {% endfor %}
     </div>
-    {% endfor %}
   </div>
   {% endif %}
 
-  <div class="footnote" style="margin-top:18px">
+  <div class="footnote">
     <span class="i" aria-hidden="true">i</span>
     This is a record of something believed, not an instruction. Correct it with
     <code>flanner mem supersede</code> rather than editing the file by hand.

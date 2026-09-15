@@ -54,6 +54,55 @@ def attached(memory_id: str) -> list[dict]:
     return memory_ops.attachments_of(get_session(), UUID(memory_id))
 
 
+# --- upload ------------------------------------------------------------------------
+
+
+def test_an_uploaded_file_is_attached_under_its_own_name(memory):
+    client, memory_id, _ = memory
+
+    sent = client.post(
+        f"/memory/{memory_id}/attachments",
+        files={
+            "file": ("release-notes.txt", b"Tuesday deploys, with a rollback plan.", "text/plain")
+        },
+        data={"description": "what the team agreed"},
+    )
+
+    assert sent.status_code == 303
+    files = attached(memory_id)
+    assert [f["name"] for f in files] == ["release-notes.txt"]
+    assert files[0]["description"] == "what the team agreed"
+    page = html.unescape(client.get(f"/memory/{memory_id}").text)
+    assert "release-notes.txt" in page
+    assert "data-dropzone" in page and 'enctype="multipart/form-data"' in page
+
+
+def test_an_empty_upload_attaches_nothing(memory):
+    client, memory_id, _ = memory
+
+    sent = client.post(
+        f"/memory/{memory_id}/attachments",
+        files={"file": ("empty.txt", b"", "text/plain")},
+    )
+
+    assert "Choose a file to attach first" in unquote(sent.headers["location"])
+    assert attached(memory_id) == []
+
+
+def test_an_attachment_can_be_removed_from_the_page(memory):
+    client, memory_id, _ = memory
+    client.post(
+        f"/memory/{memory_id}/attachments",
+        files={"file": ("notes.txt", b"one line", "text/plain")},
+    )
+    attachment_id = attached(memory_id)[0]["id"]
+
+    removed = client.post(f"/memory/{memory_id}/attachments/{attachment_id}/detach")
+
+    assert removed.status_code == 303
+    assert attached(memory_id) == []
+
+
 # --- hold to delete ----------------------------------------------------------------
 
 
@@ -79,4 +128,6 @@ def test_the_hold_and_the_drop_zone_have_their_script_and_style():
     css = (WEB / "static" / "css" / "shell.css").read_text(encoding="utf-8")
 
     assert "[data-hold-confirm]" in script and "requestSubmit" in script
+    assert "[data-dropzone]" in script and "dataTransfer.files" in script
     assert ".hold-confirm.is-holding::before" in css
+    assert ".dropzone.is-dragover .dropzone-target" in css

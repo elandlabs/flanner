@@ -126,3 +126,16 @@ def test_advice_uses_the_amber_tone_not_the_failure_tone(template, marker):
 
     opening = source[: source.index(marker)].rsplit("<div", 1)[1]
     assert 'class="notice warn"' in opening
+
+
+def test_the_memory_page_is_laid_out_like_the_other_detail_pages():
+    """Its body was half width, its headings mis-padded, its history had no columns."""
+    source = (WEB / "templates" / "memory_detail.html").read_text(encoding="utf-8")
+    css = (WEB / "static" / "css" / "shell.css").read_text(encoding="utf-8")
+
+    assert "card-prose" not in source
+    assert '<div class="card card-pad">\n    <div class="card-head">' not in source
+    head = re.search(r'grid-head cols-events">\s*((?:<span>[^<]*</span>)+)', source)
+    assert head is not None and head.group(1).count("<span>") == 3
+    rule = re.search(r"\.cols-events \{ grid-template-columns: ([^;]+);", css)
+    assert rule is not None and len(rule.group(1).split()) == 3
