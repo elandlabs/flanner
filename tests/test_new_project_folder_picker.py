@@ -76,3 +76,46 @@ def test_the_form_offers_to_browse_for_both_fields(client):
     assert '<dialog id="dir-picker"' in page
     script = (WEB / "static" / "js" / "app.js").read_text(encoding="utf-8")
     assert "[data-dir-picker]" in script and "/api/directories?" in script
+
+
+def test_the_system_dialog_returns_the_chosen_folder(client, tree, monkeypatch):
+    import flanner.web as web
+
+    chosen = tree / "billing" / "docs" / "plans"
+    monkeypatch.setattr(web, "_ask_for_folder", lambda initial, title: {"path": str(chosen)})
+
+    answer = client.post(
+        "/api/folder-dialog", data={"initial": str(tree), "base": str(tree / "billing")}
+    ).json()
+
+    assert answer == {"path": str(chosen), "relative": "docs/plans"}
+
+
+def test_without_a_display_the_page_is_told_to_fall_back(client, monkeypatch):
+    import flanner.web as web
+
+    monkeypatch.setattr(
+        web, "_ask_for_folder", lambda initial, title: {"unavailable": "No display"}
+    )
+
+    assert client.post("/api/folder-dialog", data={}).json() == {"unavailable": "No display"}
+
+
+def test_another_site_cannot_open_a_dialog(client, monkeypatch):
+    import flanner.web as web
+
+    opened = []
+    monkeypatch.setattr(web, "_ask_for_folder", lambda initial, title: opened.append(1) or {})
+
+    refused = client.post(
+        "/api/folder-dialog", data={}, headers={"origin": "https://elsewhere.example"}
+    )
+
+    assert refused.status_code == 403
+    assert opened == []
+
+
+def test_the_footer_source_link_points_at_the_repository(client):
+    page = client.get("/projects/new").text
+
+    assert 'href="https://github.com/jaysonmulwa/flanner"' in page

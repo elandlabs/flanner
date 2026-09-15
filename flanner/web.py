@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import secrets
+import threading
 import time
 from collections import OrderedDict
 from collections.abc import Callable
@@ -3357,6 +3358,75 @@ async def api_list_projects() -> list[dict[str, Any]]:
 #: The most folders one listing returns, so a folder holding thousands of
 #: them cannot stall the picker.
 DIRECTORY_LIMIT = 500
+
+
+#: One system folder dialog at a time. A second click while one is open
+#: would stack another behind it, where nobody would find it.
+_folder_dialog_lock = threading.Lock()
+
+
+def _ask_for_folder(initial: str, title: str) -> dict[str, Any]:
+    """Open the operating system's folder dialog and return the folder chosen.
+
+    The web UI runs on the machine the person is sitting at, so the server
+    can show the real dialog and hand back the full path, which a browser
+    never gives a page. Tk ships with Python. Where there is no display to
+    draw on, such as over SSH, or Tk is missing, the answer says so and the
+    page falls back to the folder list it draws itself.
+    """
+    if not _folder_dialog_lock.acquire(blocking=False):
+        return {"unavailable": "A folder dialog is already open."}
+    try:
+        try:
+            import tkinter
+            from tkinter import filedialog
+        except ImportError:
+            return {"unavailable": "This Python has no Tk, so it cannot open a folder dialog."}
+        try:
+            root = tkinter.Tk()
+        except tkinter.TclError as error:
+            return {"unavailable": f"No display to open a folder dialog on ({error})."}
+        try:
+            root.withdraw()
+            # Raised above the browser, which otherwise keeps the focus and
+            # hides the dialog behind itself.
+            root.attributes("-topmost", True)
+            start = Path(initial).expanduser() if initial.strip() else Path.home()
+            chosen = filedialog.askdirectory(
+                parent=root,
+                title=title,
+                initialdir=str(start if start.is_dir() else Path.home()),
+                mustexist=True,
+            )
+        finally:
+            root.destroy()
+        if not chosen:
+            return {"cancelled": True}
+        return {"path": str(Path(chosen).resolve())}
+    finally:
+        _folder_dialog_lock.release()
+
+
+@app.post("/api/folder-dialog")
+async def api_folder_dialog(
+    initial: str = Form(""), base: str = Form(""), title: str = Form("Choose a folder")
+) -> dict[str, Any]:
+    """Show the system folder dialog on this machine and return the choice.
+
+    A POST, not a GET, so the origin check that refuses other sites' form
+    posts covers it: a page elsewhere cannot open dialogs on this machine.
+    With `base`, the answer includes the chosen folder relative to it, for
+    the plan directory field.
+    """
+    answer = await run_in_threadpool(_ask_for_folder, initial, title[:120])
+    if "path" in answer and base.strip():
+        try:
+            answer["relative"] = (
+                Path(answer["path"]).relative_to(Path(base).expanduser().resolve()).as_posix()
+            )
+        except (ValueError, OSError):
+            answer["relative"] = None
+    return answer
 
 
 @app.get("/api/directories")

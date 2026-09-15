@@ -1657,8 +1657,24 @@ onPage(function () {
         list.replaceChildren.apply(list, items);
     }
 
+    // The system folder dialog first: the server runs on this machine, so it
+    // can show the real one and return a full path. Where it cannot, over SSH
+    // or without Tk, the folder list drawn in the page does the same job.
+    async function systemDialog(start, title) {
+        const form = new FormData();
+        form.set('initial', start || '');
+        form.set('base', base || '');
+        form.set('title', title);
+        try {
+            const response = await fetch('/api/folder-dialog', { method: 'POST', body: form });
+            return response.ok ? await response.json() : { unavailable: 'failed' };
+        } catch (e) {
+            return { unavailable: 'failed' };
+        }
+    }
+
     buttons.forEach(function (button) {
-        button.addEventListener('click', function () {
+        button.addEventListener('click', async function () {
             target = document.querySelector(button.dataset.dirPicker);
             const baseField = button.dataset.dirBase ? document.querySelector(button.dataset.dirBase) : null;
             base = baseField ? baseField.value.trim() : '';
@@ -1669,6 +1685,20 @@ onPage(function () {
             let start = target ? target.value.trim() : '';
             if (base && start && !/^([A-Za-z]:|[\\/]|~)/.test(start)) {
                 start = base.replace(/[\\/]+$/, '') + '/' + start;
+            }
+            button.disabled = true;
+            const title = button.getAttribute('aria-label') || 'Choose a folder';
+            const picked = await systemDialog(start || base, title);
+            button.disabled = false;
+            if (picked.cancelled) return;
+            if (picked.path) {
+                if (base && (picked.relative === null || picked.relative === '.')) {
+                    showNotification('Choose a folder inside the project root.', 'info');
+                    return;
+                }
+                target.value = base ? picked.relative : picked.path;
+                target.dispatchEvent(new Event('input', { bubbles: true }));
+                return;
             }
             dialog.showModal();
             load(start || base);
