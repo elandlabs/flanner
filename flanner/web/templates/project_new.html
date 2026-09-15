@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_icon.html" as ico %}
 {% block title %}New project{% endblock %}
 
 {% block topbar_back %}
@@ -39,16 +40,25 @@
 
       <div class="field">
         <label class="field-label" for="project_root">Project root</label>
-        <input class="input mono" type="text" id="project_root" name="project_root"
-               value="{{ project_root or '' }}" placeholder="~/work/notifications-service">
+        <div class="input-with-button">
+          <input class="input mono" type="text" id="project_root" name="project_root"
+                 value="{{ project_root or '' }}" placeholder="~/work/notifications-service">
+          <button class="btn" type="button" data-dir-picker="#project_root"
+                  aria-label="Browse for the project root">{{ ico.icon('projects') }} Browse</button>
+        </div>
         <p class="hint">The repository flanner should watch. A git repo is expected but
            not required.</p>
       </div>
 
       <div class="field">
         <label class="field-label" for="plan_directory">Plan directory</label>
-        <input class="input mono" type="text" id="plan_directory" name="plan_directory"
-               value="{{ plan_directory or '.plans' }}">
+        <div class="input-with-button">
+          <input class="input mono" type="text" id="plan_directory" name="plan_directory"
+                 value="{{ plan_directory or '.plans' }}">
+          <button class="btn" type="button" data-dir-picker="#plan_directory"
+                  data-dir-base="#project_root"
+                  aria-label="Browse for the plan directory">{{ ico.icon('projects') }} Browse</button>
+        </div>
         <p class="hint">Relative to the project root. Created if it doesn't exist.</p>
       </div>
 
@@ -71,5 +81,24 @@
 
     <p class="form-note">Same as running <code>flanner init</code> in the project root.</p>
   </form>
+
+  {#
+    Folders on this machine, listed by the local server: a browser will not
+    tell a page the real path of a folder somebody picks. Browsing for the
+    plan directory starts in the project root and fills in a relative path.
+  #}
+  <dialog id="dir-picker" class="help-dialog dir-picker" aria-labelledby="dir-picker-title">
+    <h2 class="help-title" id="dir-picker-title">Choose a folder</h2>
+    <div class="dir-picker-path">
+      <button class="btn btn-sm" type="button" data-dir-up aria-label="Up one folder">↑ Up</button>
+      <code class="mono" data-dir-current></code>
+    </div>
+    <p class="hint bad" data-dir-error hidden></p>
+    <ul class="dir-list" data-dir-list></ul>
+    <div class="dir-picker-actions">
+      <button class="btn" type="button" data-dir-cancel>Cancel</button>
+      <button class="btn btn-primary" type="button" data-dir-use>Use this folder</button>
+    </div>
+  </dialog>
 </div>
 {% endblock %}

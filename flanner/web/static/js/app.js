@@ -1591,3 +1591,99 @@ onPage(function () {
     });
 });
 
+// A folder picker for fields that take a path on this machine.
+//
+// A browser will not hand a page the real path of a folder somebody picks,
+// so the folders come from the local server, which is this machine. Opening
+// a folder lists the folders inside it; "Use this folder" fills the field.
+// A field with data-dir-base is filled relative to the base field's folder.
+onPage(function () {
+    const dialog = document.getElementById('dir-picker');
+    const buttons = document.querySelectorAll('[data-dir-picker]');
+    if (!dialog || !buttons.length || typeof dialog.showModal !== 'function') return;
+    const list = dialog.querySelector('[data-dir-list]');
+    const current = dialog.querySelector('[data-dir-current]');
+    const up = dialog.querySelector('[data-dir-up]');
+    const error = dialog.querySelector('[data-dir-error]');
+    let target = null;
+    let base = '';
+    let state = null;
+
+    async function load(path) {
+        const params = new URLSearchParams();
+        if (path) params.set('path', path);
+        if (base) params.set('base', base);
+        let data;
+        try {
+            data = await (await fetch('/api/directories?' + params)).json();
+        } catch (e) {
+            data = { error: 'The folder list could not be loaded.' };
+        }
+        if (data.error) {
+            error.textContent = data.error;
+            error.hidden = false;
+            return;
+        }
+        error.hidden = true;
+        state = data;
+        current.textContent = data.path;
+        up.disabled = !data.parent;
+        const items = data.entries.map(function (entry) {
+            const item = document.createElement('li');
+            const open = document.createElement('button');
+            open.type = 'button';
+            open.className = 'dir-entry';
+            open.textContent = entry.name;
+            if (entry.git) {
+                const tag = document.createElement('span');
+                tag.className = 'pill pill-quiet';
+                tag.textContent = 'git';
+                open.append(tag);
+            }
+            open.addEventListener('click', function () { load(entry.path); });
+            item.append(open);
+            return item;
+        });
+        if (!items.length) {
+            const empty = document.createElement('li');
+            empty.className = 'hint dir-empty';
+            empty.textContent = 'No folders inside this one.';
+            items.push(empty);
+        }
+        list.replaceChildren.apply(list, items);
+    }
+
+    buttons.forEach(function (button) {
+        button.addEventListener('click', function () {
+            target = document.querySelector(button.dataset.dirPicker);
+            const baseField = button.dataset.dirBase ? document.querySelector(button.dataset.dirBase) : null;
+            base = baseField ? baseField.value.trim() : '';
+            if (baseField && !base) {
+                showNotification('Choose the project root first.', 'info');
+                return;
+            }
+            let start = target ? target.value.trim() : '';
+            if (base && start && !/^([A-Za-z]:|[\\/]|~)/.test(start)) {
+                start = base.replace(/[\\/]+$/, '') + '/' + start;
+            }
+            dialog.showModal();
+            load(start || base);
+        });
+    });
+
+    up.addEventListener('click', function () {
+        if (state && state.parent) load(state.parent);
+    });
+    dialog.querySelector('[data-dir-cancel]').addEventListener('click', function () { dialog.close(); });
+    dialog.querySelector('[data-dir-use]').addEventListener('click', function () {
+        if (!state || !target) return;
+        if (base && (state.relative === null || state.relative === '.')) {
+            showNotification('Choose a folder inside the project root.', 'info');
+            return;
+        }
+        target.value = base ? state.relative : state.path;
+        target.dispatchEvent(new Event('input', { bubbles: true }));
+        dialog.close();
+    });
+});
+

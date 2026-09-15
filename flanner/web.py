@@ -3341,6 +3341,66 @@ async def api_list_projects() -> list[dict[str, Any]]:
     ]
 
 
+#: The most folders one listing returns, so a folder holding thousands of
+#: them cannot stall the picker.
+DIRECTORY_LIMIT = 500
+
+
+@app.get("/api/directories")
+async def api_directories(path: str = "", base: str = "") -> dict[str, Any]:
+    """The folders inside one folder on this machine, for the folder picker.
+
+    A browser will not tell a page the real path of a folder somebody picks,
+    so the list comes from this server, which runs on the same machine.
+    Folders only, never file names, and never their contents. `base` makes
+    the answer include the picked folder's path relative to it, which is
+    what the plan directory field wants. The page is refused to other sites
+    by the same host and origin checks as every other route.
+    """
+
+    def listing() -> dict[str, Any]:
+        start = Path(path).expanduser() if path.strip() else Path.home()
+        try:
+            here = start.resolve()
+        except OSError as error:
+            return {"error": f"{start} cannot be opened ({error})"}
+        if not here.is_dir():
+            return {"error": f"{here} is not a folder"}
+        try:
+            children = sorted(here.iterdir(), key=lambda child: child.name.lower())
+        except OSError as error:
+            return {"error": f"{here} cannot be read ({error.strerror or error})"}
+
+        entries: list[dict[str, Any]] = []
+        for child in children:
+            try:
+                if child.is_dir():
+                    entries.append(
+                        {"name": child.name, "path": str(child), "git": (child / ".git").exists()}
+                    )
+            except OSError:
+                continue
+            if len(entries) >= DIRECTORY_LIMIT:
+                break
+
+        relative = None
+        if base.strip():
+            try:
+                relative = here.relative_to(Path(base).expanduser().resolve()).as_posix()
+            except (ValueError, OSError):
+                relative = None
+        return {
+            "path": str(here),
+            "parent": str(here.parent) if here.parent != here else None,
+            "relative": relative,
+            "git": (here / ".git").exists(),
+            "entries": entries,
+            "truncated": len(entries) >= DIRECTORY_LIMIT,
+        }
+
+    return await run_in_threadpool(listing)
+
+
 @app.get("/api/search")
 async def api_search_index() -> list[dict[str, str]]:
     """Flat index of projects and plans for the command palette."""

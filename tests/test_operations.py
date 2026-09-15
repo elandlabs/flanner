@@ -27,6 +27,7 @@ PLUMBING = {
     "GET /api/projects",
     "GET /api/projects/{project_id}/plans",
     "GET /api/plans/{plan_file_id}",
+    "GET /api/directories",
     "POST /ipc/call",
 }
 
