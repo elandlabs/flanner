@@ -168,7 +168,7 @@ def test_init_existing_project(runner, git_repo):
     )
     result = runner.invoke(cli, ["init", "--skip-claude", "--project-root", str(git_repo)])
     assert result.exit_code == 0
-    assert "Project already exists: myproj" in result.output
+    assert "myproj is already adopted here" in result.output
 
 
 def test_init_force_new_project(runner, git_repo):

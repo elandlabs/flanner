@@ -605,12 +605,13 @@ def _adopt_repository(project_root: str, plan_dir: str, force_new_project: bool)
         return
 
     if existing and not force_new_project:
-        tui.ok(f"Project already exists: {existing.name}")
-        console.print(f"  Plan directory: {existing.plan_directory}", style="white")
-        console.print(f"  Plan files: {len(existing.plan_files)}", style="white")
-        console.print("\n  Tip: MCP server registration still completed above.", style="cyan")
-        console.print(
-            "  You can run 'flanner init' anytime to ensure everything is set up!", style="cyan"
+        # One line, not five. The tip about registration and the "run this
+        # anytime!" were happy-talk; that init is safe to re-run is shown by
+        # its having just been re-run.
+        plans = len(existing.plan_files)
+        tui.ok(
+            f"{existing.name} is already adopted here {tui.MIDDOT} {existing.plan_directory} "
+            f"{tui.MIDDOT} {plans} plan{'' if plans == 1 else 's'}"
         )
         return
 
