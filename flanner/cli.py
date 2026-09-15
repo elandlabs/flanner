@@ -336,7 +336,7 @@ def _register_claude_code() -> None:
     try:
         user = json.loads(claude_code_user_config_path().read_text(encoding="utf-8"))
         if "flanner" in (user.get("mcpServers") or {}):
-            console.print("OK Claude Code: already registered at user scope", style="green")
+            tui.ok("Claude Code: already registered at user scope")
             return
     except (OSError, ValueError):
         pass
@@ -362,15 +362,15 @@ def _register_claude_code() -> None:
         )
     except (subprocess.TimeoutExpired, OSError) as e:
         detail = "timed out after 30s" if isinstance(e, subprocess.TimeoutExpired) else str(e)
-        console.print(f"WARN Claude Code: {detail}", style="yellow")
+        tui.warn(f"Claude Code: {detail}")
         console.print(manual, style="white")
         return
 
     if proc.returncode == 0:
-        console.print("OK Claude Code: registered flanner-mcp at user scope", style="green")
+        tui.ok("Claude Code: registered flanner-mcp at user scope")
         return
     tail = (proc.stderr or proc.stdout).strip().splitlines()[-1:] or [""]
-    console.print(f"WARN Claude Code: {tail[0]}", style="yellow")
+    tui.warn(f"Claude Code: {tail[0]}")
     console.print(manual, style="white")
 
 
@@ -385,10 +385,10 @@ def _register_codex() -> None:
 
     outcome, detail = ensure_codex_registration()
     if outcome == "registered":
-        console.print(f"OK Codex: registered in {detail}", style="green")
+        tui.ok(f"Codex: registered in {detail}")
         return
     if outcome == "already":
-        console.print("OK Codex: already registered", style="green")
+        tui.ok("Codex: already registered")
         return
     if outcome == "not-installed":
         console.print(
@@ -465,9 +465,7 @@ def _register_agents_globally(agents: tuple[str, ...] = AGENTS) -> None:
         return
     changed = upsert_global_nudge()
     where = Path.home() / ".claude" / "CLAUDE.md"
-    console.print(
-        f"OK Global nudge {'added to' if changed else 'already in'} {where}", style="green"
-    )
+    tui.ok(f"Global nudge {'added to' if changed else 'already in'} {where}")
 
 
 def _import_existing_plans(project_root: str) -> None:
@@ -487,9 +485,7 @@ def _import_existing_plans(project_root: str) -> None:
 
     totals = {"scanned": 0, "imported": 0, "skipped": 0, "error": 0}
     _sync_project(session, project, False, totals)
-    console.print(
-        f"OK Imported {totals['imported']} of {totals['scanned']} plan file(s)", style="green"
-    )
+    tui.ok(f"Imported {totals['imported']} of {totals['scanned']} plan file(s)")
 
 
 def _ask(question: str, default: str) -> str:
@@ -598,12 +594,12 @@ def _adopt_repository(project_root: str, plan_dir: str, force_new_project: bool)
         # Deliberately broad, and deliberately not fatal. The store exists by
         # now, so the useful outcome is to say what failed and leave the rest
         # of `init` intact rather than abort a half-finished setup.
-        console.print(f"WARN Could not check for an existing project: {e}", style="yellow")
+        tui.warn(f"Could not check for an existing project: {e}")
         console.print("  Skipping project creation to be safe", style="yellow")
         return
 
     if existing and not force_new_project:
-        console.print(f"OK Project already exists: {existing.name}", style="green")
+        tui.ok(f"Project already exists: {existing.name}")
         console.print(f"  Plan directory: {existing.plan_directory}", style="white")
         console.print(f"  Plan files: {len(existing.plan_files)}", style="white")
         console.print("\n  Tip: MCP server registration still completed above.", style="cyan")
@@ -613,7 +609,7 @@ def _adopt_repository(project_root: str, plan_dir: str, force_new_project: bool)
         return
 
     if existing:
-        console.print(f"WARN Project '{existing.name}' already exists here", style="yellow")
+        tui.warn(f"Project '{existing.name}' already exists here")
         console.print("  Creating a new project anyway (--force-new-project)", style="yellow")
 
     offered = Path(project_root).name
@@ -625,15 +621,15 @@ def _adopt_repository(project_root: str, plan_dir: str, force_new_project: bool)
         name=project_name, project_root=project_root, plan_directory=plan_dir
     )
     if result.get("error"):
-        console.print(f"ERROR Error: {result['message']}", style="red")
+        tui.bad(f"{result['message']}")
         return
 
-    console.print(f"OK Created project: {project_name}", style="green")
-    console.print(f"OK Plan directory: {result['full_plan_path']}", style="green")
+    tui.ok(f"Created project: {project_name}")
+    tui.ok(f"Plan directory: {result['full_plan_path']}")
     if result.get("gitignore_updated"):
-        console.print("OK Updated .gitignore to exclude plan files", style="green")
+        tui.ok("Updated .gitignore to exclude plan files")
     else:
-        console.print("OK .gitignore already excludes plan files", style="green")
+        tui.ok(".gitignore already excludes plan files")
 
 
 @cli.command()
@@ -689,8 +685,8 @@ def init(
     db_path = mcp_dir / "data.db"
     init_database(str(db_path))
 
-    console.print(f"OK Initialized Flanner at {mcp_dir}", style="green")
-    console.print(f"OK Database created at {db_path}", style="green")
+    tui.ok(f"Initialized Flanner at {mcp_dir}")
+    tui.ok(f"Database created at {db_path}")
 
     # The global half: Claude Desktop, Claude Code at user scope, Codex and
     # the adoption nudge. The per-repository half is _setup_agent_integration
@@ -738,11 +734,11 @@ def _setup_agent_integration(project_root: str) -> None:
         console.print("\n[Agent] Setting up coding-agent integration...", style="cyan")
         wiring = wire_agent_integration(project_root, project)
         for item in wiring.installed:
-            console.print(f"OK Installed {item}", style="green")
+            tui.ok(f"Installed {item}")
         for reason in wiring.skipped:
             tui.warn(f"Left alone: {reason}")
     except Exception as e:
-        console.print(f"WARN Could not set up agent integration: {e}", style="yellow")
+        tui.warn(f"Could not set up agent integration: {e}")
 
 
 # --- memory ------------------------------------------------------------------
@@ -2354,7 +2350,7 @@ def list_cmd(project: str | None, output: str, limit: int) -> None:
 
     proj = get_project_by_name(session, project)
     if not proj:
-        console.print(f"ERROR Project '{project}' not found", style="red")
+        tui.bad(f"Project '{project}' not found")
         raise SystemExit(1)
     _print_plans(proj, project, output, limit=limit)
 
@@ -2374,7 +2370,7 @@ def config(
     # Get project
     project = get_project_by_name(session, project_name)
     if not project:
-        console.print(f"ERROR Project '{project_name}' not found", style="red")
+        tui.bad(f"Project '{project_name}' not found")
         raise SystemExit(1)
 
     # Use server tool to update
@@ -2389,9 +2385,9 @@ def config(
     )
 
     if result.get("error"):
-        console.print(f"ERROR Error: {result['message']}", style="red")
+        tui.bad(f"{result['message']}")
     else:
-        console.print(f"OK Project '{project_name}' updated", style="green")
+        tui.ok(f"Project '{project_name}' updated")
         if plan_dir:
             console.print(f"  Plan directory: {plan_dir}", style="white")
         if auto_gitignore is not None:
@@ -2408,11 +2404,11 @@ def setup_gitignore(project_name: str) -> None:
     # Get project
     project = get_project_by_name(session, project_name)
     if not project:
-        console.print(f"ERROR Project '{project_name}' not found", style="red")
+        tui.bad(f"Project '{project_name}' not found")
         raise SystemExit(1)
 
     if not project.project_root:
-        console.print("ERROR Project has no project_root configured", style="red")
+        tui.bad("Project has no project_root configured")
         raise SystemExit(1)
 
     # Update .gitignore
@@ -2420,7 +2416,7 @@ def setup_gitignore(project_name: str) -> None:
     updated = update_gitignore(project.project_root, pattern, comment="Flanner")
 
     if updated:
-        console.print(f"OK Added '{pattern}' to .gitignore", style="green")
+        tui.ok(f"Added '{pattern}' to .gitignore")
     else:
         console.print(f"  '{pattern}' already in .gitignore", style="yellow")
 
@@ -2436,7 +2432,7 @@ def delete(project_name: str, force: bool) -> None:
     # Get project
     project = get_project_by_name(session, project_name)
     if not project:
-        console.print(f"ERROR Project '{project_name}' not found", style="red")
+        tui.bad(f"Project '{project_name}' not found")
         raise SystemExit(1)
 
     # Show project info
@@ -2515,12 +2511,9 @@ def web(port: int, host: str, open_browser: bool) -> None:
     from . import web as web_module
 
     if beyond_loopback(host):
-        console.print(
-            f"WARN Binding {host} exposes the web UI beyond localhost. It has no "
+        tui.warn(f"Binding {host} exposes the web UI beyond localhost. It has no "
             "authentication; anyone who can reach this address can read and edit "
-            "your plans. Use 127.0.0.1 unless you have put auth in front of it.",
-            style="yellow",
-        )
+            "your plans. Use 127.0.0.1 unless you have put auth in front of it.")
         # The Host header check stands down too. It exists to stop a domain
         # pointed at 127.0.0.1 reaching a local-only tool, and no list here
         # can predict which names will reach a deliberately exposed one. The
@@ -2528,7 +2521,7 @@ def web(port: int, host: str, open_browser: bool) -> None:
         web_module.ALLOW_ANY_HOST = True
 
     if _port_in_use(host, port):
-        console.print(f"ERROR Port {port} is already in use on {host}.", style="red")
+        tui.bad(f"Port {port} is already in use on {host}.")
         console.print("  Start on a different port, for example:", style="yellow")
         console.print(f"    flanner web --port {port + 1}", style="white")
         console.print("  Or set a default port for future runs:", style="yellow")
@@ -2602,13 +2595,13 @@ def register(force: bool, server_type: str, url: str | None, api_key: str | None
     # Check if Claude Code config exists
     config_path = get_claude_config_path()
     if not config_path:
-        console.print("ERROR Could not find Claude Code configuration path", style="red")
+        tui.bad("Could not find Claude Code configuration path")
         console.print("  Please ensure Claude Code is installed", style="yellow")
         return
 
     # Validate cloud server parameters
     if server_type == "cloud" and not url:
-        console.print("ERROR Cloud server requires --url parameter", style="red")
+        tui.bad("Cloud server requires --url parameter")
         raise SystemExit(1)
 
     # Register server
@@ -2617,7 +2610,7 @@ def register(force: bool, server_type: str, url: str | None, api_key: str | None
     )
 
     if success:
-        console.print(f"OK {message}", style="green")
+        tui.ok(f"{message}")
         console.print(f"\nConfig location: {config_path}", style="white")
 
         if server_type == "local":
@@ -2633,7 +2626,7 @@ def register(force: bool, server_type: str, url: str | None, api_key: str | None
             "  3. Test by asking Claude to list projects or create a plan", style="white"
         )
     else:
-        console.print(f"ERROR {message}", style="red")
+        tui.bad(f"{message}")
 
 
 @cli.command()
@@ -2651,10 +2644,10 @@ def unregister() -> None:
     success, message = unregister_mcp_server()
 
     if success:
-        console.print(f"OK {message}", style="green")
+        tui.ok(f"{message}")
         console.print("\n  Restart Claude Code for changes to take effect", style="yellow")
     else:
-        console.print(f"ERROR {message}", style="red")
+        tui.bad(f"{message}")
 
 
 @cli.command()
@@ -2744,7 +2737,7 @@ def _parse_for_sync(file_path: Path) -> _Parsed | str:
         console.print(f"  SKIP {file_path.name} - Not an MCP plan file", style="yellow")
         return "skipped"
     if not validate_frontmatter(fm_data):
-        console.print(f"  ERROR {file_path.name} - Invalid frontmatter", style="red")
+        tui.bad(f"{file_path.name} - Invalid frontmatter")
         return "error"
 
     return _Parsed(
@@ -2784,10 +2777,7 @@ def _sync_update(session: Session, existing: Any, fm: _Parsed, dry_run: bool) ->
     existing.current_version = fm.version
     existing.updated_at = utcnow()
     session.commit()
-    console.print(
-        f"  OK UPDATED {fm.name} (plan: {fm.plan_name}, v{old_version} -> v{fm.version})",
-        style="green",
-    )
+    tui.ok(f"updated {fm.name} (plan: {fm.plan_name}, v{old_version} -> v{fm.version})")
     return "imported"
 
 
@@ -2819,9 +2809,7 @@ def _sync_create(session: Session, proj: ProjectModel, fm: _Parsed, dry_run: boo
     )
     session.add(_version_row(fm))
     session.commit()
-    console.print(
-        f"  OK IMPORTED {fm.name} (plan: {fm.plan_name}, version: {fm.version})", style="green"
-    )
+    tui.ok(f"imported {fm.name} (plan: {fm.plan_name}, version: {fm.version})")
     return "imported"
 
 
@@ -2872,7 +2860,7 @@ def _sync_project(
             outcome = _sync_file(session, proj, file_path, dry_run)
         except Exception as e:
             session.rollback()
-            console.print(f"  ERROR {file_path.name} - {e}", style="red")
+            tui.bad(f"{file_path.name} - {e}")
             outcome = "error"
         totals[outcome] += 1
 
@@ -2897,7 +2885,7 @@ def sync(project: str | None, dry_run: bool) -> None:
     if project:
         project_model = get_project_by_name(session, project)
         if not project_model:
-            console.print(f"ERROR Project '{project}' not found", style="red")
+            tui.bad(f"Project '{project}' not found")
             raise SystemExit(1)
         projects = [project_model]
     else:
@@ -2957,7 +2945,7 @@ def _note_authorization(authorization: Any) -> None:
     if not authorization.enforced:
         console.print(f"review here is advisory: {authorization.reason}", style="dim")
     elif authorization.role is None:
-        console.print(f"WARN cannot authorize review: {authorization.reason}", style="yellow")
+        tui.warn(f"cannot authorize review: {authorization.reason}")
 
 
 # --- skills ------------------------------------------------------------------
@@ -4572,7 +4560,7 @@ def _resolve_plan(
         _no_project(project)
     plan_file = next((p for p in proj.plan_files if p.name == plan_name), None)
     if plan_file is None:
-        console.print(f"ERROR Plan '{plan_name}' not found in '{proj.name}'", style="red")
+        tui.bad(f"Plan '{plan_name}' not found in '{proj.name}'")
         # The names, not just the failure. A plan is addressed by name, so
         # the usual cause is a typo or a half-remembered one, and the list is
         # short enough to print.
@@ -4600,7 +4588,7 @@ def review_propose(plan_name: str, project: str | None, message: str, actor: str
     try:
         result = propose(session, project=proj, plan_file=plan_file, message=message, actor=actor)
     except (ValueError, PermissionError) as e:
-        console.print(f"ERROR {e}", style="red")
+        tui.bad(f"{e}")
         raise SystemExit(1) from None
 
     console.print(f"\nOK Proposed '{plan_name}' for review", style="green")
@@ -4635,10 +4623,7 @@ def review_decide(
             if view.state in ("open", "stale", "changes_requested")
         ]
         if len(open_ones) != 1:
-            console.print(
-                f"ERROR {len(open_ones)} proposals are open; name one with --proposal.",
-                style="red",
-            )
+            tui.bad(f"{len(open_ones)} proposals are open; name one with --proposal.")
             raise SystemExit(1)
         proposal = open_ones[0].proposal_id
 
@@ -4668,7 +4653,7 @@ def review_decide(
     # PermissionError too: a refusal is an answer, and it used to surface as
     # a traceback because only ValueError was caught.
     except (ValueError, PermissionError) as e:
-        console.print(f"ERROR {e}", style="red")
+        tui.bad(f"{e}")
         raise SystemExit(1) from None
 
     console.print(f"\nOK Recorded {decision} on '{plan_name}'", style="green")
@@ -4702,7 +4687,7 @@ def _confirm_in_console(what: str, workspace_id: str, proposal_id: str, target: 
             workspace_id=workspace_id, proposal_id=proposal_id, target_artifact_id=target
         )
     except account.SessionError as e:
-        console.print(f"ERROR could not ask the console to confirm: {e}", style="red")
+        tui.bad(f"could not ask the console to confirm: {e}")
         raise SystemExit(1) from None
 
     console.print(f"\nApproving {what} here needs you to confirm it in the console.")
@@ -4714,16 +4699,13 @@ def _confirm_in_console(what: str, workspace_id: str, proposal_id: str, target: 
         try:
             answer = account.approval_status(str(opened["request_id"]))
         except account.SessionError as e:
-            console.print(f"ERROR could not hear back from the console: {e}", style="red")
+            tui.bad(f"could not hear back from the console: {e}")
             raise SystemExit(1) from None
         state = answer.get("state")
         if state == "confirmed":
             return str(answer.get("confirmation") or "")
         if state != "pending":
-            console.print(
-                f"ERROR the approval was {state} in the console. Nothing was recorded.",
-                style="red",
-            )
+            tui.bad(f"the approval was {state} in the console. Nothing was recorded.")
             raise SystemExit(1)
 
 
@@ -4827,9 +4809,7 @@ def review_status(plan_name: str, project: str | None) -> None:
     _note_authorization(authz.resolve(proj))
 
     if state.conflicted:
-        console.print(
-            "WARN the accepted baseline is contested; merge before implementing", style="red"
-        )
+        tui.warn("the accepted baseline is contested; merge before implementing")
     elif state.accepted_artifact_id:
         console.print(f"accepted: {state.accepted_artifact_id}", style="green")
     else:
@@ -5310,9 +5290,7 @@ def doctor(project: str | None, repair: bool, output: str, report: bool) -> None
         return
 
     if not findings:
-        console.print(
-            f"OK Catalog, files, and signatures all agree for '{proj.name}'", style="green"
-        )
+        tui.ok(f"Catalog, files, and signatures all agree for '{proj.name}'")
         _print_enrollment(enrollment)
         return
 
@@ -5367,13 +5345,13 @@ def freshness(plan_name: str | None, project: str | None, output: str) -> None:
     if plan_name:
         plans = [p for p in plans if p.name == plan_name]
         if not plans:
-            console.print(f"ERROR Plan '{plan_name}' not found in '{proj.name}'", style="red")
+            tui.bad(f"Plan '{plan_name}' not found in '{proj.name}'")
             raise SystemExit(1)
     if not plans:
         console.print(f"No plan files found for project '{proj.name}'", style="yellow")
         return
     if not proj.project_root:
-        console.print(f"ERROR Project '{proj.name}' has no project_root configured", style="red")
+        tui.bad(f"Project '{proj.name}' has no project_root configured")
         raise SystemExit(1)
 
     with tui.working(f"judging {len(plans)} plans") as work:
@@ -5545,7 +5523,7 @@ def jira_config(project_name: str, url: str, project_key: str | None) -> None:
 
     # Validate JIRA URL
     if not is_valid_jira_url(url):
-        console.print(f"ERROR Invalid JIRA URL format: {url}", style="red")
+        tui.bad(f"Invalid JIRA URL format: {url}")
         console.print("  Expected format: https://company.atlassian.net", style="yellow")
         raise SystemExit(1)
 
@@ -5554,7 +5532,7 @@ def jira_config(project_name: str, url: str, project_key: str | None) -> None:
     # Get project
     project = get_project_by_name(session, project_name)
     if not project:
-        console.print(f"ERROR Project '{project_name}' not found", style="red")
+        tui.bad(f"Project '{project_name}' not found")
         raise SystemExit(1)
 
     # Create or update JIRA config
@@ -5574,7 +5552,7 @@ def jira_config(project_name: str, url: str, project_key: str | None) -> None:
         if result.get("jira_project_key"):
             console.print(f"  Default Project Key: {result['jira_project_key']}", style="white")
     except Exception as e:
-        console.print(f"ERROR Failed to configure JIRA: {e}", style="red")
+        tui.bad(f"Failed to configure JIRA: {e}")
 
 
 @jira.command("link")
@@ -5597,7 +5575,7 @@ def jira_link(
     # Validate issue key
     formatted_issue = format_jira_issue_key(issue)
     if not is_valid_jira_issue_key(formatted_issue):
-        console.print(f"ERROR Invalid JIRA issue key format: {issue}", style="red")
+        tui.bad(f"Invalid JIRA issue key format: {issue}")
         console.print(
             "  Expected format: PROJECT-123 (uppercase letters, dash, numbers)", style="yellow"
         )
@@ -5632,9 +5610,9 @@ def jira_link(
             console.print(f"  Notes: {notes}", style="white")
 
     except ValueError as e:
-        console.print(f"ERROR {e}", style="red")
+        tui.bad(f"{e}")
     except Exception as e:
-        console.print(f"ERROR Failed to create link: {e}", style="red")
+        tui.bad(f"Failed to create link: {e}")
 
 
 @jira.command("unlink")
@@ -5659,7 +5637,7 @@ def jira_unlink(plan_name: str, issue: str | None, unlink_all: bool, project: st
         if unlink_all or not issue:
             result = dispatch("unlink_jira_issue", {"plan_file_id": str(plan_file.id)})
             if result.get("error"):
-                console.print(f"ERROR {result['message']}", style="red")
+                tui.bad(f"{result['message']}")
                 raise SystemExit(1)
             count = result.get("count", 0)
             if count > 0:
@@ -5680,7 +5658,7 @@ def jira_unlink(plan_name: str, issue: str | None, unlink_all: bool, project: st
                 console.print(f"\nERROR Link to {formatted_issue} not found", style="yellow")
 
     except Exception as e:
-        console.print(f"ERROR Failed to unlink: {e}", style="red")
+        tui.bad(f"Failed to unlink: {e}")
 
 
 @jira.command("links")
@@ -5695,7 +5673,7 @@ def jira_links(project: str | None) -> None:
     if project:
         proj = get_project_by_name(session, project)
         if not proj:
-            console.print(f"ERROR Project '{project}' not found", style="red")
+            tui.bad(f"Project '{project}' not found")
             raise SystemExit(1)
         projects = [proj]
     else:
@@ -5788,7 +5766,7 @@ def _write(op: str, **args: Any) -> dict[str, Any]:
 
     result = dispatch(op, args)
     if result.get("error"):
-        console.print(f"ERROR {result['message']}", style="red")
+        tui.bad(f"{result['message']}")
         raise SystemExit(1)
     return result
 
@@ -5848,7 +5826,7 @@ def _session_failed(error: Any) -> NoReturn:
     """
     from flanner import refusals
 
-    console.print(f"ERROR {error}", style="red")
+    tui.bad(f"{error}")
 
     advice = {
         refusals.CLOCK_SKEW: (
@@ -5902,17 +5880,17 @@ def _no_project(project: str | None) -> NoReturn:
     `flanner join` before `flanner init`.
     """
     if project:
-        console.print(f"ERROR No project named '{project}'.", style="red")
+        tui.bad(f"No project named '{project}'.")
         tui.hint("Run flanner list to see the projects this machine knows about.")
         raise SystemExit(1)
 
     git_root = find_git_root(os.getcwd())
     if git_root:
-        console.print("ERROR This repository has not been adopted by flanner yet.", style="red")
+        tui.bad("This repository has not been adopted by flanner yet.")
         tui.note(f"Found a git repository at {git_root}, but no project for it.")
         tui.hint(f"  {tui.command('flanner init')}   adopt it, then run this again")
     else:
-        console.print("ERROR Not inside a git repository.", style="red")
+        tui.bad("Not inside a git repository.")
         tui.note("flanner works per repository, and finds one by looking for its git root.")
         tui.hint("Change to a repository first, or name a project with --project.")
     raise SystemExit(1)
@@ -5942,14 +5920,14 @@ def linear_config(project_name: str, workspace: str) -> None:
     from .linear_utils import is_valid_linear_workspace, normalize_linear_workspace
 
     if not is_valid_linear_workspace(workspace):
-        console.print(f"ERROR Invalid Linear workspace: {workspace}", style="red")
+        tui.bad(f"Invalid Linear workspace: {workspace}")
         console.print("  Expected a slug like 'acme' or a linear.app URL", style="yellow")
         raise SystemExit(1)
 
     session = _require_session()
     proj = get_project_by_name(session, project_name)
     if not proj:
-        console.print(f"ERROR Project '{project_name}' not found", style="red")
+        tui.bad(f"Project '{project_name}' not found")
         raise SystemExit(1)
 
     try:
@@ -5960,7 +5938,7 @@ def linear_config(project_name: str, workspace: str) -> None:
         )
         console.print(f"  Workspace: {result['workspace']}", style="white")
     except Exception as e:
-        console.print(f"ERROR Failed to configure Linear: {e}", style="red")
+        tui.bad(f"Failed to configure Linear: {e}")
 
 
 @linear.command("auth")
@@ -5979,7 +5957,7 @@ def linear_auth() -> None:
 
     api_key = get_api_key()
     if not api_key:
-        console.print("ERROR LINEAR_API_KEY is not set", style="red")
+        tui.bad("LINEAR_API_KEY is not set")
         console.print(
             "  Create a personal API key at https://linear.app/settings/api, then set it:",
             style="yellow",
@@ -5991,7 +5969,7 @@ def linear_auth() -> None:
     try:
         viewer = fetch_viewer(api_key)
     except LinearError as e:
-        console.print(f"ERROR Linear rejected the key: {e}", style="red")
+        tui.bad(f"Linear rejected the key: {e}")
         raise SystemExit(1) from e
 
     who = viewer.get("name") or "unknown user"
@@ -6039,21 +6017,19 @@ def linear_link_cmd(
 
     issue_id = format_linear_issue_id(issue)
     if not is_valid_linear_issue_id(issue_id):
-        console.print(f"ERROR Invalid Linear issue id: {issue}", style="red")
+        tui.bad(f"Invalid Linear issue id: {issue}")
         console.print("  Expected format: ENG-123 (team key, dash, number)", style="yellow")
         raise SystemExit(1)
 
     session = _require_session()
     proj = _resolve_project_or_cwd(session, project)
     if not proj:
-        console.print(
-            "ERROR Project not found. Specify --project or run from project directory", style="red"
-        )
+        tui.bad("Project not found. Specify --project or run from project directory")
         raise SystemExit(1)
 
     plan_file = next((pf for pf in proj.plan_files if pf.name == plan_name), None)
     if not plan_file:
-        console.print(f"ERROR Plan '{plan_name}' not found in project '{proj.name}'", style="red")
+        tui.bad(f"Plan '{plan_name}' not found in project '{proj.name}'")
         raise SystemExit(1)
 
     # Issue verification, URL attachment, and the write all happen in the
@@ -6070,7 +6046,7 @@ def linear_link_cmd(
     )
 
     if result.get("warning"):
-        console.print(f"  WARN {result['warning']}", style="yellow")
+        tui.warn(f"{result['warning']}")
     elif attach_url and result.get("issue_title"):
         console.print(f"  Attached {attach_url} to {issue_id}", style="white")
 
@@ -6097,12 +6073,12 @@ def linear_unlink(
     session = _require_session()
     proj = _resolve_project_or_cwd(session, project)
     if not proj:
-        console.print("ERROR Project not found", style="red")
+        tui.bad("Project not found")
         raise SystemExit(1)
 
     plan_file = next((pf for pf in proj.plan_files if pf.name == plan_name), None)
     if not plan_file:
-        console.print(f"ERROR Plan '{plan_name}' not found", style="red")
+        tui.bad(f"Plan '{plan_name}' not found")
         raise SystemExit(1)
 
     # As with jira unlink, a missing link is a warning rather than a failure,
@@ -6112,7 +6088,7 @@ def linear_unlink(
         if unlink_all or not issue:
             result = dispatch("unlink_linear_issue", {"plan_file_id": str(plan_file.id)})
             if result.get("error"):
-                console.print(f"ERROR {result['message']}", style="red")
+                tui.bad(f"{result['message']}")
                 raise SystemExit(1)
             count = result.get("count", 0)
             if count > 0:
@@ -6132,7 +6108,7 @@ def linear_unlink(
             else:
                 console.print(f"\nERROR Link to {issue_id} not found", style="yellow")
     except Exception as e:
-        console.print(f"ERROR Failed to unlink: {e}", style="red")
+        tui.bad(f"Failed to unlink: {e}")
 
 
 @linear.command("links")
@@ -6145,7 +6121,7 @@ def linear_links(project: str | None) -> None:
     if project:
         proj = get_project_by_name(session, project)
         if not proj:
-            console.print(f"ERROR Project '{project}' not found", style="red")
+            tui.bad(f"Project '{project}' not found")
             raise SystemExit(1)
         projects = [proj]
     else:
@@ -6185,12 +6161,12 @@ def linear_show(plan_name: str, project: str | None) -> None:
     session = _require_session()
     proj = _resolve_project_or_cwd(session, project)
     if not proj:
-        console.print("ERROR Project not found", style="red")
+        tui.bad("Project not found")
         raise SystemExit(1)
 
     plan_file = next((pf for pf in proj.plan_files if pf.name == plan_name), None)
     if not plan_file:
-        console.print(f"ERROR Plan '{plan_name}' not found", style="red")
+        tui.bad(f"Plan '{plan_name}' not found")
         raise SystemExit(1)
 
     links = get_linear_links(session, plan_file.id)
@@ -6225,18 +6201,18 @@ def linear_refresh(plan_name: str, project: str | None) -> None:
 
     api_key = get_api_key()
     if not api_key:
-        console.print("ERROR LINEAR_API_KEY is not set; nothing to refresh", style="red")
+        tui.bad("LINEAR_API_KEY is not set; nothing to refresh")
         raise SystemExit(1)
 
     session = _require_session()
     proj = _resolve_project_or_cwd(session, project)
     if not proj:
-        console.print("ERROR Project not found", style="red")
+        tui.bad("Project not found")
         raise SystemExit(1)
 
     plan_file = next((pf for pf in proj.plan_files if pf.name == plan_name), None)
     if not plan_file:
-        console.print(f"ERROR Plan '{plan_name}' not found", style="red")
+        tui.bad(f"Plan '{plan_name}' not found")
         raise SystemExit(1)
 
     links = get_linear_links(session, plan_file.id)
@@ -6301,7 +6277,7 @@ def login(code: str, endpoint: str | None, label: str | None) -> None:
     # had been sent to.
     _ensure_store()
 
-    console.print(f"OK Enrolled as {current.user_id} ({current.device_id})", style="green")
+    tui.ok(f"Enrolled as {current.user_id} ({current.device_id})")
     _what_next(current)
     _print_entitlement(current)
 
@@ -6312,7 +6288,7 @@ def logout() -> None:
     from . import session as account
 
     if account.clear():
-        console.print("OK Signed out on this device", style="green")
+        tui.ok("Signed out on this device")
         console.print(
             "This device is still enrolled. Revoke it from the team console to end its access.",
             style="dim",
@@ -6354,7 +6330,7 @@ def whoami(do_refresh: bool, output: str) -> None:
         try:
             current = account.refresh()
         except account.SessionError as e:
-            console.print(f"WARN could not renew: {e}", style="yellow")
+            tui.warn(f"could not renew: {e}")
             current = cache.load()
 
         # The device directory too, not just the entitlement. Six error
@@ -6368,7 +6344,7 @@ def whoami(do_refresh: bool, output: str) -> None:
             current = cache.load() or current
             console.print(f"Peers   {len(learned)} device key(s) known", style="dim")
         except account.SessionError as e:
-            console.print(f"WARN could not refresh device keys: {e}", style="yellow")
+            tui.warn(f"could not refresh device keys: {e}")
     else:
         current = cache.load()
     if output == "json":
@@ -6551,7 +6527,7 @@ def join(
     if clear_binding:
         proj.workspace_id = None
         session.commit()
-        console.print(f"OK '{proj.name}' left its workspace", style="green")
+        tui.ok(f"'{proj.name}' left its workspace")
         console.print("Review still runs here, but it authorizes nothing.", style="dim")
         return
 
@@ -6561,7 +6537,7 @@ def join(
     # --clear has returned by now. Repeated as a real check rather than an
     # assertion, which `python -O` would strip.
     if not workspace_id:
-        console.print("ERROR Give a workspace id.", style="red")
+        tui.bad("Give a workspace id.")
         raise SystemExit(1)
 
     # Access is checked before anything is written. Joining used to bind,
@@ -6575,7 +6551,7 @@ def join(
 
     probe = authz.resolve(ProjectModel(name=proj.name, workspace_id=workspace_id))
     if probe.role is None:
-        console.print(f"ERROR No access to {workspace_id}: {probe.reason}", style="red")
+        tui.bad(f"No access to {workspace_id}: {probe.reason}")
         console.print("Nothing was changed.", style="dim")
         console.print(
             "If you were invited to it just now, renew first:  flanner whoami --refresh",
@@ -6586,7 +6562,7 @@ def join(
 
     proj.workspace_id = workspace_id
     session.commit()
-    console.print(f"OK '{proj.name}' joined workspace {workspace_id}", style="green")
+    tui.ok(f"'{proj.name}' joined workspace {workspace_id}")
 
     if no_adopt:
         console.print("Existing plans stay local and will not sync, as asked.", style="yellow")
@@ -6694,7 +6670,7 @@ def accept(token: str, user_id: str, endpoint: str | None, label: str | None) ->
     # the message below says so.
     _ensure_store()
 
-    console.print(f"OK Joined as {current.user_id} ({current.device_id})", style="green")
+    tui.ok(f"Joined as {current.user_id} ({current.device_id})")
     _print_entitlement(current)
     console.print(
         "\nThis machine is ready. In each repository you want to share plans\n"
@@ -6770,7 +6746,7 @@ def devices_revoke(device_id: str) -> None:
     from . import identity as this
 
     _console_call(account.revoke_device, device_id)
-    console.print(f"OK {device_id} revoked", style="green")
+    tui.ok(f"{device_id} revoked")
     if device_id == this.device_id():
         console.print("That was this machine. Run 'flanner logout' here too.", style="yellow")
     console.print("Entitlements it already holds stay valid until they expire.", style="dim")
@@ -6784,7 +6760,7 @@ def invite(email: str, admin: bool) -> None:
     from . import account
 
     token = _console_call(account.invite_member, email, admin=admin)
-    console.print(f"OK Invited {email}", style="green")
+    tui.ok(f"Invited {email}")
     console.print("\nSend them this:", style="dim")
     console.print(f"\n  flanner accept {token} --as <their-user-id>\n", style="cyan")
     console.print("An invitation costs no seat until it is accepted.", style="dim")
@@ -6964,7 +6940,7 @@ def peer_serve(host: str, port: int | None, http: bool) -> None:
     _open_store()
 
     if cache.load() is None:
-        console.print("ERROR Not signed in, so no peer can be authorised.", style="red")
+        tui.bad("Not signed in, so no peer can be authorised.")
         console.print("Run 'flanner login' first.", style="dim")
         raise SystemExit(1)
 
@@ -6973,7 +6949,7 @@ def peer_serve(host: str, port: int | None, http: bool) -> None:
         try:
             endpoint.ready()
         except peer_transport.PeerError as e:
-            console.print(f"ERROR {e}", style="red")
+            tui.bad(f"{e}")
             console.print("Use 'flanner peer serve --http' to listen on a port.", style="dim")
             raise SystemExit(1) from None
         console.print("Serving plans to authorised peers.", style="green")
@@ -7040,7 +7016,7 @@ def peer_start(host: str, port: int | None, http: bool) -> None:
 
     _open_store()
     if cache.load() is None:
-        console.print("ERROR Not signed in, so no peer could be authorised.", style="red")
+        tui.bad("Not signed in, so no peer could be authorised.")
         console.print("Run 'flanner login' first.", style="dim")
         raise SystemExit(1)
 
@@ -7184,7 +7160,7 @@ def peer_status(device_id: str | None) -> None:
 
         status = peer_iroh.local_status(cache.load)
     except peer_transport.PeerError as e:
-        console.print(f"ERROR {e}", style="red")
+        tui.bad(f"{e}")
         if not peer_iroh.available():
             console.print(
                 "Everything else works. Only reaching a peer that has no address needs it.",
@@ -7278,7 +7254,7 @@ def peer_pull(address: str, project: str | None) -> None:
     if not proj:
         _no_project(project)
     if not proj.workspace_id:
-        console.print("ERROR This project has not joined a workspace.", style="red")
+        tui.bad("This project has not joined a workspace.")
         console.print("Run 'flanner join <workspace-id>' first.", style="dim")
         raise SystemExit(1)
 
@@ -7289,7 +7265,7 @@ def peer_pull(address: str, project: str | None) -> None:
             with observe.step("resolve peer"):
                 remote = peer_iroh.peer_for(address, proj.workspace_id, cache.load)
         except peer_transport.PeerError as e:
-            console.print(f"ERROR {e}", style="red")
+            tui.bad(f"{e}")
             raise SystemExit(1) from None
 
         work.say("fetching and verifying versions")
@@ -7307,13 +7283,13 @@ def peer_pull(address: str, project: str | None) -> None:
     if report.already_held:
         console.print(f"already held: {len(report.already_held)}", style="dim")
     for artifact_id, reason in report.rejected:
-        console.print(f"REJECTED {artifact_id}: {reason}", style="red")
+        tui.bad(f"rejected {artifact_id}: {reason}")
     # Stored and verified, and still not a file anyone can open. Reported on
     # its own line and as a failure: "accepted: 1" with nothing in .plans
     # was the original defect, and a count that stays green while the plan
     # is missing is the count that hid it.
     for artifact_id, reason in report.unreadable:
-        console.print(f"NOT WRITTEN {artifact_id}: {reason}", style="yellow")
+        tui.warn(f"not written {artifact_id}: {reason}")
     if not report.ok or report.unreadable:
         raise SystemExit(1)
 
@@ -7439,7 +7415,7 @@ def mesh_connect() -> None:
 
     runtime = _runtime()
     if not runtime.installed():
-        console.print("ERROR The mesh client is not installed on this machine.", style="red")
+        tui.bad("The mesh client is not installed on this machine.")
         raise SystemExit(1)
 
     try:
@@ -7460,10 +7436,10 @@ def mesh_connect() -> None:
             Enrollment(credential=credential, device_id="", expires_at=expires_at)
         )
     except MeshError as e:
-        console.print(f"ERROR {e}", style="red")
+        tui.bad(f"{e}")
         raise SystemExit(1) from None
 
-    console.print("OK Connected to the team's private network", style="green")
+    tui.ok("Connected to the team's private network")
 
 
 @mesh.command("leave")
@@ -7474,7 +7450,7 @@ def mesh_leave() -> None:
         console.print("Mesh client not installed.", style="dim")
         return
     runtime.leave()
-    console.print("OK Disconnected", style="green")
+    tui.ok("Disconnected")
     console.print("Plans and local work are untouched.", style="dim")
 
 
@@ -7559,7 +7535,7 @@ def review_comment(
             version=wanted,
         )
     except ValueError as e:
-        console.print(f"ERROR {e}", style="red")
+        tui.bad(f"{e}")
         raise SystemExit(1) from None
 
     console.print()
@@ -7612,12 +7588,12 @@ def review_pack(
     proj, plan_file = _resolve_plan(session, project, plan_name)
     version = get_version(session, plan_file.id, wanted)
     if version is None:
-        console.print(f"ERROR v{wanted} of '{plan_file.name}' does not exist", style="red")
+        tui.bad(f"v{wanted} of '{plan_file.name}' does not exist")
         raise SystemExit(1)
     try:
         _, body = load_plan_file(version.file_path)
     except FileNotFoundError:
-        console.print(f"ERROR v{version.version} is no longer on disk", style="red")
+        tui.bad(f"v{version.version} is no longer on disk")
         raise SystemExit(1) from None
 
     built = packet_module.build(
@@ -7696,7 +7672,7 @@ def review_import(path: str, project: str | None, plan_override: str | None) -> 
     try:
         payload = json_module.loads(_Path(path).read_text(encoding="utf-8"))
     except (OSError, ValueError) as e:
-        console.print(f"ERROR could not read that review: {e}", style="red")
+        tui.bad(f"could not read that review: {e}")
         raise SystemExit(1) from None
 
     header = payload.get("packet") or {}
@@ -7704,7 +7680,7 @@ def review_import(path: str, project: str | None, plan_override: str | None) -> 
     reviewer = str(payload.get("reviewer") or "").strip() or "an unnamed reviewer"
     named = plan_override or str(header.get("plan") or "")
     if not named:
-        console.print("ERROR that file does not say which plan it belongs to", style="red")
+        tui.bad("that file does not say which plan it belongs to")
         raise SystemExit(1)
     if not notes:
         console.print()
@@ -7832,7 +7808,7 @@ def _pick_versions(
         try:
             return int(raw.lstrip("vV"))
         except ValueError:
-            console.print(f"ERROR '{raw}' is not a version number", style="red")
+            tui.bad(f"'{raw}' is not a version number")
             raise SystemExit(1) from None
 
     return (
@@ -7913,7 +7889,7 @@ def diff(
     bodies = _version_bodies(versions)
     for wanted in (left, right):
         if wanted not in bodies:
-            console.print(f"ERROR v{wanted} of '{plan_file.name}' is not on disk", style="red")
+            tui.bad(f"v{wanted} of '{plan_file.name}' is not on disk")
             raise SystemExit(1)
 
     console.print()
@@ -8091,7 +8067,7 @@ def main() -> None:
     try:
         cli.main(standalone_mode=True)
     except (DatabaseError, StorageError, OSError) as e:
-        console.print(f"ERROR {e}", style="red")
+        tui.bad(f"{e}")
         tui.note("A failure on this machine, not a problem with the command itself.")
         raise SystemExit(2) from None
 

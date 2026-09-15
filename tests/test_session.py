@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from flanner import account, identity, refusals
+from flanner import account, identity, refusals, tui
 from flanner import session as cache
 from flanner.entitlements import EXPIRED, IN_GRACE, MALFORMED, VALID
 
@@ -278,7 +278,7 @@ def test_login_reports_a_refusal_and_exits_nonzero(home):
         cli, ["login", "bad-code", "--endpoint", "http://127.0.0.1:1"]
     )
     assert result.exit_code == 1
-    assert "ERROR" in result.output
+    assert tui.CROSS in result.output
 
 
 def test_logout_is_quiet_when_there_is_nothing_to_forget(home):
@@ -412,7 +412,7 @@ def test_the_console_commands_report_a_refusal_rather_than_a_traceback(home):
     ):
         result = runner.invoke(cli, args)
         assert result.exit_code == 1, args
-        assert "ERROR" in result.output and "not logged in" in result.output, args
+        assert tui.CROSS in result.output and "not logged in" in result.output, args
         assert result.exception is None or isinstance(result.exception, SystemExit), args
 
 

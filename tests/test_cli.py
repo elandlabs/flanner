@@ -421,7 +421,7 @@ def test_sync_dry_run_and_import(runner, project, git_repo):
 
     real = runner.invoke(cli, ["sync", "--project", "proj"])
     assert real.exit_code == 0, real.output
-    assert "OK IMPORTED synced_v1.md" in real.output
+    assert "imported synced_v1.md" in real.output
     assert "1 imported" in real.output
     assert "1 skipped" in real.output
     assert "1 error" in real.output
@@ -435,7 +435,7 @@ def test_sync_dry_run_and_import(runner, project, git_repo):
     dry2 = runner.invoke(cli, ["sync", "--dry-run"])
     assert "WOULD UPDATE" in dry2.output
     updated = runner.invoke(cli, ["sync"])
-    assert "OK UPDATED synced_v2.md" in updated.output
+    assert "updated synced_v2.md" in updated.output
     assert "v1 -> v2" in updated.output
 
 
@@ -446,7 +446,7 @@ def test_sync_unparseable_plan_id_is_error(runner, project, git_repo):
     (plans / "broken.md").write_text(content)
     result = runner.invoke(cli, ["sync"])
     assert result.exit_code == 0
-    assert "ERROR broken.md" in result.output
+    assert "broken.md - " in result.output
     assert "1 error" in result.output
 
 
@@ -523,7 +523,7 @@ def test_unregister_cancelled(runner, claude_config):
 
 def test_unregister_not_registered(runner, claude_config):
     result = runner.invoke(cli, ["unregister"], input="y\n")
-    assert "ERROR" in result.output
+    assert "is not registered" in result.output
 
 
 def test_unregister_success(runner, claude_config):
