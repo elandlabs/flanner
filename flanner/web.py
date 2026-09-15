@@ -2941,6 +2941,11 @@ async def memory_forget_form(memory_id: str, reason: str = Form("")) -> Redirect
             {"memory_id": memory_id, "reason": reason, "purge": False, "created_by": "web"},
         )
     )
+    # The page's own forgotten notice says what happened and how to undo it,
+    # so the service's message is shown only when forgetting failed. Both
+    # together read as the same sentence twice.
+    if not result.get("error"):
+        return RedirectResponse(f"/memory/{memory_id}", status_code=303)
     said = quote(str(result.get("message", "")))
     return RedirectResponse(f"/memory/{memory_id}?said={said}", status_code=303)
 

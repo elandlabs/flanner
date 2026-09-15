@@ -81,8 +81,11 @@ def test_forgetting_hides_a_memory_and_restoring_brings_it_back(home):
     page = client.get(f"/memory/{memory_id}").text
     assert 'action="/memory/' + memory_id + '/forget"' in page and "data-hold-confirm" in page
 
-    client.post(f"/memory/{memory_id}/forget")
+    forgot = client.post(f"/memory/{memory_id}/forget")
     assert status_of(memory_id) == "forgotten"
+    # One notice, from the page, rather than the same sentence twice.
+    assert "said=" not in forgot.headers["location"]
+    assert client.get(forgot.headers["location"]).text.count('class="notice') == 1
     assert "staging database" not in client.get("/memory").text
     assert "staging database" in client.get("/memory?status=forgotten").text
     assert "/restore" in client.get(f"/memory/{memory_id}").text
