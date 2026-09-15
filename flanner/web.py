@@ -1790,12 +1790,17 @@ async def freshness_stream(request: Request) -> StreamingResponse:
                 continue
             status = record["status"]
             tally[status] = tally.get(status, 0) + 1
+            # The status rides on every judged line, not only the ones that
+            # carry a row, so the page can count as verdicts arrive rather
+            # than saying "0 stale" over a table of stale plans until the
+            # final tally lands.
             if status in rank:
                 record["drift_rank"] = len(rank) - rank[status]
                 yield (
                     json.dumps(
                         {
                             "judged": 1,
+                            "status": status,
                             "drift": record["drift_rank"],
                             "html": row_template.render(row=record),
                         }
@@ -1803,7 +1808,7 @@ async def freshness_stream(request: Request) -> StreamingResponse:
                     + "\n"
                 )
             else:
-                yield json.dumps({"judged": 1}) + "\n"
+                yield json.dumps({"judged": 1, "status": status}) + "\n"
 
         yield json.dumps({"done": True, "tally": tally}) + "\n"
 

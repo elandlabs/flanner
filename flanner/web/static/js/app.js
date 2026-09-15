@@ -1289,9 +1289,15 @@ onPage(function () {
         const progress = card.querySelector('[data-scan-progress]');
         const count = card.querySelector('[data-drift-count]');
         const clean = card.querySelector('[data-scan-clean]');
+        // The four counts at the top, kept as verdicts arrive. They used to
+        // be zeroed here and filled in only by the final tally, so for the
+        // length of the scan the page said "0 stale" over a table of stale
+        // plans. Each judged line now carries its status.
         const tallies = {};
+        const counts = {};
         document.querySelectorAll('[data-tally]').forEach(function (el) {
             tallies[el.getAttribute('data-tally')] = el;
+            counts[el.getAttribute('data-tally')] = 0;
             el.textContent = '0';
         });
 
@@ -1311,11 +1317,18 @@ onPage(function () {
 
             if (msg.total !== undefined) { total = msg.total; }
             if (msg.judged) { judged += msg.judged; }
+            if (msg.status && tallies[msg.status]) {
+                counts[msg.status] += 1;
+                tallies[msg.status].textContent = counts[msg.status];
+            }
             if (msg.html && list) {
                 const holder = document.createElement('div');
                 holder.innerHTML = msg.html.trim();
                 const row = holder.firstElementChild;
                 if (row) {
+                    // A row settles into its slot rather than appearing in
+                    // one frame under whoever is reading the table.
+                    row.classList.add('rise-in');
                     insertByDrift(list, row);
                     shown += 1;
                     // The list pager windows whatever is there, so it has to
