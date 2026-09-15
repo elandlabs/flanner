@@ -846,17 +846,39 @@ details.lede > summary:hover::after { text-decoration: underline; }
   border-radius: var(--r-xs); padding: 1px 6px; color: var(--text-2);
 }
 
-/* --------------------------------------------------------------- alerts */
+/* ------------------------------------------------------ notice feedback */
 
-.alert {
-  border: 1px solid var(--border); border-left-width: 3px;
-  border-radius: var(--r-md); padding: 12px 16px; font-size: var(--t-md);
+/* A notice that can be closed. The control sits in the corner, so the
+   notice keeps its block layout and a paragraph inside it still flows. */
+.notice:has(> .notice-x) { padding-right: 44px; }
+.notice-x {
+  position: absolute; right: 8px; top: 8px; width: 24px; height: 24px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 0; border-radius: var(--r-sm); background: none; color: inherit;
+  opacity: .7; cursor: pointer; padding: 0;
+  transition: opacity var(--dur) var(--ease), background-color var(--dur) var(--ease);
 }
-.alert-error   { border-left-color: var(--stale);   background: var(--stale-bg);   color: var(--stale-text); }
-.alert-success { border-left-color: var(--fresh);   background: var(--fresh-bg);   color: var(--fresh-text); }
-/* Neutral. It was orange, the suspect colour, which made a plain piece
-   of information look like a warning. */
-.alert-info    { border-left-color: var(--accent); background: var(--accent-soft); color: var(--text-2); }
+.notice-x:hover { opacity: 1; background: color-mix(in srgb, currentColor 12%, transparent); }
+.notice.is-leaving {
+  transition: opacity .2s var(--ease), transform .2s var(--ease);
+  opacity: 0; transform: translateY(-4px);
+}
+
+/* A form that has been submitted and is waiting. Saving a version or
+   deciding a memory is a round trip, and a button that stays idle for
+   it reads as "nothing happened", so people click again. The label stays
+   put and a spinner joins it, so the row does not jump. The same rule
+   the cloud console has. */
+.btn.is-busy { pointer-events: none; opacity: .7; }
+.btn.is-busy::before {
+  content: ""; flex: none; width: 12px; height: 12px;
+  border: 2px solid currentColor; border-top-color: transparent;
+  border-radius: 50%; animation: btn-spin .6s linear infinite;
+}
+@keyframes btn-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .btn.is-busy::before { animation: none; opacity: .5; }
+}
 
 .empty { text-align: center; padding: 48px 20px; color: var(--text-3); }
 .empty h2 { font-size: var(--t-lg); color: var(--text); margin: 0 0 6px; }

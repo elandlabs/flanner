@@ -33,53 +33,72 @@ function runPageInits() {
 document.addEventListener('DOMContentLoaded', runPageInits);
 document.addEventListener('flanner:page', runPageInits);
 
-// Auto-hide flash messages after 5 seconds, and give each one a dismiss
-// button.
+// Feedback about what you just did (base.html, [data-flash]). The dismiss
+// control is in the markup; this only makes it work, and retires the good
+// news on its own after five seconds. Errors and information stay until
+// they are closed: a message that fades before it is read was the old
+// behaviour, and it applied to errors too.
 //
-// Scoped to the flash region rather than to `.alert` anywhere on the page.
-// It used to match every `.alert`, which included the sidebar's attention
-// badge: the badge grew a stray close button and then faded itself away.
-// Marking the region is what makes that class of collision impossible.
+// Scoped to the flash region rather than to any notice on the page: a
+// standing statement is not feedback and must not go anywhere.
+function retireNotice(notice) {
+    if (notice.dataset.leaving) return;
+    notice.dataset.leaving = '1';
+    notice.classList.add('is-leaving');
+    setTimeout(function () { notice.remove(); }, 220);
+}
+
+once('notice-dismiss', function () {
+    document.addEventListener('click', function (event) {
+        const button = event.target.closest('[data-dismiss]');
+        if (!button) return;
+        const notice = button.closest('.notice');
+        if (notice) retireNotice(notice);
+    });
+});
+
 onPage(function () {
-    const alerts = document.querySelectorAll('[data-flash] .alert');
-    alerts.forEach(alert => {
-        setTimeout(() => {
-            alert.style.transition = 'opacity 0.3s ease-out';
-            alert.style.opacity = '0';
-            setTimeout(() => {
-                alert.remove();
-            }, 300);
-        }, 5000);
+    document.querySelectorAll('[data-flash] .notice.good').forEach(function (notice) {
+        setTimeout(function () { retireNotice(notice); }, 5000);
+    });
+});
+
+// A form that is waiting. Every post here is a round trip, and some of
+// them - saving a version, judging a plan - take a second. An untouched
+// button for that long reads as "nothing happened", so people click it
+// again. The same behaviour the cloud console has.
+once('form-busy', function () {
+    document.addEventListener('submit', function (event) {
+        const form = event.target;
+        if (!(form instanceof HTMLFormElement) || form.dataset.noBusy !== undefined) return;
+        // A hold-to-confirm button's form refuses a submit that was not
+        // held; a refused submit is not a wait.
+        if (event.defaultPrevented) return;
+        // GET forms are the filter and sort controls: boosted navigation
+        // swaps those in place, and nothing would reset the button.
+        if ((form.method || 'get').toLowerCase() === 'get') return;
+        // The plan editor's Save sits in the top bar, outside its form, so
+        // the submitter is the only way to reach it.
+        const button = event.submitter || form.querySelector('button[type="submit"], button:not([type])');
+        if (!button || button.disabled) return;
+
+        // After the event, not during it. Disabling a submit button inside
+        // its own submit handler drops its name and value from the payload,
+        // which would quietly break any form that reads which button was
+        // pressed - the memory queue's Keep and Discard, for one.
+        setTimeout(function () {
+            button.disabled = true;
+            button.classList.add('is-busy');
+        }, 0);
     });
 
-    // Add close button to alerts. Guarded, because a navigation runs this
-    // again over markup that may already carry one.
-    alerts.forEach(alert => {
-        if (alert.querySelector('[data-dismiss]')) return;
-        const closeBtn = document.createElement('button');
-        closeBtn.setAttribute('data-dismiss', '');
-        closeBtn.setAttribute('aria-label', 'Dismiss');
-        closeBtn.type = 'button';
-        closeBtn.innerHTML = '×';
-        closeBtn.style.cssText = `
-            margin-left: auto;
-            background: none;
-            border: none;
-            color: inherit;
-            font-size: 1.5rem;
-            cursor: pointer;
-            padding: 0;
-            width: 1.5rem;
-            height: 1.5rem;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        `;
-        closeBtn.onclick = () => {
-            alert.style.opacity = '0';
-            setTimeout(() => alert.remove(), 300);
-        };
-        alert.appendChild(closeBtn);
+    // Coming back to a cached page would otherwise show a button stuck
+    // disabled from the submit that navigated away from it.
+    window.addEventListener('pageshow', function () {
+        document.querySelectorAll('.is-busy').forEach(function (button) {
+            button.disabled = false;
+            button.classList.remove('is-busy');
+        });
     });
 });
 

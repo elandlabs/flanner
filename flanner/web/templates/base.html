@@ -136,11 +136,21 @@
     </div>
 
     <main id="main" tabindex="-1">
+      {#
+        Feedback about what you just did, as the same notice every page
+        uses for a standing statement, with a dismiss control in the
+        markup rather than one the script builds with inline styles. Only
+        the good news retires itself (app.js); an error stays until it is
+        read and closed.
+      #}
       {% if error or success or info %}
       <div class="pane" data-flash style="padding-bottom: 0">
-        {% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
-        {% if success %}<div class="alert alert-success">{{ success }}</div>{% endif %}
-        {% if info %}<div class="alert alert-info">{{ info }}</div>{% endif %}
+        {% if error %}<div class="notice bad rise-in" role="alert">{{ error }}
+          <button type="button" class="notice-x" data-dismiss aria-label="Dismiss">{{ ico.icon('close', 14) }}</button></div>{% endif %}
+        {% if success %}<div class="notice good rise-in" role="status">{{ success }}
+          <button type="button" class="notice-x" data-dismiss aria-label="Dismiss">{{ ico.icon('close', 14) }}</button></div>{% endif %}
+        {% if info %}<div class="notice info rise-in" role="status">{{ info }}
+          <button type="button" class="notice-x" data-dismiss aria-label="Dismiss">{{ ico.icon('close', 14) }}</button></div>{% endif %}
       </div>
       {% endif %}
       {% block content %}{% endblock %}
