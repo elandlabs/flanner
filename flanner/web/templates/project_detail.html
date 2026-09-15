@@ -40,23 +40,20 @@
 
   {% if said %}<div class="notice info" role="status">{{ said }}</div>{% endif %}
 
-  <div class="card card-pad">
-    <div style="display:flex; align-items:flex-start; gap:16px; flex-wrap:wrap">
-      <div>
-        <div style="font-size:18px; font-weight:700">{{ project.name }}</div>
-        {% if project.description %}
-        <div style="color:var(--text-3); font-size:13px; margin-top:2px">{{ project.description }}</div>
-        {% endif %}
-      </div>
-      <div style="margin-left:auto; display:flex; gap:20px; font-size:12.5px">
-        <div><div style="color:var(--text-4)">Plans</div>
-          <div class="mono tnum" style="font-weight:600">{{ total }}</div></div>
-        <div><div style="color:var(--text-4)">Plan directory</div>
-          <div class="mono">{{ project.plan_directory }}</div></div>
-      </div>
+  {# The page's title, not a card. The name was boxed and 18px, three pixels
+     above the bar's title and read twice; a thing's title is a .page-title
+     in the pane, with the crumb trail above it. #}
+  <div class="page-head">
+    <div>
+      <h1 class="page-title">{{ project.name }}</h1>
+      {% if project.description %}<p class="page-sub">{{ project.description }}</p>{% endif %}
     </div>
+    <dl class="stat-inline">
+      <div><dt>Plans</dt><dd class="mono tnum">{{ total }}</dd></div>
+      <div><dt>Plan directory</dt><dd class="mono">{{ project.plan_directory }}</dd></div>
+    </dl>
     {% if project.project_root %}
-    <div class="filebar" style="margin-top:12px">
+    <div class="filebar">
       <span>Project root:</span><span class="p">{{ project.project_root }}</span>
       {% if project.auto_gitignore %}<span class="ok">.gitignore managed {{ ico.icon('check', 13) }}</span>{% endif %}
     </div>

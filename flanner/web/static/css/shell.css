@@ -372,6 +372,42 @@ a:hover { color: var(--accent-hi); }
   }
 }
 
+/* ------------------------------------------------------- a page's title */
+
+/* A thing's own title, in the pane, with the crumb trail in the bar above.
+   The title used to live in four places at four sizes: 15px in the bar on
+   a list, 19px mono in the pane on a plan, both on a project (18px, in a
+   card), and a whole sentence in the 15px bar on a memory. One rule now:
+   the bar titles a list; a thing gets this. */
+.page-head { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px 24px; }
+.page-head > :first-child { flex: 1 1 24rem; min-width: 0; }
+.page-title {
+  margin: 0; font-size: var(--t-xl); font-weight: 600; letter-spacing: -.01em;
+  overflow-wrap: anywhere;
+}
+.page-sub { margin: 2px 0 0; font-size: var(--t-md); color: var(--text-3); max-width: 66ch; }
+.page-head .filebar { flex-basis: 100%; margin-top: 0; }
+/* A couple of facts beside the title: label over value, as a stat card. */
+.stat-inline { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 4px 0 0; font-size: var(--t-md); }
+.stat-inline dt { color: var(--text-4); font-size: var(--t-sm); }
+.stat-inline dd { margin: 0; font-weight: 600; color: var(--text); }
+
+/* Recent activity: version, what changed, when. Both pages that show it
+   used to draw these rows inline in the template, 9px and 12.5px apiece. */
+.cols-activity { grid-template-columns: 48px 1fr 130px; }
+.cols-activity > .when:last-child { text-align: right; }
+
+/* What needs a decision. Amber, and only while something is waiting: as
+   plain rows these had the quietest treatment on the dashboard, and they
+   are the reason the page exists. Each row is the link. */
+.needs.is-waiting { border-color: var(--aging); background: var(--aging-bg); }
+.needs.is-waiting .card-head { border-bottom-color: rgba(233, 162, 59, .3); }
+.needs-row { grid-template-columns: 1fr auto; color: inherit; }
+.needs.is-waiting .needs-row:hover { background: transparent; }
+.needs-row:hover .name { text-decoration: underline; }
+/* A paragraph of hint text keeps a reading measure, as the card text does. */
+p.hint { max-width: 66ch; }
+
 .stat-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
 .stat { background: var(--card); border: 1px solid var(--border);
         border-radius: var(--r-lg); padding: 16px 20px; }
@@ -1031,8 +1067,10 @@ kbd {
     content: "·"; margin: 0 6px; color: var(--text-4);
   }
   .grid-row > [data-cell="chip"], .plan-file-card > [data-cell="chip"] { position: absolute; right: 16px; top: 12px; }
-  .grid-row:has([data-cell="chip"]) > :first-child,
-  .plan-file-card:has([data-cell="chip"]) > :first-child { padding-right: 64px; }
+  /* The cell that is neither meta nor chip is the name, wherever it sits
+     in source order: the activity rows put the chip first. */
+  .grid-row:has([data-cell="chip"]) > :not([data-cell]),
+  .plan-file-card:has([data-cell="chip"]) > :not([data-cell]) { padding-right: 64px; }
   .grid-row > [data-cell="meta"] .pill { font-size: var(--t-xs); padding: 1px 7px; }
   .m-only { display: inline; }
   .grid-head { display: none; }

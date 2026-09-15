@@ -77,19 +77,14 @@
   {% if recent_activity %}
   <div class="card">
     <div class="card-head">Recent activity</div>
-    <div style="padding: 4px 18px 10px">
-      {% for item in recent_activity %}
-      <div style="display:flex; align-items:center; gap:10px; padding:9px 0;
-                  {% if not loop.first %}border-top:1px solid var(--divider);{% endif %}
-                  font-size:12.5px">
-        <span class="vtag {% if loop.first %}vtag-current{% endif %}">v{{ item.plan_file.current_version }}</span>
-        <a class="name" href="/plans/{{ item.plan_file.id }}">{{ item.plan_file.name }}.md</a>
-        <span style="color:var(--text-3)">updated in {{ item.project.name }}</span>
-        <span style="margin-left:auto; color:var(--text-4); font-size:11.5px">
-          {{ item.updated_at | relative_time }}</span>
-      </div>
-      {% endfor %}
+    {% for item in recent_activity %}
+    <div class="grid-row cols-activity">
+      <span data-cell="chip"><span class="vtag {% if loop.first %}vtag-current{% endif %}">v{{ item.plan_file.current_version }}</span></span>
+      <span><a class="name" href="/plans/{{ item.plan_file.id }}">{{ item.plan_file.name }}.md</a>
+        <span class="when">updated in {{ item.project.name }}</span></span>
+      <span class="when" data-cell="meta">{{ item.updated_at | relative_time }}</span>
     </div>
+    {% endfor %}
   </div>
   {% endif %}
 

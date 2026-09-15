@@ -5,9 +5,13 @@
 <a class="btn back" href="/memory" aria-label="Back to memory" title="Back to memory"><span aria-hidden="true">←</span></a>
 {% endblock %}
 
+{# The bar carries the trail; the title, which is a sentence, is the page
+   heading below, where it has the width to be read. #}
 {% block topbar_main %}
-<h1>{{ memory.title }}</h1>
-<span class="sub">{{ memory.category }} · {{ memory.scope }} · {{ memory.status }}</span>
+<nav class="crumbs" aria-label="Breadcrumb">
+    <a href="/memory">Memory</a><span class="sep">/</span>
+    <span class="here">{{ memory.title | truncate(48, True, '…') }}</span>
+  </nav>
 {% endblock %}
 
 {% block topbar_actions %}
@@ -33,6 +37,11 @@
 #}
 {% block content %}
 <div class="pane">
+
+  <div class="page-head">
+    <h1 class="page-title">{{ memory.title }}</h1>
+    <p class="page-sub">{{ memory.category }} · {{ memory.scope }} · {{ memory.status }}</p>
+  </div>
 
   {% if said %}
   <div class="notice">{{ said }}</div>
