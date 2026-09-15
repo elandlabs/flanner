@@ -2396,6 +2396,7 @@ def list_memories(
     status: str | None = "active",
     limit: int | None = None,
     offset: int = 0,
+    order: str = "newest",
 ) -> list[MemoryModel]:
     """Memories matching every filter given, newest first; optionally a page.
 
@@ -2412,7 +2413,12 @@ def list_memories(
         query = query.filter_by(category=category)
     if status is not None:
         query = query.filter_by(status=status)
-    query = query.order_by(MemoryModel.created_at.desc(), MemoryModel.id)
+    if order == "oldest":
+        query = query.order_by(MemoryModel.created_at.asc(), MemoryModel.id)
+    elif order == "title":
+        query = query.order_by(MemoryModel.title.asc(), MemoryModel.id)
+    else:
+        query = query.order_by(MemoryModel.created_at.desc(), MemoryModel.id)
     if offset:
         query = query.offset(offset)
     if limit is not None:
@@ -2445,11 +2451,21 @@ def list_memory_events(session: Session, memory_id: uuid.UUID) -> list[MemoryEve
     )
 
 
-def count_memories(session: Session, *, status: str | None = "active") -> int:
-    """How many memories there are, for the nav badge."""
+def count_memories(
+    session: Session,
+    *,
+    status: str | None = "active",
+    category: str | None = None,
+    scope: str | None = None,
+) -> int:
+    """How many memories match, for the nav badge and for paging a filtered list."""
     query = session.query(MemoryModel)
     if status is not None:
         query = query.filter_by(status=status)
+    if category is not None:
+        query = query.filter_by(category=category)
+    if scope is not None:
+        query = query.filter_by(scope=scope)
     return int(query.count())
 
 

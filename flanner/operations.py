@@ -265,6 +265,7 @@ OPERATIONS: tuple[Operation, ...] = (
         "write",
         cli=("mem remember",),
         mcp=("memory_remember",),
+        web=("POST /memory/new",),
     ),
     _op(
         "memory",
@@ -295,6 +296,7 @@ OPERATIONS: tuple[Operation, ...] = (
         "write",
         cli=("mem supersede",),
         mcp=("memory_supersede",),
+        web=("POST /memory/{memory_id}/supersede",),
     ),
     _op(
         "memory",
@@ -302,6 +304,7 @@ OPERATIONS: tuple[Operation, ...] = (
         "write",
         cli=("mem forget",),
         mcp=("memory_forget",),
+        web=("POST /memory/{memory_id}/forget",),
     ),
     _op(
         "memory",
@@ -396,6 +399,7 @@ OPERATIONS: tuple[Operation, ...] = (
         "Bring back a forgotten memory",
         "write",
         cli=("mem restore",),
+        web=("POST /memory/{memory_id}/restore",),
         mcp=("request_action",),
         mcp_since="0.13.0",
         note="An agent only asks, with a preview. You apply it with `flanner actions apply`.",

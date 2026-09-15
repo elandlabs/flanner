@@ -2781,34 +2781,67 @@ async def integrations_page(request: Request) -> HTMLResponse:
 # --- memory ------------------------------------------------------------------
 
 
-@app.get("/memory", response_class=HTMLResponse)
-async def memory_page(request: Request, q: str = "", status: str = "active") -> HTMLResponse:
-    """Everything remembered on this machine, searchable.
+#: How the memory list can be ordered, with the label a person sees.
+MEMORY_SORTS = {"newest": "Newest first", "oldest": "Oldest first", "title": "By title"}
 
-    One page for both browsing and searching, because the difference is a
+
+@app.get("/memory", response_class=HTMLResponse)
+async def memory_page(
+    request: Request,
+    q: str = "",
+    status: str = "active",
+    category: str = "",
+    scope: str = "",
+    sort: str = "newest",
+    said: str = "",
+) -> HTMLResponse:
+    """Everything remembered on this machine: searched, filtered, sorted and paged.
+
+    One page for browsing and searching, because the difference is a
     filled-in box and splitting them would mean two places that decide what
-    a memory row looks like.
+    a memory row looks like. A filter naming no real status, category or
+    scope falls back rather than erroring, since it arrives from a query
+    string. A search keeps its own ranking, so sorting applies to browsing;
+    the category and scope filters still narrow a search.
     """
     ensure_db()
     session = get_session()
     from . import memory_ops
+    from .database import MEMORY_CATEGORIES, MEMORY_SCOPES, MEMORY_STATUSES
     from .database import count_memories as db_count_memories
     from .database import list_memories as db_list_memories
+
+    status = status if status in (*MEMORY_STATUSES, "all") else "active"
+    category = category if category in MEMORY_CATEGORIES else ""
+    scope = scope if scope in MEMORY_SCOPES else ""
+    sort = sort if sort in MEMORY_SORTS else "newest"
+    shown_status = None if status == "all" else status
 
     if q:
         # `search_all`, not `recall`. Recall's scope is a boundary for an
         # agent; this page already lists every project's memories beside
         # the box, and a search that returned fewer than the list shows
         # would read as broken.
-        rows = await run_in_threadpool(
+        found = await run_in_threadpool(
             functools.partial(memory_ops.search_all, session, query=q, limit=50)
         )
+        rows = [
+            row
+            for row in found
+            if (not category or row.get("category") == category)
+            and (not scope or row.get("scope") == scope)
+        ]
         reason = True
         pager_extra: dict[str, Any] = {}
     else:
-        shown_status = None if status == "all" else status
         total = await run_in_threadpool(
-            functools.partial(db_count_memories, session, status=shown_status)
+            functools.partial(
+                db_count_memories,
+                session,
+                status=shown_status,
+                category=category or None,
+                scope=scope or None,
+            )
         )
         page, per, offset = _paging(request, total)
         rows = [
@@ -2818,6 +2851,7 @@ async def memory_page(request: Request, q: str = "", status: str = "active") -> 
                 "summary": m.body[:240],
                 "category": m.category,
                 "scope": m.scope,
+                "status": m.status,
                 "confidence": m.confidence,
                 "created_by": m.created_by,
                 "created_at": m.created_at.isoformat() + "Z" if m.created_at else None,
@@ -2825,7 +2859,14 @@ async def memory_page(request: Request, q: str = "", status: str = "active") -> 
             }
             for m in await run_in_threadpool(
                 functools.partial(
-                    db_list_memories, session, status=shown_status, limit=per, offset=offset
+                    db_list_memories,
+                    session,
+                    status=shown_status,
+                    category=category or None,
+                    scope=scope or None,
+                    order=sort,
+                    limit=per,
+                    offset=offset,
                 )
             )
         ]
@@ -2839,12 +2880,108 @@ async def memory_page(request: Request, q: str = "", status: str = "active") -> 
             "rows": rows,
             "query": q,
             "status": status,
+            "category": category,
+            "scope": scope,
+            "sort": sort,
+            "said": said,
+            "statuses": MEMORY_STATUSES,
+            "categories": MEMORY_CATEGORIES,
+            "scopes": MEMORY_SCOPES,
+            "sorts": MEMORY_SORTS,
+            "project": await run_in_threadpool(memory_ops.resolve_project, session),
             "show_reason": reason,
             **pager_extra,
             "summary": await run_in_threadpool(memory_ops.summary, session),
             **_nav(session),
         },
     )
+
+
+@app.post("/memory/new")
+async def memory_new_form(
+    content: str = Form(...),
+    category: str = Form(...),
+    scope: str = Form("project"),
+    title: str = Form(""),
+) -> RedirectResponse:
+    """Save a memory from the page, as `flanner mem remember` does.
+
+    Through the same service, so the capture policy and the credential guard
+    apply, and a duplicate returns the memory already kept. A project memory
+    belongs to the repository flanner web is running in.
+    """
+    ensure_db()
+    result = await run_in_threadpool(
+        functools.partial(
+            dispatch,
+            "memory_remember",
+            {
+                "content": content,
+                "category": category,
+                "scope": scope,
+                "title": title.strip() or None,
+                "created_by": "web",
+            },
+        )
+    )
+    said = quote(str(result.get("message", "")))
+    if result.get("error") or not result.get("id"):
+        return RedirectResponse(f"/memory?said={said}", status_code=303)
+    return RedirectResponse(f"/memory/{result['id']}?said={said}", status_code=303)
+
+
+@app.post("/memory/{memory_id}/forget")
+async def memory_forget_form(memory_id: str, reason: str = Form("")) -> RedirectResponse:
+    """Stop recalling a memory, as `flanner mem forget` does. Never a purge."""
+    ensure_db()
+    result = await run_in_threadpool(
+        functools.partial(
+            dispatch,
+            "memory_forget",
+            {"memory_id": memory_id, "reason": reason, "purge": False, "created_by": "web"},
+        )
+    )
+    said = quote(str(result.get("message", "")))
+    return RedirectResponse(f"/memory/{memory_id}?said={said}", status_code=303)
+
+
+@app.post("/memory/{memory_id}/restore")
+async def memory_restore_form(memory_id: str) -> RedirectResponse:
+    """Bring back a forgotten or expired memory, as `flanner mem restore` does.
+
+    A person on this page restores directly, as at the terminal. It is an
+    agent that has to ask, through `request_action`.
+    """
+    ensure_db()
+    result = await run_in_threadpool(
+        functools.partial(
+            dispatch, "memory_restore", {"memory_id": memory_id, "created_by": "web"}
+        )
+    )
+    said = quote(str(result.get("message", "")))
+    return RedirectResponse(f"/memory/{memory_id}?said={said}", status_code=303)
+
+
+@app.post("/memory/{memory_id}/supersede")
+async def memory_supersede_form(
+    memory_id: str, content: str = Form(...), reason: str = Form("")
+) -> RedirectResponse:
+    """Correct a memory by saving a new version, as `flanner mem supersede` does.
+
+    The old memory is kept and marked replaced, so what was believed before
+    stays readable. The page moves to the new version.
+    """
+    ensure_db()
+    result = await run_in_threadpool(
+        functools.partial(
+            dispatch,
+            "memory_supersede",
+            {"memory_id": memory_id, "content": content, "reason": reason, "created_by": "web"},
+        )
+    )
+    said = quote(str(result.get("message", "")))
+    landing = memory_id if result.get("error") else str(result.get("id") or memory_id)
+    return RedirectResponse(f"/memory/{landing}?said={said}", status_code=303)
 
 
 @app.post("/memory/mode")

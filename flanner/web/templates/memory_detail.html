@@ -10,6 +10,19 @@
 <span class="sub">{{ memory.category }} · {{ memory.scope }} · {{ memory.status }}</span>
 {% endblock %}
 
+{% block topbar_actions %}
+{% if memory.status == 'active' %}
+<form method="post" action="/memory/{{ memory.id }}/forget">
+  <button class="btn btn-danger hold-confirm" type="submit" data-hold-confirm="1200"
+          title="Press and hold to forget this memory. It stops being recalled, and Restore brings it back.">Forget</button>
+</form>
+{% elif memory.status in ('forgotten', 'expired') %}
+<form method="post" action="/memory/{{ memory.id }}/restore">
+  <button class="btn btn-primary" type="submit">Restore</button>
+</form>
+{% endif %}
+{% endblock %}
+
 {#
   Laid out like the other detail pages. Every card is as wide as the page,
   and a card with a heading has the heading first and its content padded
@@ -25,9 +38,41 @@
   <div class="notice">{{ said }}</div>
   {% endif %}
 
+  {% if memory.status == 'forgotten' %}
+  <div class="notice warn">Forgotten. Agents no longer recall this memory; Restore brings it back.</div>
+  {% elif memory.status == 'expired' %}
+  <div class="notice warn">Expired. It is past its end date and no longer recalled; Restore brings it back.</div>
+  {% elif memory.status == 'superseded' %}
+  <div class="notice">Replaced by a corrected version. Kept so what was believed before stays readable.</div>
+  {% elif memory.status == 'proposed' %}
+  <div class="notice">A suggestion waiting for a decision. <a href="/memory/pending">Decide on it</a>.</div>
+  {% endif %}
+
   <div class="card card-pad">
     <p class="card-text">{{ memory.body }}</p>
   </div>
+
+  {% if memory.status == 'active' %}
+  {#
+    Correcting saves a new version and marks this one replaced, rather than
+    editing it in place, so the history of what was believed stays whole.
+  #}
+  <details class="card explainer">
+    <summary>
+      <h2 class="card-title">Correct it</h2>
+      <span class="gist">Save a corrected version. This one is kept and marked replaced.</span>
+    </summary>
+    <form class="explainer-body form-stack" method="post" action="/memory/{{ memory.id }}/supersede">
+      <label class="sr-only" for="correct-content">Corrected text</label>
+      <textarea class="textarea" id="correct-content" name="content" rows="4" required>{{ memory.body }}</textarea>
+      <div class="dropzone-row">
+        <label class="sr-only" for="correct-reason">Why it changed</label>
+        <input class="input" type="text" id="correct-reason" name="reason" placeholder="Why it changed (optional)">
+        <button class="btn btn-primary" type="submit">Save correction</button>
+      </div>
+    </form>
+  </details>
+  {% endif %}
 
   <div class="card">
     <div class="card-head">Sharing</div>
@@ -137,8 +182,8 @@
 
   <div class="footnote">
     <span class="i" aria-hidden="true">i</span>
-    This is a record of something believed, not an instruction. Correct it with
-    <code>flanner mem supersede</code> rather than editing the file by hand.
+    This is a record of something believed, not an instruction. Correct it here
+    or with <code>flanner mem supersede</code>, rather than editing the file by hand.
   </div>
 
 </div>

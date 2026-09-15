@@ -8,16 +8,73 @@
 {% endblock %}
 
 {% block topbar_actions %}
+{#
+  Search, filters and sort in one form, so each keeps the others when it
+  changes. The selects submit as soon as they change; the button is for the
+  search box and for a browser without the script.
+#}
 <form method="get" action="/memory" class="listctl">
   <label class="sr-only" for="memq">Search memory</label>
   <input class="input input-sm" type="search" id="memq" name="q" value="{{ query }}"
          placeholder="Search memory…" autocomplete="off" spellcheck="false">
+  <label class="sr-only" for="mem-status">Status</label>
+  <select class="btn btn-sm" id="mem-status" name="status" data-auto-submit>
+    {% for value in statuses %}<option value="{{ value }}"{% if value == status %} selected{% endif %}>{{ value | capitalize }}</option>{% endfor %}
+    <option value="all"{% if status == 'all' %} selected{% endif %}>Every status</option>
+  </select>
+  <label class="sr-only" for="mem-category">Category</label>
+  <select class="btn btn-sm" id="mem-category" name="category" data-auto-submit>
+    <option value="">Every category</option>
+    {% for value in categories %}<option value="{{ value }}"{% if value == category %} selected{% endif %}>{{ value | replace('_', ' ') | capitalize }}</option>{% endfor %}
+  </select>
+  <label class="sr-only" for="mem-scope">Scope</label>
+  <select class="btn btn-sm" id="mem-scope" name="scope" data-auto-submit>
+    <option value="">Every scope</option>
+    {% for value in scopes %}<option value="{{ value }}"{% if value == scope %} selected{% endif %}>{{ value | capitalize }}</option>{% endfor %}
+  </select>
+  <label class="sr-only" for="mem-sort">Sort</label>
+  <select class="btn btn-sm" id="mem-sort" name="sort" data-auto-submit{% if query %} disabled title="A search is ordered by how well each memory matches"{% endif %}>
+    {% for value, label in sorts.items() %}<option value="{{ value }}"{% if value == sort %} selected{% endif %}>{{ label }}</option>{% endfor %}
+  </select>
   <button class="btn btn-sm btn-primary">Search</button>
 </form>
 {% endblock %}
 
 {% block content %}
 <div class="pane">
+
+  {% if said %}<div class="notice" role="status">{{ said }}</div>{% endif %}
+
+  {#
+    Remembering from the page, closed until wanted: most visits are to read.
+    A project memory belongs to the repository flanner web runs in, so the
+    choice says which one that is, or why there is none.
+  #}
+  <details class="card explainer">
+    <summary>
+      <h2 class="card-title">Remember something</h2>
+      <span class="gist">A decision, a constraint or a lesson a later session should not have to be told again.</span>
+    </summary>
+    <form class="explainer-body form-stack" method="post" action="/memory/new">
+      <label class="sr-only" for="new-content">What to remember</label>
+      <textarea class="textarea" id="new-content" name="content" rows="3" required
+                placeholder="We deploy on Tuesdays, because Monday is when support is busiest."></textarea>
+      <div class="dropzone-row">
+        <label class="sr-only" for="new-category">Category</label>
+        <select class="input" id="new-category" name="category">
+          {% for value in categories %}<option value="{{ value }}"{% if value == 'decision' %} selected{% endif %}>{{ value | replace('_', ' ') | capitalize }}</option>{% endfor %}
+        </select>
+        <label class="sr-only" for="new-scope">Scope</label>
+        <select class="input" id="new-scope" name="scope">
+          <option value="project"{% if not project %} disabled{% else %} selected{% endif %}>
+            {% if project %}Project: {{ project.name }}{% else %}Project (web is not running inside one){% endif %}</option>
+          <option value="personal"{% if not project %} selected{% endif %}>Personal: you, across projects</option>
+        </select>
+        <button class="btn btn-primary" type="submit">Remember</button>
+      </div>
+      <p class="hint">Checked against this project's memory policy, and refused if it looks like a credential.</p>
+    </form>
+  </details>
 
   {% if nav_memory_pending %}
   <div class="notice info" style="margin-bottom:14px">
@@ -42,7 +99,8 @@
     </div>
     {% for row in rows %}
     <div class="grid-row {{ 'cols-memory-reasoned' if show_reason else 'cols-memory' }}" data-list-item>
-      <span><a href="/memory/{{ row.id }}">{{ row.title }}</a>
+      <span><a href="/memory/{{ row.id }}">{{ row.title }}</a>{% if row.status and row.status != 'active' %}
+        <span class="pill pill-quiet">{{ row.status }}</span>{% endif %}
         <span class="hint">{{ row.summary }}</span></span>
       <span><span class="pill pill-{{ row.category }}">{{ row.category }}</span></span>
       <span class="muted">{{ row.scope }}</span>
