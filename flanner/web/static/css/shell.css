@@ -234,6 +234,20 @@ a:hover { color: var(--accent-hi); }
 .btn-quiet { background: transparent; border-color: transparent; }
 .btn-danger { color: var(--stale-text); border-color: var(--border); }
 .btn-danger:hover { color: var(--stale-text); border-color: var(--stale-text); }
+
+/* Press and hold to confirm something that cannot be undone. The fill runs
+   for the hold time and drops back if the button is let go early. It
+   replaces confirm(), a box people dismiss by reflex. */
+.hold-confirm { position: relative; overflow: hidden; isolation: isolate; touch-action: none; user-select: none; }
+.hold-confirm::before {
+  content: ""; position: absolute; inset: 0; z-index: -1;
+  background: var(--stale-bg); transform: scaleX(0); transform-origin: left;
+}
+.hold-confirm.is-holding::before { transform: scaleX(1); transition: transform var(--hold-ms, 1200ms) linear; }
+.hold-confirm.is-holding, .hold-confirm.is-confirmed { border-color: var(--stale-text); }
+@media (prefers-reduced-motion: reduce) {
+  .hold-confirm.is-holding::before { transition: none; transform: scaleX(1); }
+}
 .btn-accent { color: var(--accent-ink); border-color: var(--accent-line); }
 .btn-accent:hover { color: var(--accent-ink-hi); border-color: var(--accent); }
 .btn-sm { font-size: 11.5px; padding: 3px 9px; }

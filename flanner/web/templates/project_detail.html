@@ -27,9 +27,9 @@
       <option value="version:desc">Sort: Version</option>
     </select>
 </div>
-    <form method="post" action="/projects/{{ project.id }}/delete"
-          onsubmit="return confirm('Delete {{ project.name }}? Plan files on disk are left alone.')">
-      <button class="btn btn-danger" type="submit">Delete project</button>
+    <form method="post" action="/projects/{{ project.id }}/delete">
+      <button class="btn btn-danger hold-confirm" type="submit" data-hold-confirm="1200"
+              title="Press and hold to delete {{ project.name }}. Plan files on disk are left alone.">Delete project</button>
     </form>
     <a class="btn btn-primary" href="/projects/{{ project.id }}/plans/new">New plan</a>
 {% endblock %}

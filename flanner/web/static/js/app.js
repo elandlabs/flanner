@@ -1496,3 +1496,63 @@ onPage(function () {
         key.textContent = '⌘K';
     });
 });
+
+// Press and hold to confirm something that cannot be undone.
+//
+// Replaces confirm(), which people dismiss by reflex. The button fills while
+// it is held and submits when the fill completes; letting go early cancels
+// and says what to do. Space and Enter held down work the same way, so the
+// keyboard is not left out. Without the script it is an ordinary button.
+onPage(function () {
+    document.querySelectorAll('[data-hold-confirm]').forEach(function (button) {
+        if (button.dataset.holdReady || !button.form) return;
+        button.dataset.holdReady = '1';
+        const form = button.form;
+        const ms = parseInt(button.dataset.holdConfirm, 10) || 1200;
+        const action = button.textContent.trim().toLowerCase();
+        let timer = null;
+        button.style.setProperty('--hold-ms', ms + 'ms');
+
+        function start(event) {
+            event.preventDefault();
+            if (timer) return;
+            button.classList.add('is-holding');
+            timer = setTimeout(function () {
+                timer = null;
+                button.classList.remove('is-holding');
+                button.classList.add('is-confirmed');
+                button.dataset.held = '1';
+                form.requestSubmit();
+            }, ms);
+        }
+        function cancel(explain) {
+            if (!timer) return;
+            clearTimeout(timer);
+            timer = null;
+            button.classList.remove('is-holding');
+            if (explain) showNotification('Hold the button to ' + action + '.', 'info');
+        }
+        const held = function (event) { return event.key === ' ' || event.key === 'Enter'; };
+
+        button.addEventListener('pointerdown', function (event) {
+            if (event.button === 0) start(event);
+        });
+        button.addEventListener('pointerup', function () { cancel(true); });
+        button.addEventListener('pointerleave', function () { cancel(false); });
+        button.addEventListener('pointercancel', function () { cancel(false); });
+        button.addEventListener('keydown', function (event) {
+            if (!held(event)) return;
+            if (event.repeat) { event.preventDefault(); return; }
+            start(event);
+        });
+        button.addEventListener('keyup', function (event) {
+            if (held(event)) cancel(true);
+        });
+        button.addEventListener('click', function (event) {
+            if (!button.dataset.held) event.preventDefault();
+        });
+        form.addEventListener('submit', function (event) {
+            if (!button.dataset.held) event.preventDefault();
+        });
+    });
+});

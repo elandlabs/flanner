@@ -171,7 +171,8 @@
       </form>
       <form method="post" action="/skills/purge">
         <input type="hidden" name="scope" value="project">
-        <button class="btn btn-sm">Delete what was recorded</button>
+        <button class="btn btn-sm btn-danger hold-confirm" type="submit" data-hold-confirm="1200"
+                title="Press and hold to delete the recorded skill use">Delete what was recorded</button>
       </form>
       <span class="hint">Keeping {{ scope_row.retention_days }} days ·
         {{ scope_row.observations }} recorded
