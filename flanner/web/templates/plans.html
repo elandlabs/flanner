@@ -39,12 +39,12 @@
            data-version="{{ row.plan_file.current_version }}"
            data-updated="{{ row.plan_file.updated_at.isoformat() if row.plan_file.updated_at }}">
         <span><a class="name" href="/plans/{{ row.plan_file.id }}">{{ row.plan_file.name }}.md</a></span>
-        <span><span class="vtag">v{{ row.plan_file.current_version }}</span></span>
-        <span class="when">
+        <span data-cell="chip"><span class="vtag">v{{ row.plan_file.current_version }}</span></span>
+        <span class="when" data-cell="meta">
           {% if row.project %}<a href="/projects/{{ row.project.id }}">{{ row.project.name }}</a>
           {% else %}—{% endif %}</span>
-        <span class="when">{{ row.plan_file.created_by or 'user' }}</span>
-        <span class="when">{{ row.plan_file.updated_at | relative_time }}</span>
+        <span class="when" data-cell="meta">{{ row.plan_file.created_by or 'user' }}</span>
+        <span class="when" data-cell="meta">{{ row.plan_file.updated_at | relative_time }}</span>
       </div>
       {% endfor %}
       </div>

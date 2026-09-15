@@ -107,11 +107,11 @@
       <span><a class="name" href="/skills/{{ row.name | urlencode }}">{{ row.name }}</a>
         {% if not row.effective %}<span class="pill pill-quiet">shadowed</span>{% endif %}
         <span class="path path-tail" title="{{ row.directory }}">{{ row.directory }}</span></span>
-      <span class="muted">{{ row.agent }}</span>
-      <span class="muted">{{ row.scope }}</span>
-      <span class="muted">{{ row.plugin or row.scope }}</span>
+      <span class="muted" data-cell="meta">{{ row.agent }}</span>
+      <span class="muted" data-cell="meta">{{ row.scope }}</span>
+      <span class="muted" data-cell="meta">{{ row.plugin or row.scope }}</span>
       <span class="hint clamp2">{{ row.description or '—' }}</span>
-      <span class="when tnum">{{ row.file_count }} files</span>
+      <span class="when tnum" data-cell="meta">{{ row.file_count }} files</span>
     </div>
     {% endfor %}
     {% include "_pager.html" %}

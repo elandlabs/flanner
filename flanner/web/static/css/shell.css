@@ -1016,16 +1016,48 @@ kbd {
    per row, and long values wrap instead of widening the page. */
 @media (max-width: 900px) {
   .pane, .plan-main { padding-left: 16px; padding-right: 16px; }
-  .cols-projects, .cols-freshness, .cols-plans, .cols-history,
-  .cols-recent, .cols-links, .cols-peers, .cols-wsaccess, .cols-review,
-  .cols-memory, .cols-memory-reasoned,
-  .cols-skills, .cols-findings, .cols-usage, .cols-installs,
-  .cols-proposals, .cols-clusters, .cols-matrix, .cols-transfers, .cols-actions,
-  .cols-attachments, .cols-events,
-  .plan-file-card { grid-template-columns: 1fr; gap: 6px; }
+  /* A row is a block, not a one-column grid. Every cell used to become a
+     line of its own, so a plan was five lines and 156px: name, chip,
+     project, author, time. The name and whatever is under it stay a
+     block; cells marked `meta` run on as one line joined by dots; a cell
+     marked `chip` sits at the top right. Templates say which is which. */
+  .grid-row, .plan-file-card { display: block; position: relative; padding: 12px 16px; }
+  .grid-row > *, .plan-file-card > * { display: block; }
+  .grid-row > [data-cell="meta"], .plan-file-card > [data-cell="meta"] {
+    display: inline; font-size: 12px; color: var(--text-3); font-family: var(--font-sans); font-weight: 400;
+  }
+  .grid-row > [data-cell="meta"] + [data-cell="meta"]::before,
+  .plan-file-card > [data-cell="meta"] + [data-cell="meta"]::before {
+    content: "·"; margin: 0 6px; color: var(--text-4);
+  }
+  .grid-row > [data-cell="chip"], .plan-file-card > [data-cell="chip"] { position: absolute; right: 16px; top: 12px; }
+  .grid-row:has([data-cell="chip"]) > :first-child,
+  .plan-file-card:has([data-cell="chip"]) > :first-child { padding-right: 64px; }
+  .grid-row > [data-cell="meta"] .pill { font-size: 11px; padding: 1px 7px; }
+  .m-only { display: inline; }
   .grid-head { display: none; }
   .input, .doc, .raw-content { max-width: 100%; }
   .input[role="text"] { overflow-wrap: anywhere; }
+}
+/* Words a phone row needs that a table header carried on a wide screen. */
+.m-only { display: none; }
+
+@media (max-width: 700px) {
+  /* Five stat cards in two columns left one alone on a third row, and it
+     was the defect count. An odd last card spans the row instead. */
+  .stat-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .stat:last-child:nth-child(odd) { grid-column: 1 / -1; }
+  .stat .v { font-size: 20px; }
+}
+
+@media (max-width: 600px) {
+  /* The document keeps its reading padding on a 343px card, which left 279px
+     of text: 34 characters of mono a line. The card's border is frame enough. */
+  .doc, .raw-content { padding: 16px; }
+  .plan-head .title { font-size: 16px; }
+  .vpicker .field-label { display: none; }
+  /* The explainer's one-line gist is a second line on a phone; the title says enough. */
+  .explainer > summary .gist { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1590,6 +1622,18 @@ code { overflow-wrap: anywhere; }
    script could not hide a panel whose own display rule is flex. */
 .tab-stack { display: flex; flex-direction: column; gap: 20px; }
 .tab-stack[hidden] { display: none; }
+/* On a phone the strip stays on one row and scrolls, with a fade to say
+   so. Wrapped, the Health tab and its red count were the ones that fell
+   onto a second line by themselves. After `.tabs`, which it overrides. */
+@media (max-width: 700px) {
+  .tabs {
+    flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none;
+    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
+    mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
+  }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab { flex: none; }
+}
 
 /* ---------------------------------------------------- usage, drawn */
 

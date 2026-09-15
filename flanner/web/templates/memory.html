@@ -102,10 +102,10 @@
       <span><a href="/memory/{{ row.id }}">{{ row.title }}</a>{% if row.status and row.status != 'active' %}
         <span class="pill pill-quiet">{{ row.status }}</span>{% endif %}
         <span class="hint">{{ row.summary }}</span></span>
-      <span><span class="pill pill-{{ row.category }}">{{ row.category }}</span></span>
-      <span class="muted">{{ row.scope }}</span>
-      <span class="muted">{{ row.created_by }}</span>
-      {% if show_reason %}<span class="muted">{{ row.match_reason }}</span>{% endif %}
+      <span data-cell="meta"><span class="pill pill-{{ row.category }}">{{ row.category }}</span></span>
+      <span class="muted" data-cell="meta">{{ row.scope }}</span>
+      <span class="muted" data-cell="meta">{{ row.created_by }}</span>
+      {% if show_reason %}<span class="muted" data-cell="meta">{{ row.match_reason }}</span>{% endif %}
     </div>
     {% endfor %}
     {% if not query %}{% include "_pager.html" %}{% endif %}

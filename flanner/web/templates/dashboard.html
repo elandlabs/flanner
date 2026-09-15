@@ -43,9 +43,9 @@
           <a class="name" href="/projects/{{ project.id }}">{{ project.name }}</a>
           {% if project.description %}<div class="sub">{{ project.description }}</div>{% endif %}
         </span>
-        <span class="path tnum">{{ plan_counts.get(project.id, 0) }} plans</span>
-        <span class="path">{{ project.plan_directory }}</span>
-        <span class="when">{{ project.created_at.strftime('%d %b %Y') if project.created_at }}</span>
+        <span class="path tnum" data-cell="meta">{{ plan_counts.get(project.id, 0) }} plans</span>
+        <span class="path" data-cell="meta">{{ project.plan_directory }}</span>
+        <span class="when" data-cell="meta">{{ project.created_at.strftime('%d %b %Y') if project.created_at }}</span>
       </div>
       {% endfor %}
     </div>

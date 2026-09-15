@@ -50,9 +50,9 @@
       </div>
       {% for row in rows %}
       <div class="grid-row cols-actions">
-        <span class="when">{{ (row.at or '')[:16] | replace('T', ' ') }}</span>
-        <span class="when">{{ row.surface }}</span>
-        <span class="when cell-cut" title="{{ row.person }}">{{ row.person }}</span>
+        <span class="when" data-cell="meta">{{ (row.at or '')[:16] | replace('T', ' ') }}</span>
+        <span class="when" data-cell="meta">{{ row.surface }}</span>
+        <span class="when cell-cut" data-cell="meta" title="{{ row.person }}">{{ row.person }}</span>
         <span>{{ row.subject or row.operation }}
           {% if row.decided_by %}<span class="hint">decided by {{ row.decided_by }} in the {{ row.decided_surface }}</span>{% endif %}
           {% if row.state in ('failed', 'stale') and row.message %}<span class="hint">{{ row.message }}</span>{% endif %}</span>
@@ -61,7 +61,7 @@
           {% elif row.state in ('failed', 'stale') %}<span class="pill pill-stale">{{ row.state }}</span>
           {% else %}<span class="pill pill-quiet">{{ row.state }}</span>{% endif %}
         </span>
-        <span><code>{{ row.id[:8] }}</code></span>
+        <span data-cell="meta"><code>{{ row.id[:8] }}</code></span>
       </div>
       {% endfor %}
       {% include "_pager.html" %}

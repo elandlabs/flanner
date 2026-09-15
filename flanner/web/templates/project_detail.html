@@ -100,14 +100,14 @@
            data-version="{{ plan_file.current_version }}"
            data-updated="{{ plan_file.updated_at.isoformat() if plan_file.updated_at }}">
         <span><a class="name" href="/plans/{{ plan_file.id }}">{{ plan_file.name }}.md</a></span>
-        <span><span class="vtag">v{{ plan_file.current_version }}</span></span>
-        <span>
+        <span data-cell="chip"><span class="vtag">v{{ plan_file.current_version }}</span></span>
+        <span data-cell="meta">
           {% set lc = linear_counts.get(plan_file.id|string) %}
           {% if lc %}<span class="pill pill-quiet linear-marker">Linear ×{{ lc }}</span>{% else %}
           <span class="sub">—</span>{% endif %}
         </span>
-        <span class="when">{{ plan_file.created_by or 'user' }}</span>
-        <span class="when">{{ plan_file.updated_at | relative_time }}</span>
+        <span class="when" data-cell="meta">{{ plan_file.created_by or 'user' }}</span>
+        <span class="when" data-cell="meta">{{ plan_file.updated_at | relative_time }}</span>
       </div>
       {% endfor %}
       </div>

@@ -19,7 +19,7 @@
   <span class="evidence">
     {% for reason in row.reasons %}{{ reason }}{% if not loop.last %} · {% endif %}{% endfor %}
   </span>
-  <span class="when">{{ row.project.name if row.project else '—' }}</span>
+  <span class="when" data-cell="meta">{{ row.project.name if row.project else '—' }}</span>
   <span style="display:flex; gap:6px; justify-self:end">
     <a class="btn btn-sm btn-accent" href="/plans/{{ row.plan_file.id }}/edit" data-no-boost>Revise</a>
     <a class="btn btn-sm" href="/plans/{{ row.plan_file.id }}">Review</a>

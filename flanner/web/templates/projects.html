@@ -49,16 +49,16 @@
           <a class="name" href="/projects/{{ project.id }}">{{ project.name }}</a>
           {% if project.description %}<div class="sub">{{ project.description }}</div>{% endif %}
         </span>
-        <span class="path tnum">{{ plan_counts.get(project.id, 0) }}</span>
-        <span class="path path-tail" title="{{ project.project_root or '' }}/{{ project.plan_directory }}">
+        <span class="path tnum" data-cell="meta">{{ plan_counts.get(project.id, 0) }}<span class="m-only"> plans</span></span>
+        <span class="path path-tail" data-cell="meta" title="{{ project.project_root or '' }}/{{ project.plan_directory }}">
           {{ project.plan_directory }}</span>
-        <span>
+        <span data-cell="meta">
           {# Filled by app.js from /projects/freshness-mix. Computing it here
              walked every plan in every project, several git processes each,
              in front of the first byte of this page. #}
           <span class="dots" data-mix="{{ project.id }}"><span class="sub">—</span></span>
         </span>
-        <span class="when">{{ project.updated_at | relative_time if project.updated_at
+        <span class="when" data-cell="meta">{{ project.updated_at | relative_time if project.updated_at
                               else project.created_at | relative_time }}</span>
       </div>
       {% endfor %}
