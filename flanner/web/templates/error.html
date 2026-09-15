@@ -1,16 +1,58 @@
 {% extends "base.html" %}
-{% block title %}{{ status_label }}{% endblock %}
+{% set heading = 'Page not found' if status_code == 404 else status_label %}
+{% block title %}{{ heading }}{% endblock %}
 
 {% block topbar_main %}
-<h1>{{ status_label }}</h1>
+<h1>{{ heading }}</h1>
 {% endblock %}
 
+{#
+  One page for every error a browser meets. A 404 gets the most help,
+  because it is the one a stale link leads to: a plan retired, a memory
+  forgotten, a project deleted, or a teammate's link to something not
+  synced to this machine yet. It says which address was asked for, and
+  offers the places people most often meant.
+#}
 {% block content %}
-<div class="pane">
+<div class="pane narrow">
+
+  {% if status_code == 404 %}
+  <div class="card empty">
+    <p class="hint mono" style="margin:0">{{ status_code }} {{ status_label }}</p>
+    <h2>Nothing lives at this address</h2>
+    <p><code class="mono">{{ path }}</code></p>
+    {% if detail and detail != 'Not Found' %}<p>{{ detail }}.</p>{% endif %}
+    <p class="hint">If a link from an agent or a teammate brought you here, what it
+       pointed at may have been deleted or retired, or not synced to this machine yet.</p>
+    <a class="btn btn-primary" href="/">Back to Dashboard</a>
+  </div>
+
+  <div class="card">
+    <div class="card-head">Where to go instead</div>
+    <div class="card-pad">
+      <div class="switch-row">
+        <div class="body">Projects<span>Every repository flanner manages on this machine</span></div>
+        <a class="btn btn-sm" href="/projects">Open</a>
+      </div>
+      <div class="switch-row">
+        <div class="body">Plans<span>Every plan, newest first</span></div>
+        <a class="btn btn-sm" href="/plans">Open</a>
+      </div>
+      <div class="switch-row">
+        <div class="body">Memory<span>What later sessions need to know, including forgotten memories</span></div>
+        <a class="btn btn-sm" href="/memory">Open</a>
+      </div>
+      <p class="hint">Press <kbd>Ctrl</kbd> <kbd>K</kbd> to search every project and plan by name.</p>
+    </div>
+  </div>
+
+  {% else %}
   <div class="card empty">
     <h2>{{ status_code }} {{ status_label }}</h2>
     <p>{{ detail }}</p>
     <a class="btn btn-primary" href="/">Back to Dashboard</a>
   </div>
+  {% endif %}
+
 </div>
 {% endblock %}

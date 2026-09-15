@@ -35,6 +35,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func
 from starlette.concurrency import run_in_threadpool
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import StreamingResponse
 
 from . import __version__, actions, features, ipc, services
@@ -378,9 +379,15 @@ async def record_direct_writes(request: Request, call_next: Any) -> Any:
 _STATUS_LABELS = {400: "Bad Request", 404: "Not Found", 500: "Server Error"}
 
 
-@app.exception_handler(HTTPException)
-async def html_error_pages(request: Request, exc: HTTPException) -> Response:
-    """Browsers get a styled error page; /api/* callers keep JSON."""
+@app.exception_handler(StarletteHTTPException)
+async def html_error_pages(request: Request, exc: StarletteHTTPException) -> Response:
+    """Browsers get a styled error page; /api/* callers keep JSON.
+
+    Registered for Starlette's exception, which FastAPI's extends, so it
+    catches both. It was registered for FastAPI's alone, and the router
+    raises Starlette's for an address that matches no route, so a mistyped
+    URL answered with raw JSON instead of a page.
+    """
     if request.url.path.startswith("/api"):
         return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
     return templates.TemplateResponse(
@@ -391,6 +398,7 @@ async def html_error_pages(request: Request, exc: HTTPException) -> Response:
             "status_code": exc.status_code,
             "status_label": _STATUS_LABELS.get(exc.status_code, "Error"),
             "detail": exc.detail,
+            "path": request.url.path,
         },
         status_code=exc.status_code,
     )
