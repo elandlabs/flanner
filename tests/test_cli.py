@@ -332,7 +332,7 @@ def test_setup_gitignore_no_root(runner, initialized):
 def test_delete_force(runner, plan):
     result = runner.invoke(cli, ["delete", "proj", "--force"])
     assert result.exit_code == 0
-    assert "deleted successfully" in result.output
+    assert "Deleted proj" in result.output
 
     gone = runner.invoke(cli, ["list", "--project", "proj"])
     assert gone.exit_code == 1
@@ -344,10 +344,31 @@ def test_delete_confirm_no(runner, project):
     assert "Cancelled" in result.output
 
 
-def test_delete_confirm_yes(runner, project):
+def test_delete_needs_the_name_typed_not_a_letter(runner, project):
+    """A [y/N] is answered by reflex; the name is not."""
     result = runner.invoke(cli, ["delete", "proj"], input="y\n")
     assert result.exit_code == 0
-    assert "deleted successfully" in result.output
+    assert "Cancelled" in result.output
+    assert runner.invoke(cli, ["list", "--project", "proj"]).exit_code == 0
+
+
+def test_delete_confirm_yes(runner, project):
+    result = runner.invoke(cli, ["delete", "proj"], input="proj\n")
+    assert result.exit_code == 0
+    assert "Deleted proj" in result.output
+
+
+def test_quiet_keeps_the_data_and_drops_the_chrome(runner, plan):
+    """--quiet promised "only errors" and used to change nothing visible."""
+    loud = runner.invoke(cli, ["list", "--project", "proj"])
+    quiet = runner.invoke(cli, ["--quiet", "list", "--project", "proj"])
+    assert quiet.exit_code == 0
+    assert "PLAN" in quiet.output  # the table is the answer, not chrome
+    assert len(quiet.output) <= len(loud.output)
+    args = ["mem", "remember", "Deploy on Tuesdays", "--category", "decision"]
+    saved = runner.invoke(cli, ["--quiet", *args, "--scope", "personal"])
+    assert saved.exit_code == 0, saved.output
+    assert "Remembered" not in saved.output
 
 
 def test_delete_missing_project(runner, initialized):

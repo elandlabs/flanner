@@ -274,6 +274,7 @@ class Sectioned(click.Group):
 @click.option("--quiet", is_flag=True, help="Only show errors")
 def cli(verbose: bool, quiet: bool) -> None:
     """Flanner - Manage plan files for AI assistants"""
+    tui.QUIET = quiet
     level = logging.DEBUG if verbose else logging.ERROR if quiet else logging.WARNING
     logging.basicConfig(
         level=level, stream=sys.stderr, format="%(levelname)s %(name)s: %(message)s"
@@ -503,12 +504,17 @@ def _ask(question: str, default: str) -> str:
     and Ctrl-C is still a KeyboardInterrupt that propagates the way it
     should.
     """
-    click.echo(f"{question} [{default}]: ", nl=False)
+    # No bracket when there is no default: "[]" after a question reads as a
+    # placeholder somebody forgot to fill in.
+    click.echo(f"{question} [{default}]: " if default else f"{question}: ", nl=False)
     answer = sys.stdin.readline()
     if answer == "":
         # No input stream at all. Say which name was chosen rather than
         # appearing to hang and then inventing one.
-        console.print(f"No terminal to ask, so the project is named '{default}'.", style="dim")
+        if default:
+            console.print(f"No terminal to ask, so the project is named '{default}'.", style="dim")
+        else:
+            console.print("No terminal to ask.", style="dim")
         return default
     return answer.strip() or default
 
@@ -2449,29 +2455,34 @@ def delete(project_name: str, force: bool) -> None:
         raise SystemExit(1)
 
     # Show project info
-    console.print("\nProject to delete:", style="yellow")
-    console.print(f"  Name: {project.name}", style="white")
-    console.print(f"  Root: {project.project_root}", style="white")
-    console.print(f"  Plan files: {len(project.plan_files)}", style="white")
+    plans = len(project.plan_files)
+    project_root, plan_directory = project.project_root, project.plan_directory
 
-    # Confirm deletion
+    # The name, not a letter. A [y/N] is answered by reflex; typing the
+    # name of the thing about to go is the terminal's press-and-hold, and
+    # the convention gh and npm already taught. `--force` keeps scripts
+    # working, and the prompt says what stays as well as what goes.
     if not force:
-        if not click.confirm(
-            "\nAre you sure you want to delete this project? This cannot be undone."
-        ):
-            console.print("Cancelled", style="yellow")
+        console.print()
+        tui.warn(
+            f"This removes [value]{project.name}[/value] and its {plans} "
+            f"plan{'' if plans == 1 else 's'} from the catalog."
+        )
+        tui.note(
+            f"  The files in {plan_directory} stay on disk. There is no undo for the history."
+        )
+        typed = _ask("Type the project name to continue", "")
+        if typed != project.name:
+            tui.note("Cancelled. Nothing was deleted.")
             return
 
     # Delete project (cascade deletes plan files and versions)
-    project_root, plan_directory = project.project_root, project.plan_directory
     _write("delete_project", project_id=str(project.id))
-    console.print(f"\nOK Project '{project_name}' deleted successfully", style="green")
-    console.print(
-        "  Note: Plan files on disk were NOT deleted. You may want to manually remove:",
-        style="cyan",
-    )
+    console.print()
+    tui.ok(f"Deleted {project.name} from the catalog.")
     if project_root:
-        console.print(f"  {project_root}/{plan_directory}/", style="cyan")
+        tui.note(f"  The plan files are still at {tui.code(f'{project_root}/{plan_directory}/')}.")
+    console.print()
 
 
 def _port_in_use(host: str, port: int) -> bool:

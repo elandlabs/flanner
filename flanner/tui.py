@@ -47,6 +47,12 @@ THEME = Theme(
 
 console = Console(theme=THEME, highlight=False)
 
+#: `--quiet`. The flag promised "only show errors" and changed nothing a
+#: person could see. Quiet drops the chrome - the ✓ lines, the notes, the
+#: hints, the spinner - and keeps the data and anything that went wrong,
+#: which is what a script wrapping a command wants from it.
+QUIET = False
+
 
 def _encodable(glyph: str) -> bool:
     """Whether this terminal can actually print a character.
@@ -171,6 +177,8 @@ def _line(glyph: str, style: str, message: str) -> Text:
 
 def ok(message: str) -> None:
     """A step that worked."""
+    if QUIET:
+        return
     console.print(_line(TICK, "ok", message))
 
 
@@ -186,6 +194,8 @@ def warn(message: str) -> None:
 
 def note(message: str) -> None:
     """Context under a result. Dim, because it is never the point."""
+    if QUIET:
+        return
     console.print(Text.from_markup(f"[muted]{message}[/muted]"))
 
 
@@ -228,6 +238,8 @@ def size(count: int) -> str:
 
 def hint(message: str) -> None:
     """The next command worth running, offered rather than insisted on."""
+    if QUIET:
+        return
     console.print(Text.from_markup(f"[muted]{message}[/muted]"))
 
 
@@ -250,7 +262,7 @@ class Working:
         self._status: Any = None
 
     def __enter__(self) -> Working:
-        if console.is_terminal:
+        if console.is_terminal and not QUIET:
             self._status = console.status(self._text(self._label), spinner="dots")
             self._status.__enter__()
         return self
