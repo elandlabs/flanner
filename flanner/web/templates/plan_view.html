@@ -57,7 +57,7 @@
     {# History and Download fold into one button on a phone; Aa and Edit
        stay out, since they are the two used while reading. #}
     <details class="more" data-more open>
-      <summary aria-label="More actions" title="More">⋯</summary>
+      <summary aria-label="More actions" title="More">{{ ico.icon('more', 18) }}</summary>
       <div class="more-menu">
         <a class="btn" href="/plans/{{ plan_file.id }}/history">History</a>
         <a class="btn" href="/plans/{{ plan_file.id }}/download?version={{ version.version }}"
