@@ -219,6 +219,7 @@ class Sectioned(click.Group):
 
         name = _command_path(self, ctx)
         ok = False
+        ran = True
         with actions.watching() as seen:
             try:
                 result = super().invoke(ctx)
@@ -227,11 +228,16 @@ class Sectioned(click.Group):
             except SystemExit as stop:
                 ok = stop.code in (0, None)
                 raise
-            except click.exceptions.Exit as stop:
-                ok = stop.exit_code == 0
+            except click.exceptions.Exit:
+                # `--help` and `--version` leave through here before the
+                # command body runs. Nothing was done, so nothing is recorded:
+                # `flanner init --help` used to log "init" as done, and on a
+                # machine with no store yet it printed a traceback under the
+                # help text while trying.
+                ran = False
                 raise
             finally:
-                if name:
+                if name and ran:
                     actions.record_unless_recorded(seen, surface=actions.CLI, name=name, ok=ok)
 
     def format_commands(self, ctx: click.Context, formatter: click.HelpFormatter) -> None:
