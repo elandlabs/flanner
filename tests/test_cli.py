@@ -1597,6 +1597,8 @@ def test_peer_serve_initialises_the_database(runner, project, monkeypatch):
     monkeypatch.setattr("flanner.peer_iroh.shared_endpoint", lambda: fake_endpoint)
     monkeypatch.setattr("flanner.cli._catch_up_in_background", lambda dial: None)
     monkeypatch.setattr("flanner.session.load", lambda: object())
+    # Serving now renews the entitlement first; stand in for a signed-in device.
+    monkeypatch.setattr("flanner.cli._renew_on_use", lambda: object())
 
     result = runner.invoke(cli, ["peer", "serve"])
 
