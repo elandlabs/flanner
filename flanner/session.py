@@ -51,6 +51,10 @@ class Session:
     # Every member of this device's workspaces, signed by the control plane.
     # Empty from a control plane that does not send one.
     roster: str = ""
+    # "admin" or "member", for choosing what advice to give. Not an
+    # authorization: the control plane checks the role on every admin call.
+    # Empty from a control plane that does not send one.
+    org_role: str = ""
 
     def store(self) -> EntitlementStore:
         return EntitlementStore(token=self.entitlement, keyring=self.keyring)
@@ -78,6 +82,7 @@ class Session:
             "device_keys": self.device_keys,
             "relay_url": self.relay_url,
             "roster": self.roster,
+            "org_role": self.org_role,
         }
 
 
@@ -102,6 +107,7 @@ def load() -> Session | None:
             device_keys=dict(data.get("device_keys") or {}),
             relay_url=str(data.get("relay_url") or ""),
             roster=str(data.get("roster") or ""),
+            org_role=str(data.get("org_role") or ""),
         )
     except (OSError, ValueError, KeyError, TypeError):
         # A corrupt cache is indistinguishable from never having logged in,

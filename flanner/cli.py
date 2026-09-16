@@ -808,14 +808,18 @@ def init(
             _import_existing_plans(project_root)
 
     _offer_update_check()
-    _first_thing_to_try(adopted=bool(project_root))
+    _first_thing_to_try(adopted=bool(project_root), project_root=project_root)
 
 
-def _first_thing_to_try(adopted: bool) -> None:
+def _first_thing_to_try(adopted: bool, project_root: str | None = None) -> None:
     """End on something to do, rather than on a list of what was configured.
 
-    The prompt is the one that proves the connection: listing projects is a
-    tool call, so it lands in the log `flanner status` reads.
+    The first prompt is the one that proves the connection: listing projects
+    is a tool call, so it lands in the log `flanner status` reads. Then the
+    three things somebody does with flanner day to day, which `init` used to
+    leave them to find in the help. Then the team, said for where this
+    machine is: not signed in, signed in with this repository unbound, or
+    already bound, where there is nothing left to say.
     """
     console.print()
     if not adopted:
@@ -824,6 +828,38 @@ def _first_thing_to_try(adopted: bool) -> None:
         return
     tui.note('Try it: restart your agent here and ask it to "list my flanner projects".')
     tui.hint(f"{tui.command('flanner status')} then shows the call arrived.")
+
+    console.print()
+    tui.note("Then, day to day:")
+    for command, what in (
+        ("flanner freshness", "which plans have drifted from the code"),
+        ('flanner mem remember "..."', "save a decision for later sessions"),
+        ("flanner web", "all of it in the browser"),
+    ):
+        tui.hint(f"  {tui.command(command):<38} {what}")
+
+    _team_line(project_root)
+    console.print()
+
+
+def _team_line(project_root: str | None) -> None:
+    """One line about the team, for where this machine stands."""
+    from . import session as cache
+    from .database import get_project_by_root
+
+    current = cache.load()
+    if current is None:
+        console.print()
+        tui.note("Working with a team?")
+        tui.hint(f"  {tui.command('flanner accept <token>')}   from an invitation email")
+        tui.hint(f"  {tui.command('flanner login <code>')}     from the team console")
+        return
+    project = get_project_by_root(get_session(), project_root) if project_root else None
+    if project is not None and not project.workspace_id:
+        console.print()
+        tui.note(f"Signed in as {current.user_id}. This repository is not shared yet:")
+        join, whoami = tui.command("flanner join <workspace-id>"), tui.command("flanner whoami")
+        tui.hint(f"  {join}   {whoami} lists yours")
 
 
 def _setup_agent_integration(project_root: str) -> None:
@@ -6574,8 +6610,8 @@ def login(code: str, endpoint: str | None, label: str | None) -> None:
     _ensure_store()
 
     tui.ok(f"Enrolled as {current.user_id} ({current.device_id})")
-    _what_next(current)
     _print_entitlement(current)
+    _what_next(current)
 
 
 @cli.command()
@@ -6876,31 +6912,58 @@ def join(
 
 
 def _what_next(current: Any) -> None:
-    """After enrolling, say what to do next.
+    """After enrolling, say what to do next, for the person this is.
 
-    `login` printed one line and stopped. Enrolling is the middle of a
-    setup, not the end of one: the device now has an identity and no
-    project, and the next move differs depending on whether anybody has
-    granted this account a workspace yet. Somebody setting up a team for
-    the first time is exactly who has least idea what to type.
+    Enrolling is the middle of a setup, not the end of one: the device now
+    has an identity and no project, and the next move depends on who is
+    typing. An admin with no workspace creates one; a member with none asks
+    for one; anybody holding one adopts a repository and binds it. Somebody
+    who may decide on proposals is told where they appear, and an admin is
+    told where the team is managed.
+
+    `login` and `accept` both end here. They used to say different things
+    in different styles for what is the same moment.
+
+    The organization role comes from the control plane and only shapes this
+    advice; every admin action is still checked there. A control plane that
+    does not send it gets the advice for both.
     """
+    from .review import may_review
+
     claims = current.status().claims
     grants = tuple(getattr(claims, "workspace_capabilities", ()) or ()) if claims else ()
+    role = getattr(current, "org_role", "")
+    console_url = current.endpoint.rstrip("/")
 
     console.print()
     if not grants:
         tui.note("No workspace access yet, which is normal on a new account.")
-        tui.hint("Create a workspace in the console, or ask an admin for access, then:")
-        tui.hint(f"  {tui.command('flanner whoami --refresh')}   pick up the grant")
-        console.print()
-        return
+        if role == "admin":
+            tui.hint(f"Create one in the console: {console_url}/workspaces")
+        elif role == "member":
+            tui.hint("Ask an admin of your organization to grant you a workspace.")
+        else:
+            tui.hint("Create a workspace in the console, or ask an admin for access.")
+        tui.hint(f"  then {tui.command('flanner whoami --refresh')}   picks up the grant")
+    else:
+        where = ", ".join(sorted(f"{g.workspace_id} ({g.role})" for g in grants))
+        tui.note(f"You hold: {where}")
+        tui.hint("In each repository whose plans should sync:")
+        tui.hint(f"  {tui.command('flanner init')}                    adopt it")
+        tui.hint(f"  {tui.command('flanner join <workspace-id>')}     bind it to the team")
+        tui.hint(f"  {tui.command('flanner peer serve')}              answer teammates")
+        if any(may_review(g.role) for g in grants):
+            tui.hint("You can decide on proposals:")
+            tui.hint(f"  {tui.command('flanner review status <plan>')}   what is waiting")
 
-    where = ", ".join(sorted(f"{g.workspace_id} ({g.role})" for g in grants))
-    tui.note(f"You hold: {where}")
-    tui.hint("In the repository whose plans should sync:")
-    tui.hint(f"  {tui.command('flanner init')}                    adopt it")
-    tui.hint(f"  {tui.command('flanner join <workspace-id>')}     bind it to the team")
-    tui.hint(f"  {tui.command('flanner peer serve')}              answer teammates")
+    if role == "admin":
+        console.print()
+        tui.hint("Your team:")
+        invite = tui.command("flanner invite <email>")
+        tui.hint(f"  {invite}   add someone; no seat until they accept")
+        tui.hint(f"  {tui.command('flanner members')}          who has joined")
+        tui.hint(f"  {tui.command('flanner devices list')}     machines on your account")
+        tui.hint(f"  {console_url}   workspaces, access and billing")
     console.print()
 
 
@@ -6968,14 +7031,7 @@ def accept(token: str, user_id: str, endpoint: str | None, label: str | None) ->
 
     tui.ok(f"Joined as {current.user_id} ({current.device_id})")
     _print_entitlement(current)
-    console.print(
-        "\nThis machine is ready. In each repository you want to share plans\n"
-        "from, run:\n"
-        "    flanner init          adopts that repository\n"
-        "    flanner join <id>     binds it to a workspace\n\n"
-        "The workspace ids are listed above, and by 'flanner whoami'.",
-        style="dim",
-    )
+    _what_next(current)
 
 
 @cli.group()

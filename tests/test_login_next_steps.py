@@ -47,7 +47,7 @@ def _entitlement(*, workspaces: tuple[tuple[str, str], ...]) -> tuple[str, dict[
     return token, {"sk_1": public_key_b64(key.public_key())}
 
 
-def _enrol(monkeypatch, *, workspaces: tuple[tuple[str, str], ...]):
+def _enrol(monkeypatch, *, workspaces: tuple[tuple[str, str], ...], org_role: str = ""):
     """Stand in for the control plane, so `login` runs its real path."""
     token, keyring = _entitlement(workspaces=workspaces)
 
@@ -60,6 +60,7 @@ def _enrol(monkeypatch, *, workspaces: tuple[tuple[str, str], ...]):
             "user_id": "maria",
             "entitlement": token,
             "keyring": keyring,
+            "org_role": org_role,
         }
 
     monkeypatch.setattr(account, "_post", post)
@@ -145,3 +146,41 @@ def test_every_workspace_held_is_named(monkeypatch):
     )
 
     assert "ws_core" in said and "ws_infra" in said
+
+
+def _said(monkeypatch, **enrol) -> str:
+    _enrol(monkeypatch, **enrol)
+    output = CliRunner().invoke(cli, ["login", "code", "--endpoint", "https://x.test"]).output
+    return " ".join(output.split())
+
+
+def test_an_admin_with_no_workspace_is_sent_to_the_page_that_makes_one(monkeypatch):
+    said = _said(monkeypatch, workspaces=(), org_role="admin")
+
+    assert "https://x.test/workspaces" in said
+    assert "flanner invite" in said and "flanner members" in said
+
+
+def test_a_member_with_no_workspace_is_told_to_ask_rather_than_create(monkeypatch):
+    """A member cannot make a workspace, so the console link would refuse."""
+    said = _said(monkeypatch, workspaces=(), org_role="member")
+
+    assert "Ask an admin" in said
+    assert "/workspaces" not in said
+    assert "flanner invite" not in said, "admin-only advice shown to a member"
+
+
+def test_somebody_who_may_decide_on_proposals_is_told_where_they_are(monkeypatch):
+    assert "flanner review status" in _said(monkeypatch, workspaces=(("ws_core", MAINTAINER),))
+
+
+def test_a_reader_is_not_pointed_at_reviews_it_cannot_decide(monkeypatch):
+    assert "flanner review status" not in _said(monkeypatch, workspaces=(("ws_core", "reader"),))
+
+
+def test_the_role_is_kept_with_the_session(monkeypatch):
+    """Later commands shape their advice from the cache, not a new request."""
+    _enrol(monkeypatch, workspaces=(), org_role="admin")
+    CliRunner().invoke(cli, ["login", "code", "--endpoint", "https://x.test"])
+    current = cache.load()
+    assert current is not None and current.org_role == "admin"

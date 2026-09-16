@@ -134,6 +134,8 @@ def refresh(session: Session | None = None) -> Session:
     # them too. The old keys are kept only for when that fetch fails:
     # dropping them would break artifact verification offline.
     renewed.device_keys = renewed.device_keys or current.device_keys
+    # A control plane that predates the field sends none; keep what we knew.
+    renewed.org_role = renewed.org_role or current.org_role
     cache.save(renewed)
     return _learn_peers(renewed)
 
@@ -188,6 +190,7 @@ def _session_from(endpoint: str, body: dict[str, Any]) -> Session:
             # does the client already works rather than needing a release.
             device_keys=dict(body.get("device_keys") or {}),
             roster=str(body.get("roster") or ""),
+            org_role=str(body.get("org_role") or ""),
         )
     except (KeyError, TypeError, ValueError) as e:
         raise SessionError(f"the control plane returned something unusable: {e}") from None

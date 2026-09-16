@@ -50,6 +50,11 @@ from .workflow import (
 )
 
 
+def may_review(role: str) -> bool:
+    """Whether a workspace role may decide on proposals."""
+    return role in workflow.MAY_REVIEW
+
+
 @dataclass(frozen=True)
 class ReviewResult:
     """What a review action recorded, and whether it moved the baseline."""

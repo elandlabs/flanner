@@ -161,6 +161,16 @@ def test_init_creates_project(runner, home, git_repo):
     mcp_json = json.loads((git_repo / ".mcp.json").read_text())
     assert mcp_json["mcpServers"]["flanner"]["command"] == "flanner-mcp"
 
+def test_init_ends_with_everyday_commands_and_how_to_join_a_team(runner, home, git_repo):
+    result = runner.invoke(
+        cli, ["init", "--skip-claude", "--project-root", str(git_repo)], input="myproj\n"
+    )
+    said = " ".join(result.output.split())
+
+    for command in ("flanner freshness", "flanner mem remember", "flanner web"):
+        assert command in said, f"{command} was not offered"
+    assert "flanner accept" in said and "flanner login" in said
+
 
 def test_init_existing_project(runner, git_repo):
     runner.invoke(
@@ -1450,10 +1460,10 @@ def test_accept_creates_the_store_so_the_next_step_works(runner, monkeypatch):
     assert (get_mcp_dir() / "data.db").exists(), "accept left no store behind"
 
 
-def test_accept_names_both_remaining_steps(runner, monkeypatch):
-    """`join` needs a project as well as a store, and a project is per
-    repository — so `init` is still required once per repo, and saying only
-    "run join" sends people back into the same wall."""
+def test_accept_ends_with_the_same_next_steps_as_login(runner, monkeypatch):
+    """`accept` had its own older block. Both now end in `_what_next`, so an
+    invitation that carried no grant yet is not sent at a `join` that refuses;
+    the grant case is covered in test_login_next_steps.py."""
     import flanner.account as account
     from flanner import session as cache
 
@@ -1469,8 +1479,10 @@ def test_accept_names_both_remaining_steps(runner, monkeypatch):
 
     result = runner.invoke(cli, ["accept", "tok", "--as", "sam"])
 
-    assert "flanner init" in result.output
-    assert "flanner join" in result.output
+    said = " ".join(result.output.split())
+    assert "No workspace access yet" in said
+    assert "whoami --refresh" in said
+    assert "flanner join" not in said
 
 
 def test_the_store_refusal_says_what_init_does(runner):
