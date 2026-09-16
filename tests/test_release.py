@@ -31,6 +31,28 @@ def test_the_version_that_ran_last_is_reported_once(home):
     assert release.upgraded_from("0.11.0") is None
 
 
+def test_going_backwards_is_not_an_upgrade(home):
+    """Pinning back is a decision somebody made, not news to announce."""
+    release.remember_version("0.12.0")
+    assert release.upgraded_from("0.11.0") is None
+
+
+def test_two_metadata_records_do_not_announce_forever(home):
+    """An editable install whose dist-info is stale reports two versions.
+
+    The command entry point and an import from the source tree can
+    disagree. Announcing both directions would fire on every other
+    command, for good.
+    """
+    seen = []
+    for reported in ("0.11.0", "0.12.0") * 3:
+        was = release.upgraded_from(reported)
+        release.remember_version(reported)
+        if was:
+            seen.append((was, reported))
+    assert seen == [("0.11.0", "0.12.0")], seen
+
+
 def test_an_unreadable_state_file_is_treated_as_empty(home):
     home.mkdir(parents=True)
     (home / release.STATE_FILE).write_text("{not json", encoding="utf-8")

@@ -73,14 +73,30 @@ def upgraded_from(current: str) -> str | None:
     they never had.
     """
     last = read_state().get("version")
-    if not isinstance(last, str) or not last or last == current:
+    if not isinstance(last, str) or not last:
         return None
-    return last
+    # Only forwards. Pinning back to an older version is a decision
+    # somebody made, not news to announce, and on a machine whose
+    # metadata disagrees with itself - an editable install whose
+    # dist-info was never refreshed - announcing both directions would
+    # fire on every other command forever.
+    return last if is_newer(current, last) else None
 
 
 def remember_version(current: str) -> None:
-    """Record the version that ran, so the next change is noticed once."""
+    """Record the highest version this machine has run.
+
+    The highest, not the last. An editable install whose dist-info was
+    never refreshed reports one version from the command and another
+    from an import of the same source, so `last` would flip on every
+    other run and announce an upgrade each time it flipped up. A
+    high-water mark announces each release once, whatever order the
+    entry points are used in.
+    """
     state = read_state()
+    seen = state.get("version")
+    if isinstance(seen, str) and seen and not is_newer(current, seen):
+        return
     state["version"] = current
     write_state(state)
 
