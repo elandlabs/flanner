@@ -276,6 +276,7 @@ def cli(verbose: bool, quiet: bool) -> None:
     """Flanner - Manage plan files for AI assistants"""
     tui.QUIET = quiet
     _say_what_changed()
+    _say_if_behind()
     level = logging.DEBUG if verbose else logging.ERROR if quiet else logging.WARNING
     logging.basicConfig(
         level=level, stream=sys.stderr, format="%(levelname)s %(name)s: %(message)s"
@@ -312,24 +313,47 @@ def _say_what_changed() -> None:
     changelog is the answer and nobody reads a file they were not told
     changed, so this is the pointer at it.
 
-    Printed to a terminal only, and recorded only once it has been shown:
-    a piped run stays byte for byte what it was, and still gets told the
-    next time a person is actually looking.
+    On stderr, and only to a terminal: a piped run stays byte for byte
+    what it was, and a person still hears the next time they are looking.
     """
     from . import __version__, release
 
-    if tui.QUIET or not console.is_terminal:
+    if tui.QUIET or not tui.notices.is_terminal:
         return
     previous = release.upgraded_from(__version__)
     release.remember_version(__version__)
     if previous is None:
         return
-    console.print()
-    tui.ok(f"Updated: {previous} {tui.ARROW} {__version__}")
     where = _changelog_url()
+    tui.notices.print()
+    tui.ok(f"Updated: {previous} {tui.ARROW} {__version__}", to=tui.notices)
     if where:
-        tui.hint(f"  What changed: {where}")
-    console.print()
+        tui.hint(f"  What changed: {where}", to=tui.notices)
+    tui.notices.print()
+
+
+def _say_if_behind() -> None:
+    """One line when a newer release is already known of, at most once a day.
+
+    Nothing here touches the network. The cache is read, and a refresh is
+    started in a child that this command does not wait for, so the first
+    command of the day pays about fifteen milliseconds and the answer is
+    on screen the next time. See `release.refresh_in_background`.
+    """
+    from . import __version__, release
+
+    release.refresh_in_background()
+    if tui.QUIET or not tui.notices.is_terminal:
+        return
+    latest = release.known_newer(__version__)
+    if not latest or not release.due_to_tell():
+        return
+    release.mark_told()
+    tui.notices.print()
+    tui.note(f"Version {latest} is out; this is {__version__}.", to=tui.notices)
+    tui.hint(f"  {tui.command('uv tool upgrade flanner')}", to=tui.notices)
+    tui.notices.print()
+
 
 
 def _print_breakdown() -> None:
@@ -2292,29 +2316,7 @@ def status() -> None:
     if claude_status.get("action_needed"):
         console.print()
         tui.warn(str(claude_status["action_needed"]))
-    _say_if_behind()
     console.print()
-
-
-def _say_if_behind() -> None:
-    """One line when a newer release exists, on the command people already run.
-
-    Here rather than after every command: `status` is where somebody has
-    come to ask whether this machine is in good order, so a version being
-    old is an answer to the question they asked. A nag on every command
-    would be a second product deciding what is worth interrupting for.
-
-    Silent unless the check was allowed at init, and silent on any
-    failure. See `release.newer_release`.
-    """
-    from . import __version__, release
-
-    latest = release.newer_release(__version__)
-    if not latest:
-        return
-    console.print()
-    tui.note(f"Version {latest} is out; this is {__version__}.")
-    tui.hint(f"  {tui.command('uv tool upgrade flanner')}")
 
 
 def _cut_footer(shown: int, total: int | None, noun: str) -> str | None:

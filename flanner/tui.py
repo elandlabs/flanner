@@ -47,6 +47,12 @@ THEME = Theme(
 
 console = Console(theme=THEME, highlight=False)
 
+#: Out-of-band notices: an upgrade, a release somebody may want. They go
+#: to stderr because they are not what the command was asked for, and a
+#: line of ours on stdout would land in the middle of `--output json`
+#: or of whatever a pipe is reading.
+notices = Console(theme=THEME, highlight=False, stderr=True)
+
 #: `--quiet`. The flag promised "only show errors" and changed nothing a
 #: person could see. Quiet drops the chrome - the ✓ lines, the notes, the
 #: hints, the spinner - and keeps the data and anything that went wrong,
@@ -179,28 +185,28 @@ def _line(glyph: str, style: str, message: str, indent: int = 0) -> Text:
 # a path under the reason that cites it. Two spaces per level.
 
 
-def ok(message: str, *, indent: int = 0) -> None:
+def ok(message: str, *, indent: int = 0, to: Console | None = None) -> None:
     """A step that worked."""
     if QUIET:
         return
-    console.print(_line(TICK, "ok", message, indent))
+    (to or console).print(_line(TICK, "ok", message, indent))
 
 
-def bad(message: str, *, indent: int = 0) -> None:
+def bad(message: str, *, indent: int = 0, to: Console | None = None) -> None:
     """A step that did not."""
-    console.print(_line(CROSS, "bad", message, indent))
+    (to or console).print(_line(CROSS, "bad", message, indent))
 
 
-def warn(message: str, *, indent: int = 0) -> None:
+def warn(message: str, *, indent: int = 0, to: Console | None = None) -> None:
     """Worth knowing, but nothing failed."""
-    console.print(_line(BANG, "warn", message, indent))
+    (to or console).print(_line(BANG, "warn", message, indent))
 
 
-def note(message: str, *, indent: int = 0) -> None:
+def note(message: str, *, indent: int = 0, to: Console | None = None) -> None:
     """Context under a result. Dim, because it is never the point."""
     if QUIET:
         return
-    console.print(Text.from_markup(f"[muted]{' ' * indent}{message}[/muted]"))
+    (to or console).print(Text.from_markup(f"[muted]{' ' * indent}{message}[/muted]"))
 
 
 def dot(status: str, *, label: str | None = None) -> Text:
@@ -240,11 +246,11 @@ def size(count: int) -> str:
     return f"{count} B"
 
 
-def hint(message: str) -> None:
+def hint(message: str, *, to: Console | None = None) -> None:
     """The next command worth running, offered rather than insisted on."""
     if QUIET:
         return
-    console.print(Text.from_markup(f"[muted]{message}[/muted]"))
+    (to or console).print(Text.from_markup(f"[muted]{message}[/muted]"))
 
 
 class Working:

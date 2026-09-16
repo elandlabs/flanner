@@ -32,6 +32,10 @@ STATE_FILE = "state.json"
 PYPI_URL = "https://pypi.org/pypi/flanner/json"
 CHECK_EVERY = timedelta(hours=24)
 
+#: How often the notice is repeated. Somebody who has chosen not to
+#: upgrade today should not be told again by every command they run.
+TELL_EVERY = timedelta(hours=24)
+
 #: Short on purpose. This runs inside a command somebody is waiting on,
 #: and being told about a release is never worth making them wait.
 TIMEOUT_SECONDS = 2.0
@@ -138,37 +142,107 @@ def is_newer(candidate: str, than: str) -> bool:
     return bool(left) and bool(right) and left > right
 
 
-def newer_release(current: str, *, now: datetime | None = None) -> str | None:
-    """The version on PyPI when it is newer than this one, else None.
+def known_newer(current: str) -> str | None:
+    """A newer version, if the cache already knows of one. Never any network.
 
-    Answers from the cache when it was filled recently, so a person
-    running several commands pays for at most one request a day. Every
-    failure - no consent, no network, a slow mirror, a reply that is not
-    what was expected - is silent. Not being told about a release is a
-    smaller harm than an error nobody can act on.
+    This is what a command calls. Asking PyPI on the command somebody is
+    waiting on would make them pay for the answer, and the answer is worth
+    nothing to them right now: the next command shows it just as well.
     """
     if update_check_consent() is not True:
         return None
-    now = now or datetime.now(timezone.utc)
-    state = read_state()
-    latest = state.get("latest")
-    checked = state.get("checked_at")
-    fresh = False
-    if isinstance(checked, str):
-        try:
-            fresh = datetime.fromisoformat(checked) > now - CHECK_EVERY
-        except ValueError:
-            fresh = False
-    if not fresh:
-        latest = _fetch_latest()
-        if latest is None:
-            return None
-        state["latest"] = latest
-        state["checked_at"] = now.isoformat()
-        write_state(state)
+    latest = read_state().get("latest")
     if not isinstance(latest, str):
         return None
     return latest if is_newer(latest, current) else None
+
+
+def _due(state: dict[str, Any], key: str, every: timedelta, now: datetime) -> bool:
+    """Whether `key` is missing or older than `every`. A bad value is due."""
+    stamp = state.get(key)
+    if not isinstance(stamp, str):
+        return True
+    try:
+        return datetime.fromisoformat(stamp) <= now - every
+    except ValueError:
+        return True
+
+
+def due_to_tell(now: datetime | None = None) -> bool:
+    """Whether the notice has gone unsaid long enough to say again.
+
+    Once a day, not once a command. Somebody who has chosen not to upgrade
+    today should not be told again by every command they run.
+    """
+    return _due(read_state(), "told_at", TELL_EVERY, now or datetime.now(timezone.utc))
+
+
+def mark_told(now: datetime | None = None) -> None:
+    state = read_state()
+    state["told_at"] = (now or datetime.now(timezone.utc)).isoformat()
+    write_state(state)
+
+
+def refresh_in_background(now: datetime | None = None) -> bool:
+    """Start a detached check, if one is due. Returns whether one was started.
+
+    Out of process and never waited on. A thread would be killed when a
+    fast command exits, and waiting for the reply would charge somebody a
+    round trip for news they did not ask for. The answer lands in the
+    cache and the next command reads it.
+
+    `attempted_at` is written here rather than by the child, so a machine
+    with no network tries once a day instead of on every command.
+    """
+    if update_check_consent() is not True:
+        return False
+    now = now or datetime.now(timezone.utc)
+    state = read_state()
+    if not _due(state, "checked_at", CHECK_EVERY, now):
+        return False
+    if not _due(state, "attempted_at", CHECK_EVERY, now):
+        return False
+    state["attempted_at"] = now.isoformat()
+    write_state(state)
+    return _spawn_check()
+
+
+def _spawn_check() -> bool:
+    """Run `fetch_and_store` in a child that outlives this command."""
+    import subprocess
+    import sys
+
+    if not sys.executable:
+        return False
+    flags = 0
+    if hasattr(subprocess, "CREATE_NO_WINDOW"):  # Windows: no console flash
+        flags |= subprocess.CREATE_NO_WINDOW
+    if hasattr(subprocess, "DETACHED_PROCESS"):
+        flags |= subprocess.DETACHED_PROCESS
+    try:
+        subprocess.Popen(  # noqa: S603 - sys.executable and a literal argument
+            [sys.executable, "-c", "from flanner import release; release.fetch_and_store()"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=flags,
+            start_new_session=True,
+        )
+    except OSError:
+        return False
+    return True
+
+
+def fetch_and_store(now: datetime | None = None) -> str | None:
+    """Ask PyPI and record the answer. The entry point of the detached child."""
+    latest = _fetch_latest()
+    if latest is None:
+        return None
+    state = read_state()
+    state["latest"] = latest
+    state["checked_at"] = (now or datetime.now(timezone.utc)).isoformat()
+    write_state(state)
+    return latest
 
 
 def _fetch_latest() -> str | None:

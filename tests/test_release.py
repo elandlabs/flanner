@@ -80,68 +80,92 @@ def test_version_comparison(candidate, than, newer):
     assert release.is_newer(candidate, than) is newer
 
 
+def _seed(**values):
+    release.write_state({**release.read_state(), **values})
+
+
 def test_nothing_is_fetched_before_anybody_has_been_asked(home, monkeypatch):
     """The sidebar says nothing leaves your disk. Consent comes first."""
-    monkeypatch.setattr(
-        release, "_fetch_latest", lambda: pytest.fail("asked pypi without consent")
-    )
-    assert release.newer_release("0.0.1") is None
+    monkeypatch.setattr(release, "_spawn_check", lambda: pytest.fail("spawned without consent"))
+    assert release.refresh_in_background() is False
+    assert release.known_newer("0.0.1") is None
 
 
-def test_declining_is_remembered_and_silences_the_check(home, monkeypatch):
+def test_declining_is_remembered_and_silences_everything(home, monkeypatch):
     release.set_update_check_consent(False)
-    monkeypatch.setattr(release, "_fetch_latest", lambda: pytest.fail("asked after a no"))
-    assert release.newer_release("0.0.1") is None
+    _seed(latest="9.9.9")
+    monkeypatch.setattr(release, "_spawn_check", lambda: pytest.fail("spawned after a no"))
+    assert release.refresh_in_background() is False
+    assert release.known_newer("0.0.1") is None
     assert release.update_check_consent() is False
 
 
-def test_a_newer_release_is_reported_and_cached(home, monkeypatch):
-    calls = []
-
-    def fetch():
-        calls.append(1)
-        return "0.12.0"
-
+def test_a_command_never_waits_on_the_network(home, monkeypatch):
+    """known_newer reads the cache and nothing else."""
     release.set_update_check_consent(True)
-    monkeypatch.setattr(release, "_fetch_latest", fetch)
+    monkeypatch.setattr(release, "_fetch_latest", lambda: pytest.fail("fetched inline"))
+    assert release.known_newer("0.11.0") is None
+    _seed(latest="0.12.0")
+    assert release.known_newer("0.11.0") == "0.12.0"
 
-    assert release.newer_release("0.11.0") == "0.12.0"
-    assert release.newer_release("0.11.0") == "0.12.0"
-    assert len(calls) == 1, "the cache should hold for a day"
+
+def test_being_current_says_nothing(home):
+    release.set_update_check_consent(True)
+    _seed(latest="0.11.0")
+    assert release.known_newer("0.11.0") is None
 
 
-def test_the_cache_expires(home, monkeypatch):
+def test_a_refresh_is_started_once_a_day_even_when_it_fails(home, monkeypatch):
+    """No network means one try a day, not one per command."""
+    spawned = []
+    release.set_update_check_consent(True)
+    monkeypatch.setattr(release, "_spawn_check", lambda: spawned.append(1) or True)
+
+    assert release.refresh_in_background() is True
+    assert release.refresh_in_background() is False
+    assert len(spawned) == 1
+
+    later = datetime.now(timezone.utc) + release.CHECK_EVERY + timedelta(minutes=1)
+    assert release.refresh_in_background(now=later) is True
+    assert len(spawned) == 2
+
+
+def test_a_fresh_answer_is_not_refreshed(home, monkeypatch):
     release.set_update_check_consent(True)
     monkeypatch.setattr(release, "_fetch_latest", lambda: "0.12.0")
-    release.newer_release("0.11.0")
-
-    stale = datetime.now(timezone.utc) - release.CHECK_EVERY - timedelta(minutes=1)
-    state = release.read_state()
-    state["checked_at"] = stale.isoformat()
-    release.write_state(state)
-
-    monkeypatch.setattr(release, "_fetch_latest", lambda: "0.13.0")
-    assert release.newer_release("0.11.0") == "0.13.0"
+    release.fetch_and_store()
+    monkeypatch.setattr(release, "_spawn_check", lambda: pytest.fail("refreshed a fresh answer"))
+    assert release.refresh_in_background() is False
 
 
-def test_being_current_says_nothing(home, monkeypatch):
+def test_the_child_records_what_it_found(home, monkeypatch):
     release.set_update_check_consent(True)
-    monkeypatch.setattr(release, "_fetch_latest", lambda: "0.11.0")
-    assert release.newer_release("0.11.0") is None
+    monkeypatch.setattr(release, "_fetch_latest", lambda: "0.12.0")
+    assert release.fetch_and_store() == "0.12.0"
+    assert release.read_state()["latest"] == "0.12.0"
+    assert release.known_newer("0.11.0") == "0.12.0"
 
 
-def test_a_failed_lookup_is_silent(home, monkeypatch):
-    """Not hearing about a release beats an error nobody can act on."""
+def test_a_failed_lookup_keeps_the_last_answer(home, monkeypatch):
+    """Not hearing about a release beats forgetting one already known."""
     release.set_update_check_consent(True)
+    _seed(latest="0.12.0")
     monkeypatch.setattr(release, "_fetch_latest", lambda: None)
-    assert release.newer_release("0.11.0") is None
+    assert release.fetch_and_store() is None
+    assert release.known_newer("0.11.0") == "0.12.0"
 
 
-def test_a_corrupt_timestamp_does_not_raise(home, monkeypatch):
-    release.set_update_check_consent(True)
-    release.write_state({"update_check": True, "latest": "0.12.0", "checked_at": "whenever"})
-    monkeypatch.setattr(release, "_fetch_latest", lambda: "0.12.0")
-    assert release.newer_release("0.11.0") == "0.12.0"
+def test_the_notice_is_repeated_once_a_day_not_once_a_command(home):
+    assert release.due_to_tell() is True
+    release.mark_told()
+    assert release.due_to_tell() is False
+    tomorrow = datetime.now(timezone.utc) + release.TELL_EVERY + timedelta(minutes=1)
+    assert release.due_to_tell(now=tomorrow) is True
+
+
+def test_a_corrupt_timestamp_counts_as_due(home):
+    _seed(told_at="whenever", checked_at="never", attempted_at=7)
+    assert release.due_to_tell() is True
 
 
 def test_the_reply_shape_is_checked(home, monkeypatch):
