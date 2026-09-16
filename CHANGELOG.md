@@ -6,7 +6,43 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-09-16
+
 ### Added
+- **Memories can be tagged, and related memories found.** Tag a memory when
+  you save it (`flanner mem remember --tag auth`), or later with
+  `flanner mem tag ID auth --remove old`, the memory page, or an agent's
+  `memory_tag`. A tag change keeps the memory's id and text and is recorded
+  in its history. `--tag` narrows `mem list` and `mem recall`, and a plain
+  search matches tags too. `flanner mem show ID --related`, the memory page
+  and `memory_get(related=True)` list connected memories and say why: one
+  corrected the other, they come from the same file or plan, or they share
+  tags. `flanner mem tags` and `memory_tags` count the tags in use. Tags stay
+  on your machine; sharing a memory sends its text only. The database moves
+  to schema 5 the first time 0.13.0 opens it.
+- **flanner tells you when a new release is out, if you let it.** `flanner
+  init` asks. When on, a background check asks pypi.org for the latest
+  version number once a day; the first command of the day mentions a newer
+  release, and the web UI shows it in the sidebar and footer. The first
+  command after an upgrade says what version you came from and links the
+  changelog. `flanner updates` shows the setting, and `flanner updates off`
+  stops the check. Nothing is sent but the request itself.
+- **`flanner doctor` spots agent instructions from an older flanner.** The
+  block `flanner init` writes into `CLAUDE.md` and `AGENTS.md` now carries a
+  version, and `doctor` says when a repository's copy is behind. Re-running
+  `flanner init` rewrites it.
+- **Next steps fit the person.** `flanner init` ends with the everyday
+  commands and how to join a team from where this machine stands. `login`
+  and `accept` now say the same thing as each other: an admin with no
+  workspace is sent to the console, a member is told to ask an admin, a
+  maintainer is pointed at `review status`, and an admin sees the team
+  commands.
+- **Memories can be saved, corrected, forgotten, restored and filtered from
+  the web UI**, and files attached from a memory's page.
+- **The terminal says more when it helps, and less when asked.** Commands
+  that wait show progress; a wrong or missing name suggests what you meant;
+  `--quiet` is quiet; deleting a project asks for its name; and `flanner why`
+  explains its verdict.
 - **The web UI sets up what the CLI sets up.**
   - **Settings.** Agents now come from the same check `flanner status` runs, so the page no longer calls a Claude Code user unregistered.
   - **Setup check page.** A new page shows agents, tools, the project, capture mode, watched agents and peers. Capture mode can be changed there, writing the same policy file `flanner mem mode` writes.
@@ -128,6 +164,9 @@ versioning follows [SemVer](https://semver.org/).
   holds keep the grace period.
 
 ### Fixed
+- **`flanner web` no longer starts on a port another program holds.** On
+  Windows a second program could bind the same port, so the check said it
+  was free. It now connects first and binds exclusively.
 - **Entitlements renew on use.** Nothing renewed one except
   `flanner whoami --refresh`, so a device that only synced lost push after a
   day and everything else after the grace period. `peer pull`, `peer push`
