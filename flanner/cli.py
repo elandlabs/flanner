@@ -633,7 +633,7 @@ def _offer_update_check() -> None:
     )
     release.set_update_check_consent(allowed)
     if allowed:
-        tui.ok("Checking once a day. flanner status says when one is out.")
+        tui.ok("Checking once a day. flanner updates off stops it.")
     else:
         tui.note("Not checking. Nothing here reaches the network unasked.")
 
@@ -7410,6 +7410,43 @@ def peer_start(host: str, port: int | None, http: bool) -> None:
 def peer_stop() -> None:
     """Stop the background peer server"""
     _stop_pid(get_peer_pid_file(), "Peer server")
+
+
+@cli.command("updates")
+@click.argument("choice", required=False, type=click.Choice(["on", "off"]))
+def updates(choice: str | None) -> None:
+    """Show or set whether flanner checks for new versions
+
+    One request to pypi.org a day, for its public list of versions.
+    Nothing about this machine, its repositories or its plans is sent.
+    `flanner init` asks once; this is how to change the answer later.
+    """
+    from . import __version__, release
+
+    if choice is not None:
+        release.set_update_check_consent(choice == "on")
+    allowed = release.update_check_consent()
+    console.print()
+    if allowed is None:
+        tui.note("Not decided yet, so nothing is checked. flanner init asks.")
+        tui.hint(f"  {tui.command('flanner updates on')} to allow it now.")
+    elif allowed:
+        tui.ok("Checking pypi.org for new versions, once a day.")
+        state = release.read_state()
+        checked = state.get("checked_at")
+        if isinstance(checked, str):
+            when = checked[:16].replace("T", " ")
+            tui.note(f"  Last answer: {state.get('latest')}, at {when} UTC.")
+        newer = release.known_newer(__version__)
+        if newer:
+            upgrade = tui.command("uv tool upgrade flanner")
+            tui.hint(f"  {newer} is out; this is {__version__}. {upgrade}")
+        tui.hint(f"  {tui.command('flanner updates off')} stops it.")
+    else:
+        tui.ok("Not checking for new versions. Nothing here reaches the network unasked.")
+        tui.hint(f"  {tui.command('flanner updates on')} turns it on.")
+    console.print()
+
 
 
 @peer.command("pushes")

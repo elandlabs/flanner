@@ -282,6 +282,21 @@ def _release_notice() -> str | None:
 
 
 templates.env.globals["release_notice"] = _release_notice
+
+
+def _update_check_on() -> bool:
+    """Whether this machine asks pypi.org for new versions.
+
+    The rail says "nothing leaves your disk". Once the check is allowed,
+    one small request a day does, so the copy has to say so rather than
+    stay true only for the people who declined.
+    """
+    from . import release
+
+    return release.update_check_consent() is True
+
+
+templates.env.globals["update_check_on"] = _update_check_on
 # Stamped once at import. A footer year that re-read the clock on every
 # render would be the only thing on the page that could change without the
 # page changing, and nobody is running this process across New Year.

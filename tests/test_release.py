@@ -184,3 +184,36 @@ def test_the_reply_shape_is_checked(home, monkeypatch):
 
     monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **k: Reply())
     assert release._fetch_latest() is None
+
+
+# --- turning it on and off ------------------------------------------------------
+
+
+def test_updates_command_changes_the_answer_init_recorded(home):
+    """A yes at init has to be reversible without editing a json file."""
+    from click.testing import CliRunner
+
+    from flanner.cli import cli
+
+    runner = CliRunner()
+    shown = runner.invoke(cli, ["updates"])
+    assert shown.exit_code == 0
+    assert "Not decided yet" in shown.output
+
+    on = runner.invoke(cli, ["updates", "on"])
+    assert on.exit_code == 0
+    assert release.update_check_consent() is True
+    assert "flanner updates off" in on.output
+
+    off = runner.invoke(cli, ["updates", "off"])
+    assert off.exit_code == 0
+    assert release.update_check_consent() is False
+    assert "Nothing here reaches the network unasked" in off.output
+
+
+def test_turning_it_off_silences_a_notice_already_cached(home):
+    release.set_update_check_consent(True)
+    _seed(latest="99.0.0")
+    assert release.known_newer("0.11.0") == "99.0.0"
+    release.set_update_check_consent(False)
+    assert release.known_newer("0.11.0") is None
