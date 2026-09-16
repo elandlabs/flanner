@@ -5,11 +5,14 @@ import json
 import pytest
 
 from flanner.agent_hooks import (
+    AGENT_MD_START,
+    BLOCK_VERSION,
     agent_md_block,
     decide_write,
     ensure_project_mcp_json,
     ensure_settings_hook,
     install_skill,
+    installed_block_version,
     run_guard_write,
     upsert_agent_md,
 )
@@ -101,7 +104,7 @@ def test_claude_md_preserves_existing_content(db, git_repo):
     upsert_agent_md(str(git_repo), "CLAUDE.md", agent_md_block(project))
     text = (git_repo / "CLAUDE.md").read_text(encoding="utf-8")
     assert "Existing notes." in text
-    assert text.count("<!-- flanner:managed -->") == 1
+    assert text.count(AGENT_MD_START) == 1
 
 
 def test_claude_md_replaces_stale_block(db, git_repo):
@@ -112,7 +115,34 @@ def test_claude_md_replaces_stale_block(db, git_repo):
     upsert_agent_md(str(git_repo), "CLAUDE.md", agent_md_block(project))
     text = (git_repo / "CLAUDE.md").read_text(encoding="utf-8")
     assert "old content" not in text
-    assert text.count("<!-- flanner:managed -->") == 1
+    assert text.count(AGENT_MD_START) == 1
+
+
+def test_the_block_carries_the_version_that_wrote_it(db, git_repo):
+    """`doctor` reads this stamp to spot instructions an upgrade left behind."""
+    project = _project(get_session(), git_repo)
+    upsert_agent_md(str(git_repo), "CLAUDE.md", agent_md_block(project))
+    assert installed_block_version(str(git_repo), "CLAUDE.md") == BLOCK_VERSION
+
+
+def test_a_block_written_before_stamps_existed_reads_as_zero(db, git_repo):
+    """It has to be found and replaced, not duplicated beside the new one."""
+    (git_repo / "CLAUDE.md").write_text(
+        "<!-- flanner:managed -->" + chr(10) + "old" + chr(10) + "<!-- /flanner:managed -->"
+        + chr(10),
+        encoding="utf-8",
+    )
+    assert installed_block_version(str(git_repo), "CLAUDE.md") == 0
+
+    project = _project(get_session(), git_repo)
+    upsert_agent_md(str(git_repo), "CLAUDE.md", agent_md_block(project))
+    text = (git_repo / "CLAUDE.md").read_text(encoding="utf-8")
+    assert text.count(AGENT_MD_START) == 1
+    assert installed_block_version(str(git_repo), "CLAUDE.md") == BLOCK_VERSION
+
+
+def test_no_block_at_all_is_not_a_finding(db, git_repo):
+    assert installed_block_version(str(git_repo), "CLAUDE.md") is None
 
 
 # --- settings.json hook ------------------------------------------------------

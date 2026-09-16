@@ -4928,6 +4928,36 @@ def review_status(plan_name: str | None, project: str | None) -> None:
     _print_external_review(session, plan_file)
 
 
+def _agent_block_findings(proj: ProjectModel) -> list[Any]:
+    """Whether the instructions this repo gives an agent are the current ones.
+
+    `init` writes a managed block into CLAUDE.md and AGENTS.md. A repo
+    adopted by an older flanner keeps the block it was given, so an agent
+    can be reading guidance that names tools differently from the ones it
+    now has. Nothing said so until this: the files are present and look
+    right, and only the stamp gives it away.
+    """
+    from .agent_hooks import AGENT_MD_FILES, BLOCK_VERSION, installed_block_version
+    from .reconcile import Finding
+
+    if not proj.project_root:
+        return []
+    findings: list[Any] = []
+    for filename in AGENT_MD_FILES:
+        found = installed_block_version(proj.project_root, filename)
+        # None is "no block here", which is not a defect: a repo may carry
+        # only one of the two files.
+        if found is not None and found < BLOCK_VERSION:
+            findings.append(
+                Finding(
+                    "stale_agent_block",
+                    filename,
+                    f"written by an older flanner (v{found}, current v{BLOCK_VERSION})",
+                )
+            )
+    return findings
+
+
 def _memory_findings(session: Any) -> list[Any]:
     """Where the memory catalog and the memory files disagree.
 
@@ -4985,6 +5015,7 @@ _FINDING_STYLES = {
     "signature_invalid": "red",
     "artifact_missing": "red",
     "unverified_signer": "blue",
+    "stale_agent_block": "cyan",
     # Memory. Same shape and the same colours, because a person reading
     # this table should not have to learn which half of the product a row
     # came from before knowing how worried to be.
@@ -5329,6 +5360,13 @@ def _print_doctor_advice(findings: list[Any], *, repair: bool) -> None:
                 "flanner, so no automatic fix is safe.",
                 style="yellow",
             )
+    if any(f.kind == "stale_agent_block" for f in findings):
+        console.print()
+        tui.hint(
+            "This repo's agent instructions are from an older flanner. "
+            f"{tui.command('flanner init')} rewrites them."
+        )
+
     elif any(f.repairable for f in findings):
         console.print(
             "\nRun 'flanner doctor --repair' to fix the repairable ones.", style="yellow"
@@ -5370,6 +5408,7 @@ def doctor(project: str | None, repair: bool, output: str, report: bool) -> None
         work.say("checking memory")
         with observe.step("check memory"):
             findings += _memory_findings(session)
+        findings += _agent_block_findings(proj)
         work.say("checking the team enrollment")
         with observe.step("check enrollment"):
             enrollment = _enrollment_report(proj)

@@ -16,6 +16,7 @@ tested without stdin or a live hook.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any, NamedTuple
 
@@ -25,8 +26,17 @@ from .database import ProjectModel, get_project_by_root
 from .exceptions import ConfigError
 from .git_integration import find_git_root
 
-AGENT_MD_START = "<!-- flanner:managed -->"
+# Matched as a prefix, so a block written before the version stamp
+# existed is still found and replaced rather than duplicated.
+AGENT_MD_START = "<!-- flanner:managed"
 AGENT_MD_END = "<!-- /flanner:managed -->"
+
+#: Bumped whenever the blocks below change what they tell an agent. A
+#: repo adopted by an older flanner keeps the block it was given until
+#: somebody re-runs `flanner init`, and nothing said so: the instructions
+#: an agent reads could be releases behind the tools they describe.
+#: `doctor` compares this against what the repo actually has.
+BLOCK_VERSION = 1
 
 # The hook entry flanner merges into a repo's .claude/settings.json.
 HOOK_COMMAND = "flanner hook guard-write"
@@ -146,7 +156,7 @@ AGENT_MD_FILES = ("CLAUDE.md", "AGENTS.md")
 def agent_md_block(project: ProjectModel) -> str:
     """The managed section naming the plan dir and the tools to use."""
     return (
-        f"{AGENT_MD_START}\n"
+        f"{AGENT_MD_START} v{BLOCK_VERSION} -->\n"
         # First, because every section below assumes the agent knows which
         # project it is in and what it may do there, and a wrong guess about
         # either is the most expensive mistake it can make.
@@ -208,6 +218,26 @@ def agent_md_block(project: ProjectModel) -> str:
         f"Those change what an agent loads, so the user does them.\n"
         f"{AGENT_MD_END}"
     )
+
+
+def installed_block_version(root: str, filename: str) -> int | None:
+    """Which version of the managed block this repo has, or None for no block.
+
+    Zero means a block written before the stamp existed. The marker is read
+    rather than the body compared, because the body is prose somebody may
+    have reformatted; the stamp is what flanner wrote and owns.
+    """
+    path = Path(root) / filename
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    at = text.find(AGENT_MD_START)
+    if at < 0:
+        return None
+    opening = text[at : text.find(">", at) + 1]
+    found = re.search(r"v(\d+)", opening)
+    return int(found.group(1)) if found else 0
 
 
 def upsert_agent_md(root: str, filename: str, block: str) -> bool:
@@ -550,7 +580,7 @@ def wire_agent_integration(root: str, project: ProjectModel) -> Wiring:
 # at user scope. It is deliberately narrow: only offer adoption on plan-doc
 # intent in an unmanaged repo, never for READMEs or casual notes.
 GLOBAL_NUDGE_BLOCK = (
-    f"{AGENT_MD_START}\n"
+    f"{AGENT_MD_START} v{BLOCK_VERSION} -->\n"
     f"## Plan files (flanner, global)\n\n"
     f"flanner tracks plan, design, architecture, migration, and RFC markdown: it "
     f"places the file in a managed directory, adds a standard header, and versions "
