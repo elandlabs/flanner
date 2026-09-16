@@ -164,6 +164,9 @@ versioning follows [SemVer](https://semver.org/).
   holds keep the grace period.
 
 ### Fixed
+- **`flanner init --project-root .` leaves a project flanner can find.** The
+  root was saved as `.`, so every later command said the repository had no
+  project. Roots are now saved as absolute paths.
 - **`flanner web` no longer starts on a port another program holds.** On
   Windows a second program could bind the same port, so the check said it
   was free. It now connects first and binds exclusively.
