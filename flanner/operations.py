@@ -671,6 +671,13 @@ OPERATIONS: tuple[Operation, ...] = (
     ),
     _op(
         "local",
+        "Switch the daily new-version check on or off",
+        "admin",
+        cli=("updates",),
+        why="A choice about what this machine sends to pypi.org, made by its owner.",
+    ),
+    _op(
+        "local",
         "Run the web UI and the background server",
         "admin",
         cli=("web", "start", "stop"),
