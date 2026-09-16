@@ -110,6 +110,19 @@
         {{ ico.icon('settings') }} Settings</a>
     </div>
 
+    {% set newer = release_notice() %}
+    {#
+      A newer release, when one is known. Above the rail's foot rather than
+      in the page, so it is on every screen without competing with the work
+      on it. Shown only when the version check was allowed at `init`.
+    #}
+    {% if newer %}
+    <div class="rail-update" role="status">
+      <div class="hd">{{ ico.icon('update', 14) }} Version {{ newer }} is out</div>
+      <p>You have {{ app_version }}. In a terminal:</p>
+      <code class="mono">uv tool upgrade flanner</code>
+    </div>
+    {% endif %}
     <div class="rail-foot">
       <div class="hd"><span class="dot" aria-hidden="true"></span> 100% local</div>
       <p>SQLite on this machine. No account, nothing leaves your disk.</p>
@@ -166,6 +179,9 @@
         <span class="mark">
           <span class="dot" aria-hidden="true"></span>
           flanner <span class="ver mono">{{ app_version }}</span>
+          {% if newer %}
+          <span class="ver-new" title="Update with: uv tool upgrade flanner">{{ newer }} available</span>
+          {% endif %}
         </span>
         <nav class="links" aria-label="Footer">
           <a href="/settings">Settings</a>

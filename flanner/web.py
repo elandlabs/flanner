@@ -264,6 +264,24 @@ def _cli_only(action: str) -> dict[str, str]:
 templates.env.globals["cli_only"] = _cli_only
 templates.env.globals["nav_review"] = 0
 templates.env.globals["app_version"] = __version__
+
+
+def _release_notice() -> str | None:
+    """A newer version the cache already knows of, for the rail and footer.
+
+    A function rather than a value stamped at import: this process can run
+    for days, and a release can land in the meantime. It reads the cache
+    and nothing else, and starts the once-a-day refresh the command line
+    also starts, so somebody who only ever uses this page still hears.
+    Both are no-ops until the check was allowed at `init`.
+    """
+    from . import release
+
+    release.refresh_in_background()
+    return release.known_newer(__version__)
+
+
+templates.env.globals["release_notice"] = _release_notice
 # Stamped once at import. A footer year that re-read the clock on every
 # render would be the only thing on the page that could change without the
 # page changing, and nobody is running this process across New Year.

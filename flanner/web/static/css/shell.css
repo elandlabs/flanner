@@ -121,6 +121,33 @@ a:hover { color: var(--accent-hi); }
 .rail-foot p { margin: 0; color: var(--text-3); }
 .rail-foot .credit { margin-top: 8px; font-size: var(--t-xs); color: var(--text-4); }
 
+/* A newer release. The rail foot's shape, on the accent tint, and pushed
+   down with it: the two sit together at the bottom of the rail. It does
+   not animate in; it is there on arrival, and a notice that moves draws
+   the eye away from the page every time one is loaded. */
+.rail-update {
+  margin-top: auto;
+  border: 1px solid var(--accent-line); background: var(--accent-soft);
+  border-radius: 10px; padding: 12px; font-size: var(--t-sm); line-height: 1.5;
+}
+.rail-update + .rail-foot { margin-top: 8px; }
+.rail-update .hd {
+  display: flex; align-items: center; gap: 7px;
+  font-weight: 600; color: var(--accent-ink); margin-bottom: 4px;
+}
+.rail-update p { margin: 0 0 6px; color: var(--text-2); }
+.rail-update code {
+  display: block; font-size: var(--t-xs); color: var(--text);
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: var(--r-xs); padding: 3px 6px; overflow-wrap: anywhere;
+}
+
+/* The same news in the footer, which is where a phone sees it. */
+.sitefoot .ver-new {
+  font: 600 var(--t-xs) var(--font-mono); color: var(--accent-ink);
+  background: var(--accent-soft); border-radius: 10px; padding: 1px 7px;
+}
+
 /* ----------------------------------------------------------------- main */
 
 .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
@@ -1377,7 +1404,7 @@ select.btn-sm { padding-right: 8px; }
     background: var(--rail-bg);
   }
   .rail-brand { padding: 0; flex: 1; min-width: 0; gap: 8px; }
-  .rail-eyebrow, .rail-foot { display: none; }
+  .rail-eyebrow, .rail-foot, .rail-update { display: none; }
 
   .menu-toggle, .rail-theme { display: inline-flex; }
   /* A thumb, not a mouse pointer: 40px is the smallest comfortable target. */
