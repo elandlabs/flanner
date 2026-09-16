@@ -1345,7 +1345,9 @@ def create_project(
     project = ProjectModel(
         name=name,
         description=description,
-        project_root=project_root,
+        # Stored absolute: every lookup compares against an absolute path, so
+        # `init --project-root .` saved a project nothing could find again.
+        project_root=os.path.abspath(project_root) if project_root else project_root,
         plan_directory=plan_directory,
         auto_gitignore=auto_gitignore,
     )
@@ -1484,7 +1486,7 @@ def update_project(
         return None
 
     if project_root is not None:
-        project.project_root = project_root
+        project.project_root = os.path.abspath(project_root) if project_root else project_root
     if plan_directory is not None:
         project.plan_directory = plan_directory
     if auto_gitignore is not None:

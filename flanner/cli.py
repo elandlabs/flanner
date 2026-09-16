@@ -796,6 +796,8 @@ def init(
     # below, which writes .mcp.json and the guard-write hook.
     _register_agents_globally(_agents_to_register(setup_agents, skip_claude))
 
+    if project_root:
+        project_root = os.path.abspath(project_root)
     if project_root or (project_root := find_git_root(os.getcwd())):
         console.print(f"\nOK Detected git repository at: {project_root}", style="green")
         _adopt_repository(project_root, plan_dir, force_new_project)

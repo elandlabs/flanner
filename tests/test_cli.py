@@ -172,6 +172,22 @@ def test_init_ends_with_everyday_commands_and_how_to_join_a_team(runner, home, g
     assert "flanner accept" in said and "flanner login" in said
 
 
+def test_init_with_a_relative_root_leaves_a_project_later_commands_find(
+    runner, home, git_repo, monkeypatch
+):
+    """`--project-root .` was stored as ".", which no lookup ever matched."""
+    import os
+
+    from flanner.database import get_project_by_root, get_session
+
+    monkeypatch.chdir(git_repo)
+    runner.invoke(cli, ["init", "--skip-claude", "--project-root", "."], input="myproj\n")
+
+    project = get_project_by_root(get_session(), str(git_repo))
+    assert project is not None
+    assert os.path.isabs(project.project_root)
+
+
 def test_init_existing_project(runner, git_repo):
     runner.invoke(
         cli, ["init", "--skip-claude", "--project-root", str(git_repo)], input="myproj\n"
