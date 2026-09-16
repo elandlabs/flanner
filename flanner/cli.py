@@ -838,7 +838,9 @@ def _first_thing_to_try(adopted: bool, project_root: str | None = None) -> None:
         ('flanner mem remember "..."', "save a decision for later sessions"),
         ("flanner web", "all of it in the browser"),
     ):
-        tui.hint(f"  {tui.command(command):<38} {what}")
+        # Padded on the plain text: the styled string carries markup, so
+        # padding it lined up nothing.
+        tui.hint(f"  {tui.command(command)}{' ' * (27 - len(command))} {what}")
 
     _team_line(project_root)
     console.print()
