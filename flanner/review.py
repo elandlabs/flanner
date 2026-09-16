@@ -470,6 +470,10 @@ def _try_accept(
         return None, "proposal is no longer projected"
     if proposal.state == workflow.ACCEPTED:
         return None, "already the accepted baseline"
+    # Checked before the count, which would otherwise read "0 of 1" and
+    # hide that the approval was recorded and is only waiting on a renewal.
+    if authorization.roster_in_grace:
+        return None, authz.RENEW_TO_COUNT_APPROVALS
     if len(proposal.approvals) < policy.approvals_required:
         return None, (
             f"{len(proposal.approvals)} of {policy.approvals_required} required approvals recorded"

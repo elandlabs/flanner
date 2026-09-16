@@ -56,6 +56,9 @@
             state rather than instead of it, because the two are different
             facts: what the review says, and whether it is an authorization.
           #}
+          {% if row.renew %}
+          <span class="pill pill-aging" title="{{ row.renew }}">renew to count approvals</span>
+          {% endif %}
           {% if not row.enforced %}
           <span class="pill pill-quiet"
                 title="{{ row.advisory_reason or 'roles here are local to this machine' }}">advisory</span>

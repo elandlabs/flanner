@@ -322,6 +322,14 @@ def _judge(
     if not asked_roles and authorization.enforced and not authorization.roles:
         warnings.append(f"review authorization is unavailable: {authorization.reason}")
 
+    # Approvals may exist and still not count. Saying only "no approval
+    # recorded" would send somebody to approve again instead of to renew.
+    if authorization.roster_in_grace:
+        warnings.append(
+            "approvals do not count while the team roster is in its grace period. "
+            + authz.RENEW_TO_COUNT_APPROVALS
+        )
+
     # The mirror of the case above, and the one that misleads by looking
     # settled. A solo project projects review against a role map anyone
     # holding the machine can edit, so `reviewed` is true and authorizes

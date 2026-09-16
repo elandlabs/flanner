@@ -360,3 +360,139 @@ def test_declining_in_the_console_records_nothing(joined, monkeypatch):
         .approvals
         == ()
     )
+
+
+# --- a roster in grace -----------------------------------------------------------
+#
+# A roster past its expiry is still honoured for a grace window, so a
+# maintainer removed from the team kept counting for up to a week. While the
+# roster is in grace it still says who is who, but no approval counts and no
+# head is accepted. Nothing is deleted: a renewal brings them back.
+
+IN_GRACE = -timedelta(days=1)
+
+
+def _accepted_then(joined, expires: timedelta):
+    """A teammate's proposal accepted on a current roster, then the roster aged."""
+    sign_in(team=roster(("mo", EDITOR, (TEAMMATE_DEVICE,))))
+    proposal = teammate_proposes(joined)
+    target = proposal.payload["target_artifact_id"]
+    assert approve(joined, proposal, confirmation=confirmation(proposal.event_id, target)).accepted
+    sign_in(team=roster(("mo", EDITOR, (TEAMMATE_DEVICE,)), expires=expires))
+    return proposal
+
+
+def test_a_maintainers_approval_does_not_count_while_the_roster_is_in_grace(joined):
+    session, proj, plan_file, _ = joined
+    proposal = _accepted_then(joined, IN_GRACE)
+
+    state = review.status(session, plan_file=plan_file, project=proj)
+
+    assert state.proposals[proposal.event_id].approvals == ()
+    assert any(authz.RENEW_TO_COUNT_APPROVALS in why for _, why in state.rejected)
+
+
+def test_no_head_is_accepted_while_the_roster_is_in_grace(joined):
+    session, proj, plan_file, _ = joined
+    proposal = _accepted_then(joined, IN_GRACE)
+
+    state = review.status(session, plan_file=plan_file, project=proj)
+
+    assert state.accepted_artifact_id is None
+    assert state.accepted_event_ids == ()
+    assert state.proposals[proposal.event_id].state != workflow.ACCEPTED
+
+
+def test_the_same_approval_counts_again_once_the_roster_is_current(joined):
+    session, proj, plan_file, _ = joined
+    proposal = _accepted_then(joined, IN_GRACE)
+    sign_in(team=roster(("mo", EDITOR, (TEAMMATE_DEVICE,))))
+
+    state = review.status(session, plan_file=plan_file, project=proj)
+
+    assert state.proposals[proposal.event_id].approvals == ("maria",)
+    assert state.accepted_artifact_id == proposal.payload["target_artifact_id"]
+    assert not authz.resolve(proj).roster_in_grace
+
+
+def test_proposals_and_comments_still_show_while_the_roster_is_in_grace(joined):
+    from flanner.assurance import load_comments
+
+    session, proj, plan_file, _ = joined
+    proposal = _accepted_then(joined, IN_GRACE)
+    review.comment(session, project=proj, plan_file=plan_file, quote="one", body="still here")
+
+    state = review.status(session, plan_file=plan_file, project=proj)
+
+    assert state.proposals[proposal.event_id].proposer == "mo"
+    assert [c.payload["body"] for c in load_comments(session, str(plan_file.id))] == ["still here"]
+
+
+def test_an_approval_in_grace_is_recorded_but_does_not_advance(joined):
+    session, proj, plan_file, _ = joined
+    sign_in(team=roster(("mo", EDITOR, (TEAMMATE_DEVICE,)), expires=IN_GRACE))
+    proposal = teammate_proposes(joined)
+    target = proposal.payload["target_artifact_id"]
+
+    result = approve(joined, proposal, confirmation=confirmation(proposal.event_id, target))
+
+    assert not result.advanced_baseline
+    assert result.reason == authz.RENEW_TO_COUNT_APPROVALS
+    sign_in(team=roster(("mo", EDITOR, (TEAMMATE_DEVICE,))))
+    state = review.status(session, plan_file=plan_file, project=proj)
+    assert state.proposals[proposal.event_id].approvals == ("maria",)
+
+
+def test_assurance_and_review_status_agree_while_the_roster_is_in_grace(joined):
+    from flanner.assurance import assess
+
+    session, proj, plan_file, _ = joined
+    _accepted_then(joined, IN_GRACE)
+
+    state = review.status(session, plan_file=plan_file, project=proj)
+    verdict = assess(session, project=proj, plan_file=plan_file)
+
+    assert verdict.reviewed is False
+    assert verdict.accepted_artifact_id == state.accepted_artifact_id is None
+    assert any(authz.RENEW_TO_COUNT_APPROVALS in w for w in verdict.warnings)
+
+
+def test_review_status_says_to_renew_while_the_roster_is_in_grace(joined):
+    _accepted_then(joined, IN_GRACE)
+
+    ran = CliRunner().invoke(cli, ["review", "status", "arch", "--project", "p"])
+
+    assert ran.exit_code == 0, ran.output
+    assert "Renew to count approvals" in " ".join(ran.output.split())
+
+
+def test_the_review_page_says_to_renew_while_the_roster_is_in_grace(joined):
+    from flanner.web import _review_rows
+
+    session = joined[0]
+    _accepted_then(joined, IN_GRACE)
+
+    rows = _review_rows(session)
+
+    assert [row["renew"] for row in rows] == [authz.RENEW_TO_COUNT_APPROVALS]
+
+
+def test_a_current_roster_asks_nobody_to_renew(joined):
+    from flanner.web import _review_rows
+
+    _accepted_then(joined, timedelta(hours=1))
+
+    assert [row["renew"] for row in _review_rows(joined[0])] == [""]
+
+
+def test_solo_review_is_untouched_by_the_roster(joined):
+    session, proj, plan_file, _ = joined
+    proj.workspace_id = None
+    session.commit()
+    sign_in(team=roster(("mo", EDITOR, (TEAMMATE_DEVICE,)), expires=IN_GRACE))
+    proposed = review.propose(session, project=proj, plan_file=plan_file).event
+
+    result = approve(joined, proposed)
+
+    assert result.advanced_baseline, result.reason
+    assert not authz.resolve(proj).roster_in_grace

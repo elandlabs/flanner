@@ -820,6 +820,9 @@ def _review_rows(session: Any) -> list[dict[str, Any]]:
                     # accepted baseline alone.
                     "enforced": authorization.enforced,
                     "advisory_reason": authorization.reason,
+                    "renew": authz.RENEW_TO_COUNT_APPROVALS
+                    if authorization.roster_in_grace
+                    else "",
                 }
             )
     rows.sort(key=lambda r: (not r["conflicted"], -len(r["pending"]), -r["comments"]))

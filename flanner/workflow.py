@@ -160,6 +160,10 @@ class Verifier:
     #: Whether an approval carries a confirmation that matches it. None
     #: asks for none.
     confirmed: Callable[[Event], bool] | None = None
+    #: Why approvals and accepted heads do not count right now, or empty
+    #: if they do. Applied when projecting, not in `refusal`, so an approval
+    #: is still recorded and counts once the reason goes away.
+    uncounted: str = ""
 
     def refusal(self, event: Event) -> str:
         """Why this event cannot count, or an empty string if it can."""
@@ -475,6 +479,9 @@ def project(
         if refusal:
             state.rejected.append((event.event_id, refusal))
             continue
+        if verifier is not None and verifier.uncounted and _decides(event):
+            state.rejected.append((event.event_id, verifier.uncounted))
+            continue
         by_type.setdefault(event.artifact.artifact_type, []).append(event)
 
     proposals: dict[str, Event] = {}
@@ -515,6 +522,14 @@ def project(
     accepted = _project_accepted_heads(by_type, proposals, decisions, roles, policy, state)
     _project_proposals(proposals, decisions, accepted, state)
     return state
+
+
+def _decides(event: Event) -> bool:
+    """Whether an event moves the baseline: an approval or an accepted head."""
+    kind = event.artifact.artifact_type
+    return kind == artifacts.ACCEPTED_HEAD or (
+        kind == artifacts.REVIEW_DECISION and event.payload.get("action") == APPROVE
+    )
 
 
 def _project_accepted_heads(

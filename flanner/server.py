@@ -897,6 +897,11 @@ def project_context() -> dict[str, Any]:
         "acting_as": authorization.actor,
         "your_role": authorization.roles.get(authorization.actor),
         "reason": authorization.reason,
+        # A roster in grace still says who is who, but approvals do not
+        # count until it is renewed. Told here so an agent does not approve
+        # and then wonder why the baseline never moved.
+        "approvals_counted": not authorization.roster_in_grace,
+        "renew": authz.RENEW_TO_COUNT_APPROVALS if authorization.roster_in_grace else None,
     }
     try:
         policy = memory_ops.policy_for(project)

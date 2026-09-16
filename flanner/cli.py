@@ -3064,10 +3064,14 @@ def _note_authorization(authorization: Any) -> None:
     The reason comes from the resolution rather than being restated here, so
     there is one sentence to keep true instead of two.
     """
+    from . import authz
+
     if not authorization.enforced:
         console.print(f"review here is advisory: {authorization.reason}", style="dim")
     elif authorization.role is None:
         tui.warn(f"cannot authorize review: {authorization.reason}")
+    elif authorization.roster_in_grace:
+        tui.warn(f"the team roster is in its grace period. {authz.RENEW_TO_COUNT_APPROVALS}")
 
 
 # --- skills ------------------------------------------------------------------

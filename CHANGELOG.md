@@ -87,6 +87,15 @@ versioning follows [SemVer](https://semver.org/).
   none of them. Running comparisons is on the roadmap.
 
 ### Security
+- **Approvals do not count while the team roster is in its grace period.**
+  A roster is honoured for seven days past its expiry, so a maintainer
+  removed from the team could have approvals counted, and accepted
+  baselines stand, for up to a week. While the roster is in grace,
+  proposals, comments and history still show, but no approval counts and
+  no baseline is accepted. `review status`, the review page and the
+  assurance verdict say "Renew to count approvals: flanner whoami
+  --refresh", and `project_context` tells agents the same. Nothing is deleted: after a renewal the same approvals count
+  again without being signed again. Solo projects are unchanged.
 - **Applying what an agent asked for takes more than typing the command.**
   Signed in, flanner actions apply waits for a console confirmation bound to
   that action and its preview. The web UI never applies one: it shows the

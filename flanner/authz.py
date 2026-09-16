@@ -30,7 +30,7 @@ Renewal is ``account``'s job and belongs to commands that expect to wait.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from . import session as cache
 from . import workflow
@@ -42,6 +42,10 @@ from .plan_ops import workspace_id_for
 # tell an advisory verdict from an enforced one.
 LOCAL = "local"
 ENTITLEMENT = "entitlement"
+
+#: What to do about a roster in grace. One sentence, so the review status,
+#: the web page and the assurance verdict cannot word the fix differently.
+RENEW_TO_COUNT_APPROVALS = "Renew to count approvals: flanner whoami --refresh"
 
 
 @dataclass(frozen=True)
@@ -56,6 +60,9 @@ class Authorization:
     #: How events are checked beyond their signatures. None where nothing
     #: is enforced, or where there is nothing to check against.
     verifier: workflow.Verifier | None = field(default=None, compare=False)
+    #: True when the roster is past its expiry but inside the grace window.
+    #: It still says who is who, but not who may approve.
+    roster_in_grace: bool = False
 
     @property
     def enforced(self) -> bool:
@@ -118,6 +125,15 @@ def resolve(
     # nobody but this user, and dropped. This user's own role still comes
     # from the entitlement, which is the fresher of the two.
     roster = verify_roster(session.roster, session.keyring, now=now) if session.roster else None
+    # A roster in grace still names teammates, so proposals and comments
+    # project. It does not decide approvals: a maintainer removed from the
+    # team would otherwise count for the whole grace window. Serving refuses
+    # such a roster for the same reason (peer.py). Nothing is deleted, so a
+    # renewal makes the same approvals count again.
+    in_grace = (
+        roster is not None
+        and verify_roster(session.roster, session.keyring, now=now, grace=timedelta(0)) is None
+    )
     members = roster.members(workspace_id) if roster is not None else ()
     roles = {m.user_id: m.role for m in members if m.user_id != acting_as}
     roles.update(roles_from_entitlement(verdict.claims, workspace_id, acting_as))
@@ -144,7 +160,12 @@ def resolve(
         source=ENTITLEMENT,
         workspace_id=workspace_id,
         reason="" if acting_as in roles else "you hold no role in this workspace",
-        verifier=workflow.Verifier(devices=devices, confirmed=confirmed),
+        verifier=workflow.Verifier(
+            devices=devices,
+            confirmed=confirmed,
+            uncounted=f"the roster is in grace. {RENEW_TO_COUNT_APPROVALS}" if in_grace else "",
+        ),
+        roster_in_grace=in_grace,
     )
 
 
