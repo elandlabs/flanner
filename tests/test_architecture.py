@@ -130,13 +130,16 @@ ALLOWED = {
         # through storage: without it the freshness window is the only thing
         # standing between a captured request and a replay of it.
         "replay",
+        # A refusal carries the same code a control-plane refusal would.
+        # Foundation: it imports nothing, so it widens no reach.
+        "refusals",
     },
     # Nonce bookkeeping. Reaches the table it writes and the module that
     # defines the window it is sized against, and nothing else.
     "replay": {"database", "device_auth"},
     # The transport carries what peer decides; it never decides anything
     # itself, so it reaches for peer and the device key and nothing else.
-    "peer_iroh": {"identity", "peer", "session"},
+    "peer_iroh": {"identity", "peer", "refusals", "session"},
     "workflow": {"artifacts"},
     "assurance": FOUNDATION
     | {"artifacts", "identity", "workflow", "database", "freshness", "authz"},

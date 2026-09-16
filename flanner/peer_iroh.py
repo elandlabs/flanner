@@ -41,7 +41,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from . import identity, peer
+from . import identity, peer, refusals
 
 #: Protocol name negotiated on the wire. Bump it when the framing changes,
 #: never for a change inside the JSON, which the protocol version covers.
@@ -375,7 +375,7 @@ def _dispatch(
             "body": peer.serve_request(operation, payload, sessions, held, refresh_keys),
         }
     except peer.PeerError as e:
-        return {"ok": False, "status": e.status, "error": str(e)}
+        return {"ok": False, "status": e.status, "error": str(e), "code": e.code}
 
 
 def endpoint_id_for(device_id: str, held: Any) -> str:
@@ -465,6 +465,7 @@ class IrohTransport:
             raise peer.PeerError(
                 str(reply.get("error") or "peer refused"),
                 status=int(reply.get("status") or 403),
+                code=str(reply.get("code") or refusals.UNKNOWN),
             )
         body = reply.get("body")
         if not isinstance(body, dict):

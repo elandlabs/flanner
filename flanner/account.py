@@ -74,7 +74,7 @@ class SessionError(Exception):
 
 
 def _learn_peers(session: Session) -> Session:
-    """Fetch the organization's device keys, right after enrolling.
+    """Fetch the organization's device keys, right after enrolling or renewing.
 
     Without these, `flanner peer pull dev_...` cannot turn a teammate's id
     into the public key it needs to dial them — so a freshly enrolled device
@@ -82,10 +82,10 @@ def _learn_peers(session: Session) -> Session:
     workflow. They were only ever fetchable through an internal helper that
     no command called.
 
-    Best-effort on purpose. Enrolment has already succeeded by the time this
-    runs, and failing it because a second request did not land would trade a
-    working install for a missing convenience. The caller warns instead, and
-    names the command that retries.
+    Best-effort on purpose. Enrolment or renewal has already succeeded by the
+    time this runs, and failing it because a second request did not land
+    would trade a working install for a missing convenience. The keys held
+    before are kept, and `whoami --refresh` retries and says what happened.
     """
     try:
         fetch_device_keys()
@@ -128,12 +128,14 @@ def refresh(session: Session | None = None) -> Session:
         repeatable=True,
     )
     renewed = _session_from(current.endpoint, body)
-    # A renewal answers about this device, not the others. Dropping the
-    # cached peer keys here would silently break artifact verification
-    # until the next explicit fetch.
-    renewed.device_keys = current.device_keys
+    # The roster arrives with the entitlement; the device keys do not, and
+    # copying the old ones forward left a removed teammate's key trusted
+    # until somebody thought to run `whoami --refresh`. So a renewal fetches
+    # them too. The old keys are kept only for when that fetch fails:
+    # dropping them would break artifact verification offline.
+    renewed.device_keys = renewed.device_keys or current.device_keys
     cache.save(renewed)
-    return renewed
+    return _learn_peers(renewed)
 
 
 def ensure_fresh(*, now: datetime | None = None) -> Session | None:
@@ -143,6 +145,10 @@ def ensure_fresh(*, now: datetime | None = None) -> Session | None:
     attempt, and a failed attempt falls back to what is cached rather than
     raising: an unreachable control plane should cost team features at the
     end of the grace window, not this operation.
+
+    Called on use — by pull, push and `peer serve` — and never on a timer.
+    The control plane records a renewal as the device being used, so a
+    renewal nobody asked for would make an idle device look active.
     """
     current = cache.load()
     # A session cached before rosters existed renews once, or teammates'

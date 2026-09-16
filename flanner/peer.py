@@ -13,7 +13,7 @@ here because it needs nothing beyond the standard library;
 reachable. Both hand every request to :func:`serve_request`, so there is
 exactly one place that decides who may read what.
 
-**What authorises a peer.** Two proofs, and neither involves asking the
+**What authorises a peer.** Three checks, and none normally needs the
 control plane at the time of the request:
 
 1. *You hold this device's key.* A device id is the hash of its public key,
@@ -24,13 +24,23 @@ control plane at the time of the request:
    which the control plane signed and which names both the device id and
    the workspace role. The ids in the two proofs must match, so an
    entitlement is useless to anyone who did not receive it.
+3. *That device is still on the team.* The signed roster this device
+   holds must list the caller's device under the caller's user. An
+   entitlement says who someone was when it was issued; the roster is how a
+   removal reaches a peer.
 
 The entitlement must also carry the team-sync feature. A role alone says
 which workspace, not whether syncing was paid for, and checking only the
 role would leave a lapsed subscription syncing exactly as before.
 
-Together those mean a peer can authorise a stranger while completely
-offline, which is the property that makes a mesh worth having.
+Serving others needs everything current: the caller's entitlement, the
+roster, and this device's own entitlement. Grace is for a device reading
+what it already holds. When this device's own entitlement or roster is not
+enough, it renews once, rate-limited, before refusing.
+
+Together those mean a peer can authorise a stranger while offline, for as
+long as its own entitlement and roster are current, which is the property
+that makes a mesh worth having.
 
 **What is still checked afterwards.** Authorisation is not verification.
 Every artifact received is checked against its *author's* key, which is
@@ -49,9 +59,10 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Any
 
-from . import artifacts, entitlements, identity, replay, sync
+from . import artifacts, entitlements, identity, refusals, replay, sync
 from . import push as push_rules
 from .assurance import retired_plan_ids
 from .device_auth import SignedRequest, sign_request, verify_request
@@ -59,6 +70,10 @@ from .sync import Manifest
 
 DEFAULT_PORT = 8776
 REQUEST_TIMEOUT = 30.0
+
+#: Where an http refusal carries its :mod:`flanner.refusals` code. A header
+#: rather than the body, so the body stays the plain detail older peers read.
+REFUSAL_HEADER = "X-Flanner-Refusal"
 
 #: Carries one signed request to a peer and returns its reply.
 Transport = Callable[[str, dict[str, Any]], dict[str, Any]]
@@ -71,11 +86,16 @@ class PeerError(Exception):
     turns it into a response code; the iroh transport puts it in the reply
     body. Refusals then read the same either way, which is what keeps the
     two transports from drifting into different behaviour.
+
+    ``code`` is the same vocabulary the control plane uses
+    (:mod:`flanner.refusals`), set where a refusal has a meaning a program
+    could act on, and ``refusals.UNKNOWN`` elsewhere.
     """
 
-    def __init__(self, message: str, *, status: int = 403) -> None:
+    def __init__(self, message: str, *, status: int = 403, code: str = refusals.UNKNOWN) -> None:
         super().__init__(message)
         self.status = status
+        self.code = code
 
 
 @dataclass(frozen=True)
@@ -112,7 +132,7 @@ def authorize(
     """Decide whether a caller may reach this workspace. Raises if not.
 
     ``strict`` refuses an entitlement that is merely inside its grace
-    window. Set it for operations that write.
+    window. The serving path always sets it, for reads as well as writes.
 
     Never trusts a claimed device id. The public key travels with the
     request and must hash to the id it claims, which is what lets this work
@@ -142,13 +162,16 @@ def authorize(
     )
     if not verdict.usable or verdict.claims is None:
         raise PeerError(f"entitlement is {verdict.status}")
-    # Reading tolerates a grace-period entitlement, because refusing somebody
-    # who spent a weekend offline is not security. Writing does not: a device
-    # answering a push request is online, so it cannot claim it was unable to
-    # check. This is what keeps a revoked device's write window down to one
-    # entitlement lifetime instead of a lifetime plus the grace period.
+    # A device asking a peer for anything is online, so it cannot claim it
+    # was unable to renew. Grace is for a device's own reads of what it
+    # already holds, which never come through here. Refusing it when serving
+    # is what keeps a revoked device's window down to one entitlement
+    # lifetime instead of a lifetime plus the grace period.
     if strict and verdict.status != entitlements.VALID:
-        raise PeerError(f"pushing needs a current entitlement, and this one is {verdict.status}")
+        raise PeerError(
+            f"being served needs a current entitlement, and this one is {verdict.status}; "
+            "run 'flanner whoami --refresh'"
+        )
     if verdict.claims.device_id != request.device_id:
         raise PeerError("that entitlement was issued to a different device")
 
@@ -361,7 +384,33 @@ def _serve_request(
 
     wanted, items = _requested(operation, body)
 
-    caller = authorize(payload, workspace_id, dict(current.keyring), strict=operation in WRITES)
+    caller = authorize(payload, workspace_id, dict(current.keyring), strict=True)
+
+    # A device whose own entitlement has lapsed may have been removed, and a
+    # removed device must not hand out the team's plans. Renewed once before
+    # refusing, so a server that ran overnight is not refused for that alone.
+    # After authorising, so only a proven, entitled caller can cause a call
+    # to the control plane.
+    if not _current(current):
+        current = _relearned(held, refresh_keys) or current
+    if not _current(current):
+        raise PeerError(
+            f"this device's own entitlement is {current.status().status}, "
+            "so it serves nobody until it renews",
+            status=503,
+        )
+
+    # The entitlement proves who the caller was when it was issued; the
+    # roster says whether they still belong. A caller this device has not
+    # heard of may be a teammate who joined since the roster was fetched,
+    # so it is fetched once more, rate-limited, before refusing.
+    if not _on_roster(current, caller, workspace_id):
+        current = _relearned(held, refresh_keys) or current
+        if not _on_roster(current, caller, workspace_id):
+            raise PeerError(
+                "that device is not on this workspace's current roster",
+                code=refusals.DEVICE_UNKNOWN,
+            )
 
     # After authorisation, so the limit is keyed to a device id that was
     # actually proved rather than one a caller asserted.
@@ -410,6 +459,38 @@ def _serve_request(
             memory=caller.may_sync_memory,
             skills=caller.may_sync_skills,
         )
+
+
+def _current(current: Any) -> bool:
+    """Whether a session's own entitlement is current, not merely usable."""
+    return bool(current.status().status == entitlements.VALID)
+
+
+def _on_roster(current: Any, caller: PeerIdentity, workspace_id: str) -> bool:
+    """Whether the signed roster this device holds lists the caller's device.
+
+    Under the caller's own user, in this workspace, and only while the
+    roster is current. A roster in grace is as old as an entitlement in
+    grace, and serving others on either is what gave a removed member a
+    week of reading. The device keyring is not used: it is unsigned.
+    """
+    roster = entitlements.verify_roster(current.roster, current.keyring, grace=timedelta(0))
+    return roster is not None and any(
+        member.user_id == caller.user_id and caller.device_id in member.devices
+        for member in roster.members(workspace_id)
+    )
+
+
+def _relearned(held: Any, refresh_keys: Any) -> Any:
+    """Renew once if the shared cooldown allows, and read the session back.
+
+    The same cooldown as the unknown-author refresh, because it is the same
+    call: a renewal brings the entitlement, the roster and the keys at once.
+    None when nothing was renewed, so the caller keeps what it had.
+    """
+    if push_rules.relearn(refresh_keys, _keyring_cooldown) is None:
+        return None
+    return held()
 
 
 def _serve_write(
@@ -487,7 +568,7 @@ def create_peer_app(sessions: Any, held: Any, refresh_keys: Any = None) -> Any:
         try:
             return serve_request(operation, payload, sessions, held, refresh_keys)
         except PeerError as e:
-            raise HTTPException(e.status, str(e)) from None
+            raise HTTPException(e.status, str(e), headers={REFUSAL_HEADER: e.code}) from None
 
     @app.post("/peer/manifest")
     def manifest(payload: dict[str, Any]) -> dict[str, Any]:
@@ -573,7 +654,8 @@ def http_transport(address: str, *, timeout: float = REQUEST_TIMEOUT) -> Transpo
             with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310 - scheme checked before the call
                 return dict(json.loads(response.read().decode("utf-8")))
         except urllib.error.HTTPError as e:
-            raise PeerError(_detail(e), status=e.code) from None
+            code = (e.headers.get(REFUSAL_HEADER) if e.headers else None) or refusals.UNKNOWN
+            raise PeerError(_detail(e), status=e.code, code=code) from None
         except (urllib.error.URLError, TimeoutError, OSError) as e:
             raise PeerError(f"could not reach {base}: {e}") from None
         except ValueError as e:

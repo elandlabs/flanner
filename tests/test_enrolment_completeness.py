@@ -103,13 +103,7 @@ def test_a_failed_key_fetch_does_not_fail_the_enrolment(monkeypatch) -> None:
     assert cache.load() is not None, "the enrolment itself was lost"
 
 
-def test_refresh_still_keeps_the_keys_it_already_had(monkeypatch) -> None:
-    """A renewal answers about this device, not the others.
-
-    Dropping the cache here would break artifact verification until the next
-    explicit fetch, which is why `refresh` carries them forward — and why
-    the recovery had to be added to `whoami --refresh` rather than here.
-    """
+def _held_with_alice() -> None:
     cache.save(
         Session(
             endpoint="http://x.test",
@@ -120,8 +114,44 @@ def test_refresh_still_keeps_the_keys_it_already_had(monkeypatch) -> None:
             device_keys={"dev_alice": "alicekey"},
         )
     )
-    monkeypatch.setattr(account, "_post", lambda *a, **k: _body(entitlement="new"))
+
+
+def test_refresh_replaces_the_device_keys_rather_than_copying_them(monkeypatch) -> None:
+    """Copying them forward kept a removed teammate's key trusted.
+
+    Renewal was the one call a device makes regularly, and it was the one
+    that never looked at who was still in the organization.
+    """
+    _held_with_alice()
+
+    def fake_post(endpoint, path, payload, *, repeatable=False):
+        if path == "/v1/devices/keyring":
+            return {"devices": {"dev_bob": "bobkey"}}
+        return _body(entitlement="new")
+
+    monkeypatch.setattr(account, "_post", fake_post)
     renewed = account.refresh()
+    assert renewed.entitlement == "new"
+    assert renewed.device_keys == {"dev_bob": "bobkey"}, "alice was removed and is still trusted"
+    assert cache.load().device_keys == {"dev_bob": "bobkey"}, "not persisted"
+
+
+def test_refresh_keeps_the_keys_it_had_when_the_key_fetch_fails(monkeypatch) -> None:
+    """The renewal has already landed by then.
+
+    Dropping the cache here would break artifact verification offline until
+    the next fetch that works, which is worse than a stale list.
+    """
+    _held_with_alice()
+
+    def fake_post(endpoint, path, payload, *, repeatable=False):
+        if path == "/v1/devices/keyring":
+            raise account.SessionError("network down")
+        return _body(entitlement="new")
+
+    monkeypatch.setattr(account, "_post", fake_post)
+    renewed = account.refresh()
+    assert renewed.entitlement == "new"
     assert renewed.device_keys == {"dev_alice": "alicekey"}
 
 

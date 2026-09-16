@@ -7129,8 +7129,28 @@ def peer() -> None:
     """Sync plans directly with another device"""
 
 
+def _renew_on_use() -> Any:
+    """The session to use for team work, renewed first if it needs it.
+
+    Every command that syncs calls this before it starts. An entitlement
+    lasts a day, and nothing else renews one, so a device that only ever
+    pulled and pushed lost push after a day and everything after the grace
+    window. Renewing here rather than on a timer is deliberate: the control
+    plane reads a renewal as "this device was used". A failed renewal
+    returns the cached session, so local work carries on.
+    """
+    from . import account
+
+    return account.ensure_fresh()
+
+
 def _keyring_refresher() -> Any:
-    """Fetch this organisation's device keys and hand back a fresh resolver.
+    """Renew this device's session and hand back a fresh key resolver.
+
+    A renewal brings a new entitlement, a new roster and the organisation's
+    device keys, so one call answers all three questions the serving path
+    asks it: is this device still entitled, is that requester still on the
+    roster, and who signed this artifact. The serving path rate-limits it.
 
     The composition root is the only place allowed to join these two: a
     reachability test asserts that `peer` cannot reach `account`, so the
@@ -7141,12 +7161,9 @@ def _keyring_refresher() -> Any:
     and would still not know the key we just learned.
     """
     from . import account
-    from . import session as cache
 
     def refresh() -> Any:
-        account.fetch_device_keys()
-        renewed = cache.load()
-        return renewed.resolve_device_key if renewed is not None else None
+        return account.refresh().resolve_device_key
 
     return refresh
 
@@ -7209,7 +7226,9 @@ def peer_serve(host: str, port: int | None, http: bool) -> None:
     # died on its first query while the server reported itself as serving.
     _open_store()
 
-    if cache.load() is None:
+    # Renewed before serving, and again by the serving path whenever its own
+    # entitlement stops being current. The catch-up below runs on this too.
+    if _renew_on_use() is None:
         tui.bad("Not signed in, so no peer can be authorised.")
         console.print("Run 'flanner login' first.", style="dim")
         raise SystemExit(1)
@@ -7531,6 +7550,7 @@ def peer_pull(address: str, project: str | None) -> None:
     from . import observe
 
     with tui.working(f"reaching {address}") as work:
+        _renew_on_use()
         try:
             with observe.step("resolve peer"):
                 remote = peer_iroh.peer_for(address, proj.workspace_id, cache.load)
@@ -7605,6 +7625,9 @@ def peer_push(address: str, project: str | None) -> None:
         tui.hint(f"Run {tui.command('flanner join <workspace-id>')} first.")
         raise SystemExit(1)
 
+    # Before anything is signed: the peer refuses a push on an entitlement
+    # that is merely in grace, and a renewal is what makes it current.
+    _renew_on_use()
     try:
         remote = peer_iroh.peer_for(address, proj.workspace_id, cache.load)
     except peer_transport.PeerError as e:

@@ -292,17 +292,17 @@ def test_a_control_plane_that_cannot_be_reached_leaves_the_refusal_alone():
     def explode():
         raise OSError("control plane unreachable")
 
-    assert push._relearn(explode, push.Cooldown()) is None
+    assert push.relearn(explode, push.Cooldown()) is None
 
 
 def test_no_refresher_configured_means_no_retry():
-    assert push._relearn(None, push.Cooldown()) is None
+    assert push.relearn(None, push.Cooldown()) is None
 
 
 def test_the_cooldown_blocks_the_fetch_itself_not_just_the_retry():
     """Otherwise the call still goes out and only its result is discarded."""
     calls = []
     spent = push.Cooldown(window=300.0)
-    spent.allow()  # real clock, because `_relearn` reads the real clock too
-    assert push._relearn(lambda: calls.append(1), spent) is None
+    spent.allow()  # real clock, because `relearn` reads the real clock too
+    assert push.relearn(lambda: calls.append(1), spent) is None
     assert calls == []

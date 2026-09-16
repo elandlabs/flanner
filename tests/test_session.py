@@ -168,6 +168,20 @@ def test_an_unreachable_control_plane_falls_back_to_the_cache(home, monkeypatch,
     assert account.ensure_fresh() == saved
 
 
+def test_renewing_on_use_falls_back_to_the_cached_session_when_offline(home, monkeypatch):
+    """What pull, push and `peer serve` call first. Offline must not stop them.
+
+    Through the real `refresh`, not a stand-in, so the key fetch it now
+    makes is on the path too.
+    """
+    from flanner import cli
+
+    cache.save(a_session())
+    monkeypatch.setattr(account, "_post", _raising(account.SessionError("no route to host")))
+    assert cli._renew_on_use() == a_session()
+    assert cache.load() == a_session(), "a failed renewal must not touch the cache"
+
+
 def _verdict(state):
     from flanner.entitlements import Verdict
 

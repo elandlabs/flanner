@@ -233,7 +233,7 @@ def accept(
     if not unknown:
         return report
 
-    fresh = _relearn(refresh_keys, cooldown)
+    fresh = relearn(refresh_keys, cooldown)
     for envelope, payload, artifact_id in unknown:
         # Without a fresh resolver there is nothing new to try, so the
         # original refusal stands and is reported as it was.
@@ -253,8 +253,12 @@ def _stale_reason(envelope: dict[str, Any]) -> str:
     )
 
 
-def _relearn(refresh_keys: Any, cooldown: Cooldown | None) -> Any:
-    """Fetch the organisation keyring once, if we are allowed to right now.
+def relearn(refresh_keys: Any, cooldown: Cooldown | None) -> Any:
+    """Call the refresher once, if we are allowed to right now.
+
+    The composition root's refresher renews the session, which brings the
+    organisation keyring with it; the serving path uses the same call, under
+    the same cooldown, to renew its own entitlement and roster.
 
     Every failure answers None, which simply leaves the original refusal in
     place. A control plane that is unreachable must not turn a push we could
@@ -277,4 +281,5 @@ __all__ = [
     "accept",
     "check_batch",
     "may_send",
+    "relearn",
 ]

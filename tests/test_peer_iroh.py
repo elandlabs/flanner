@@ -43,13 +43,18 @@ def issuer_key():
 
 
 @pytest.fixture
-def alice(tmp_path, issuer_key):
-    return Device(tmp_path / "alice", issuer_key)
+def team():
+    return []
 
 
 @pytest.fixture
-def bob(tmp_path, issuer_key):
-    return Device(tmp_path / "bob", issuer_key)
+def alice(tmp_path, issuer_key, team):
+    return Device(tmp_path / "alice", issuer_key, team)
+
+
+@pytest.fixture
+def bob(tmp_path, issuer_key, team):
+    return Device(tmp_path / "bob", issuer_key, team)
 
 
 class _FakeStream:

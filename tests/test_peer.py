@@ -6,6 +6,7 @@ ones a shared object hides: what a stranger may ask for, and what happens to
 an artifact whose author is a machine neither side has met.
 """
 
+import base64
 import os
 import threading
 from datetime import datetime, timedelta, timezone
@@ -14,13 +15,14 @@ import pytest
 import uvicorn
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from flanner import artifacts, identity, peer, sync
+from flanner import artifacts, identity, peer, refusals, sync
 from flanner import session as cache
 from flanner.artifacts import canonical_bytes
 from flanner.database import ArtifactModel, get_artifact, save_artifact
 from flanner.device_auth import sign_request
 from flanner.entitlements import (
     MEM_SYNC,
+    ROSTER,
     SKILL_SYNC,
     TEAM_SYNC,
     Claims,
@@ -57,6 +59,7 @@ def an_entitlement(
     workspace=WORKSPACE,
     user="maria",
     features=(TEAM_SYNC,),
+    expires=timedelta(hours=1),
 ):
     now = datetime.now(timezone.utc)
     claims = Claims(
@@ -66,7 +69,7 @@ def an_entitlement(
         device_id=device_id,
         key_id="sk_1",
         issued_at=now.isoformat().replace("+00:00", "Z"),
-        expires_at=(now + timedelta(hours=1)).isoformat().replace("+00:00", "Z"),
+        expires_at=(now + expires).isoformat().replace("+00:00", "Z"),
         workspace_capabilities=(
             (WorkspaceCapability(workspace_id=workspace, role=role),) if role else ()
         ),
@@ -74,15 +77,42 @@ def an_entitlement(
     return encode_token(claims, sign(canonical_bytes(claims.to_dict()), issuer_key))
 
 
-def a_session(issuer_key, *, device_id, role=MAINTAINER, device_keys=None, features=(TEAM_SYNC,)):
+def a_roster(issuer_key, devices, *, user="maria", role=MAINTAINER, expires=timedelta(hours=1)):
+    """The signed list of who is in the workspace, as the control plane sends it."""
+    now = datetime.now(timezone.utc)
+    fields = {
+        "kind": ROSTER,
+        "key_id": "sk_1",
+        "organization_id": "org_1",
+        "issued_at": now.isoformat().replace("+00:00", "Z"),
+        "expires_at": (now + expires).isoformat().replace("+00:00", "Z"),
+        "workspaces": {WORKSPACE: [{"user_id": user, "role": role, "devices": list(devices)}]},
+    }
+    data = canonical_bytes(fields)
+    return base64.urlsafe_b64encode(data).decode().rstrip("=") + "." + sign(data, issuer_key)
+
+
+def a_session(
+    issuer_key,
+    *,
+    device_id,
+    role=MAINTAINER,
+    device_keys=None,
+    features=(TEAM_SYNC,),
+    roster="",
+    expires=timedelta(hours=1),
+):
     return cache.Session(
         endpoint="https://api.example.test",
         device_id=device_id,
         organization_id="org_1",
         user_id="maria",
-        entitlement=an_entitlement(issuer_key, device_id=device_id, role=role, features=features),
+        entitlement=an_entitlement(
+            issuer_key, device_id=device_id, role=role, features=features, expires=expires
+        ),
         keyring=keyring_of(issuer_key),
         device_keys=device_keys or {},
+        roster=roster,
     )
 
 
@@ -247,9 +277,12 @@ class Device:
     Each device gets a private engine rather than the module-global one, so
     two catalogs can exist in one process without either standing in for the
     other. That is the whole point of these tests.
+
+    ``team`` is every device in the test. Each one signs in holding a roster
+    that names them all, because that is what a teammate's roster says.
     """
 
-    def __init__(self, root, issuer_key):
+    def __init__(self, root, issuer_key, team=None):
         from sqlalchemy import create_engine
         from sqlalchemy.orm import sessionmaker
 
@@ -258,6 +291,8 @@ class Device:
         self.home = root
         self.home.mkdir(parents=True, exist_ok=True)
         self.issuer_key = issuer_key
+        self.team = team if team is not None else []
+        self.team.append(self)
         with self.active():
             self.device_id = identity.device_id()
             self.public_key = identity.device_public_key_b64()
@@ -271,7 +306,17 @@ class Device:
         """Make this the device that identity and session see."""
         return _Home(self.home)
 
-    def sign_in(self, *, role=MAINTAINER, device_keys=None, features=(TEAM_SYNC,)):
+    def sign_in(
+        self,
+        *,
+        role=MAINTAINER,
+        device_keys=None,
+        features=(TEAM_SYNC,),
+        roster=None,
+        expires=timedelta(hours=1),
+    ):
+        if roster is None:
+            roster = a_roster(self.issuer_key, [d.device_id for d in self.team])
         with self.active():
             cache.save(
                 a_session(
@@ -280,6 +325,8 @@ class Device:
                     role=role,
                     device_keys=device_keys or {self.device_id: self.public_key},
                     features=features,
+                    roster=roster,
+                    expires=expires,
                 )
             )
 
@@ -328,13 +375,18 @@ def serve():
 
 
 @pytest.fixture
-def alice(tmp_path, issuer_key):
-    return Device(tmp_path / "alice", issuer_key)
+def team():
+    return []
 
 
 @pytest.fixture
-def bob(tmp_path, issuer_key):
-    return Device(tmp_path / "bob", issuer_key)
+def alice(tmp_path, issuer_key, team):
+    return Device(tmp_path / "alice", issuer_key, team)
+
+
+@pytest.fixture
+def bob(tmp_path, issuer_key, team):
+    return Device(tmp_path / "bob", issuer_key, team)
 
 
 def link(alice, bob):
@@ -685,8 +737,8 @@ def test_a_device_that_refuses_pushes_still_serves_reads(alice, bob, serve, monk
     assert pulled.accepted == [artifact.artifact_id]
 
 
-def test_pushing_needs_a_current_entitlement_not_merely_a_usable_one(issuer_key):
-    """A device answering a push is online, so grace does not apply.
+def test_being_served_needs_a_current_entitlement_not_merely_a_usable_one(issuer_key):
+    """A device asking a peer is online, so grace does not apply.
 
     This is the whole revoked-device window: with grace, a device revoked at
     the control plane could still write for the grace period plus a
@@ -717,7 +769,7 @@ def test_pushing_needs_a_current_entitlement_not_merely_a_usable_one(issuer_key)
         signing_key=signing,
     ).to_dict()
 
-    # Reading is fine: being offline for a weekend is not a security event.
+    # The entitlement itself still verifies; only the serving path refuses it.
     assert peer.authorize(request, WORKSPACE, keyring_of(issuer_key)).role == MAINTAINER
 
     with pytest.raises(peer.PeerError, match="needs a current entitlement"):
@@ -908,6 +960,177 @@ def test_the_refresh_happens_once_per_batch_not_once_per_artifact(alice, bob, se
 
     assert len(calls) == 1
     assert len(report.accepted) == 4
+
+
+# --- who a peer still serves (a removed member's reading window) ----------
+
+
+def _manifest_refusal(address, device):
+    """Ask for a manifest as this device, and return the refusal it gets."""
+    with device.active():
+        with pytest.raises(peer.PeerError) as caught:
+            peer.RemotePeer(address, WORKSPACE, device.held).manifest(WORKSPACE)
+    return caught.value
+
+
+def test_a_revoked_device_is_refused_when_it_asks_to_read(alice, bob, serve):
+    """Removed from the team, still holding a valid entitlement.
+
+    This is the window the fix closes: the entitlement proves who bob was
+    when it was issued, and only the roster says he has since been removed.
+    Asking the control plane again changes nothing, because it agrees.
+    """
+    link(alice, bob)
+    alice.sign_in(roster=a_roster(alice.issuer_key, [alice.device_id]))
+    a_stored_artifact(alice.session, key=alice.signing_key())
+    asked = []
+
+    def refresh():
+        asked.append(True)
+        return {alice.device_id: alice.public_key}.get
+
+    address = serve(peer.create_peer_app(alice.sessions, alice.held, refresh))
+
+    refused = _manifest_refusal(address, bob)
+    assert refused.status == 403
+    assert refused.code == refusals.DEVICE_UNKNOWN, "the code did not cross the wire"
+    assert "roster" in str(refused)
+    assert asked == [True], "an unknown requester should cost exactly one refresh"
+
+    report = bob.pull_from(address)
+    assert report.accepted == []
+    assert not report.ok
+
+
+def test_a_requester_in_grace_is_refused_when_served(alice, bob, serve):
+    """Grace is for reading what you hold, not for being handed more."""
+    link(alice, bob)
+    bob.sign_in(expires=-timedelta(hours=1))
+    a_stored_artifact(alice.session, key=alice.signing_key())
+    address = serve(peer.create_peer_app(alice.sessions, alice.held))
+
+    refused = _manifest_refusal(address, bob)
+    assert "current entitlement" in str(refused)
+    assert "in_grace" in str(refused)
+
+
+def test_a_roster_in_grace_serves_nobody_else(alice, bob, serve):
+    """A roster a week old may list somebody removed six days ago."""
+    link(alice, bob)
+    alice.sign_in(
+        roster=a_roster(
+            alice.issuer_key, [alice.device_id, bob.device_id], expires=-timedelta(hours=1)
+        )
+    )
+    address = serve(peer.create_peer_app(alice.sessions, alice.held))
+
+    assert _manifest_refusal(address, bob).code == refusals.DEVICE_UNKNOWN
+
+
+def test_a_new_teammate_is_served_after_one_roster_refresh(alice, bob, serve):
+    """Bob joined after alice last renewed, so her roster has not heard of him."""
+    link(alice, bob)
+    alice.sign_in(roster=a_roster(alice.issuer_key, [alice.device_id]))
+    artifact = a_stored_artifact(alice.session, key=alice.signing_key())
+    renewals = []
+
+    def refresh():
+        """What `account.refresh` does: a new session, with a new roster."""
+        renewals.append(True)
+        alice.sign_in(
+            device_keys={alice.device_id: alice.public_key, bob.device_id: bob.public_key}
+        )
+        return alice.held().resolve_device_key
+
+    address = serve(peer.create_peer_app(alice.sessions, alice.held, refresh))
+    report = bob.pull_from(address)
+
+    assert report.ok, report.rejected
+    assert report.accepted == [artifact.artifact_id]
+    assert renewals == [True], "one refresh, then served from the new roster"
+
+
+def test_a_server_whose_own_entitlement_lapsed_and_cannot_renew_serves_nobody(alice, bob, serve):
+    """It may have been removed itself, and cannot find out."""
+    link(alice, bob)
+    alice.sign_in(expires=-timedelta(hours=1))
+    a_stored_artifact(alice.session, key=alice.signing_key())
+
+    def unreachable():
+        raise ConnectionError("the control plane is down")
+
+    address = serve(peer.create_peer_app(alice.sessions, alice.held, unreachable))
+
+    refused = _manifest_refusal(address, bob)
+    assert refused.status == 503
+    assert "own entitlement" in str(refused)
+    assert bob.pull_from(address).accepted == []
+
+
+def test_a_server_renews_its_own_entitlement_before_refusing(alice, bob, serve):
+    """A server left running overnight is not refused for that alone."""
+    link(alice, bob)
+    alice.sign_in(expires=-timedelta(hours=1))
+    artifact = a_stored_artifact(alice.session, key=alice.signing_key())
+    keys = {alice.device_id: alice.public_key, bob.device_id: bob.public_key}
+
+    def renew():
+        alice.sign_in(device_keys=keys)
+        return alice.held().resolve_device_key
+
+    address = serve(peer.create_peer_app(alice.sessions, alice.held, renew))
+    report = bob.pull_from(address)
+
+    assert report.ok, report.rejected
+    assert report.accepted == [artifact.artifact_id]
+
+
+def test_a_push_in_grace_renews_first_and_is_accepted(alice, bob, serve, monkeypatch):
+    """`flanner peer push` renews before signing anything.
+
+    Without it, a device that only ever synced lost push a day after its
+    last `whoami --refresh`, because nothing else renewed an entitlement.
+    """
+    from types import SimpleNamespace
+
+    from click.testing import CliRunner
+
+    from flanner import account
+    from flanner import cli as cli_module
+
+    link(alice, bob)
+    bob.sign_in(device_keys={alice.device_id: alice.public_key}, expires=-timedelta(hours=1))
+    artifact = a_stored_artifact(bob.session, key=bob.signing_key())
+    address = serve(peer.create_peer_app(alice.sessions, alice.held))
+
+    renewed = a_session(
+        bob.issuer_key,
+        device_id=bob.device_id,
+        roster=a_roster(bob.issuer_key, [alice.device_id, bob.device_id]),
+    )
+    asked = []
+
+    def control_plane(endpoint, path, payload, *, repeatable=False):
+        asked.append(path)
+        if path == "/v1/devices/keyring":
+            return {"devices": {alice.device_id: alice.public_key}}
+        return renewed.to_dict()
+
+    monkeypatch.setattr(account, "_post", control_plane)
+    monkeypatch.setattr(cli_module, "_require_session", lambda: bob.session)
+    monkeypatch.setattr(
+        cli_module,
+        "_resolve_project_or_cwd",
+        lambda session, project: SimpleNamespace(workspace_id=WORKSPACE),
+    )
+
+    with bob.active():
+        result = CliRunner().invoke(cli_module.cli, ["peer", "push", address])
+
+    assert result.exit_code == 0, result.output
+    assert asked[0] == "/v1/entitlements", "the push did not renew first"
+    assert "/v1/devices/keyring" in asked, "the renewal did not refresh the device keys"
+    assert get_artifact(alice.session, artifact.artifact_id) is not None
 
 
 # --- a retired plan stops crossing the wire --------------------------------

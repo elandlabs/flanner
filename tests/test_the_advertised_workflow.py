@@ -18,6 +18,7 @@ entitlement, an http server, and the CLI commands a person actually types.
 
 from __future__ import annotations
 
+import base64
 import json
 import socket
 import subprocess
@@ -39,7 +40,7 @@ from flanner import session as cache
 from flanner.artifacts import canonical_bytes
 from flanner.cli import cli
 from flanner.database import Base, create_project
-from flanner.entitlements import TEAM_SYNC, Claims, WorkspaceCapability, encode_token
+from flanner.entitlements import ROSTER, TEAM_SYNC, Claims, WorkspaceCapability, encode_token
 from flanner.identity import public_key_b64, sign
 from flanner.plan_ops import create_plan
 from flanner.workflow import MAINTAINER
@@ -77,6 +78,28 @@ def _entitlement(issuer_key: Ed25519PrivateKey, *, device_id: str, user: str) ->
         workspace_capabilities=(WorkspaceCapability(workspace_id=WORKSPACE, role=MAINTAINER),),
     )
     return encode_token(claims, sign(canonical_bytes(claims.to_dict()), issuer_key))
+
+
+def _roster(issuer_key: Ed25519PrivateKey, user: str, device_id: str) -> str:
+    """The signed roster alice's server holds, naming the teammate who pulls.
+
+    A server refuses a device its roster does not list, so without this the
+    pull would stop at the roster rather than at the step under test.
+    """
+    now = datetime.now(timezone.utc)
+    data = canonical_bytes(
+        {
+            "kind": ROSTER,
+            "key_id": "sk_1",
+            "organization_id": "org_1",
+            "issued_at": now.isoformat().replace("+00:00", "Z"),
+            "expires_at": (now + timedelta(hours=1)).isoformat().replace("+00:00", "Z"),
+            "workspaces": {
+                WORKSPACE: [{"user_id": user, "role": MAINTAINER, "devices": [device_id]}]
+            },
+        }
+    )
+    return base64.urlsafe_b64encode(data).decode().rstrip("=") + "." + sign(data, issuer_key)
 
 
 def _session_for(issuer_key: Ed25519PrivateKey, *, user: str, **extra: Any) -> cache.Session:
@@ -165,7 +188,12 @@ def alice(tmp_path, monkeypatch, issuer) -> dict[str, Any]:
     port = _free_port()
     stop = _serve(peer.create_peer_app(sessions, lambda: held), port)
     try:
-        yield {"address": f"http://127.0.0.1:{port}", "device_id": device_id, "key": public_key}
+        yield {
+            "address": f"http://127.0.0.1:{port}",
+            "device_id": device_id,
+            "key": public_key,
+            "held": held,
+        }
     finally:
         stop()
 
@@ -218,6 +246,7 @@ def test_enrol_then_pull_and_the_plan_is_there(tmp_path, monkeypatch, issuer, al
 
         init_database(str(home / "data.db"))
         bob = _session_for(issuer, user="bob")
+        alice["held"].roster = _roster(issuer, "bob", bob.device_id)
         monkeypatch.setattr(account, "_post", _control_plane(bob, alice))
 
         # 1. enrol
@@ -271,6 +300,8 @@ def test_a_pull_from_a_stranger_brings_back_nothing(tmp_path, monkeypatch, issue
 
         init_database(str(home / "data.db"))
         stranger = _session_for(issuer, user="bob")
+        # On the team, so alice serves it; it has just never learned her key.
+        alice["held"].roster = _roster(issuer, "bob", stranger.device_id)
         monkeypatch.setattr(account, "_post", _control_plane(stranger, peers=None))
 
         assert runner.invoke(cli, ["login", "c", "--endpoint", "https://x.test"]).exit_code == 0

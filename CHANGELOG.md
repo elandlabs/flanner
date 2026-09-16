@@ -109,8 +109,22 @@ versioning follows [SemVer](https://semver.org/).
 - **Nobody approves their own proposal while somebody else could.** Team
   workspaces use a policy that refuses self-approval unless no other
   maintainer exists. Solo review is unchanged.
+- **A removed teammate stops being served within a day, not a week.** A
+  device serving plans now requires the caller's device to be on the signed
+  roster it holds, and requires both that roster and the caller's
+  entitlement to be current rather than in their offline grace period. A
+  device whose own entitlement has lapsed renews once and otherwise serves
+  nobody. An unknown caller triggers one rate-limited renewal first, so a
+  new teammate is not turned away. A device's own reads of what it already
+  holds keep the grace period.
 
 ### Fixed
+- **Entitlements renew on use.** Nothing renewed one except
+  `flanner whoami --refresh`, so a device that only synced lost push after a
+  day and everything else after the grace period. `peer pull`, `peer push`
+  and `peer serve` now renew when needed, and a renewal also fetches the
+  organization's device keys instead of keeping the old ones. Offline, the
+  cached entitlement is used as before.
 - **Agents offer a settled decision for approval.** Codex saved decisions nobody asked it to keep, and Claude Code acknowledged them without offering anything. The tool descriptions, the managed instructions and the memory skill now say which tool is for what, and when. Both hosts then passed both capture checks three times out of three.
 - **A form that fails keeps what you typed.** Two new-project errors came back empty, a plan edit whose save failed lost the edit, and a refused skill draft revision dropped the edited body.
 - A project's plan list counted hidden plans out and listed them anyway; the
