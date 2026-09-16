@@ -2584,11 +2584,33 @@ def delete(project_name: str, force: bool) -> None:
 
 
 def _port_in_use(host: str, port: int) -> bool:
-    """True if binding (host, port) fails because something already holds it."""
+    """True if something already holds (host, port), or answers on it.
+
+    Trying to bind was the whole check, and on Windows it is not enough.
+    Windows lets a second socket bind a port another process holds
+    unless the bind asks for exclusive use, so with Docker Desktop
+    listening on 0.0.0.0:80 a bind of 127.0.0.1:80 succeeded and this
+    said the port was free. `flanner web` then started, and connections
+    went to Docker.
+
+    Two checks, either of which means taken: something accepts a
+    connection there, or an exclusive bind is refused.
+    """
     import socket
 
     family = socket.AF_INET6 if ":" in host else socket.AF_INET
+    # A wildcard is not an address to connect to; its loopback is.
+    wildcard = {"0.0.0.0": "127.0.0.1", "::": "::1", "": "127.0.0.1"}  # noqa: S104 - mapped away, never bound
+    target = wildcard.get(host, host)
+    with socket.socket(family, socket.SOCK_STREAM) as probe:
+        probe.settimeout(0.5)
+        if probe.connect_ex((target, port)) == 0:
+            return True
+
     with socket.socket(family, socket.SOCK_STREAM) as sock:
+        exclusive = getattr(socket, "SO_EXCLUSIVEADDRUSE", None)  # Windows only
+        if exclusive is not None:
+            sock.setsockopt(socket.SOL_SOCKET, exclusive, 1)
         try:
             sock.bind((host, port))
         except OSError:

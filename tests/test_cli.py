@@ -787,6 +787,35 @@ def test_web_port_in_use_is_graceful(runner, initialized):
     assert f"flanner web --port {port + 1}" in result.output  # actionable next step
 
 
+def test_a_port_held_on_every_address_counts_as_in_use():
+    """What Docker Desktop does with port 80: listen on 0.0.0.0.
+
+    Windows lets a second socket bind 127.0.0.1 on that port with no
+    error, so a check that only tried to bind reported the port free,
+    and `flanner web` started where connections went to Docker.
+    """
+    import socket
+
+    from flanner.cli import _port_in_use
+
+    with socket.socket() as held:
+        held.bind(("0.0.0.0", 0))
+        held.listen()
+        port = held.getsockname()[1]
+        assert _port_in_use("127.0.0.1", port)
+
+
+def test_a_free_port_is_free():
+    import socket
+
+    from flanner.cli import _port_in_use
+
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    assert not _port_in_use("127.0.0.1", port)
+
+
 # --- linear ---
 
 
