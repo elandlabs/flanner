@@ -275,6 +275,7 @@ class Sectioned(click.Group):
 def cli(verbose: bool, quiet: bool) -> None:
     """Flanner - Manage plan files for AI assistants"""
     tui.QUIET = quiet
+    _say_what_changed()
     level = logging.DEBUG if verbose else logging.ERROR if quiet else logging.WARNING
     logging.basicConfig(
         level=level, stream=sys.stderr, format="%(levelname)s %(name)s: %(message)s"
@@ -287,6 +288,48 @@ def cli(verbose: bool, quiet: bool) -> None:
         import atexit
 
         atexit.register(_print_breakdown)
+
+
+def _changelog_url() -> str | None:
+    """The Changelog link this package was published with, if it has one."""
+    from importlib.metadata import PackageNotFoundError, metadata
+
+    try:
+        entries = metadata("flanner").get_all("Project-URL") or []
+    except PackageNotFoundError:
+        return None
+    for entry in entries:
+        name, _, url = entry.partition(",")
+        if name.strip().lower() == "changelog":
+            return str(url).strip()
+    return None
+
+
+def _say_what_changed() -> None:
+    """Name the upgrade once, the first time a command runs after one.
+
+    Upgrading replaced the tool and said nothing about what moved. The
+    changelog is the answer and nobody reads a file they were not told
+    changed, so this is the pointer at it.
+
+    Printed to a terminal only, and recorded only once it has been shown:
+    a piped run stays byte for byte what it was, and still gets told the
+    next time a person is actually looking.
+    """
+    from . import __version__, release
+
+    if tui.QUIET or not console.is_terminal:
+        return
+    previous = release.upgraded_from(__version__)
+    release.remember_version(__version__)
+    if previous is None:
+        return
+    console.print()
+    tui.ok(f"Updated: {previous} {tui.ARROW} {__version__}")
+    where = _changelog_url()
+    if where:
+        tui.hint(f"  What changed: {where}")
+    console.print()
 
 
 def _print_breakdown() -> None:
@@ -542,6 +585,35 @@ def _ask_yes_no(question: str, *, default: bool, unattended: bool) -> bool:
     return answer.startswith("y")
 
 
+def _offer_update_check() -> None:
+    """Ask once whether flanner may look up whether a newer release exists.
+
+    Asked rather than assumed, for the same reason skill watching is. The
+    sidebar of this product says nothing leaves your disk, and a daily
+    request to pypi.org is something leaving the disk, however little it
+    carries. Somebody who says no is never asked again.
+
+    What it costs, said plainly: one GET of a public json document, at
+    most once a day, sending nothing about this machine or its plans.
+    """
+    from . import release
+
+    if release.update_check_consent() is not None:
+        return
+    console.print()
+    tui.note("Flanner can check whether a newer version has been released.")
+    tui.hint("  One request to pypi.org a day, for a public list of versions.")
+    tui.hint("  Nothing about this machine, your repositories or your plans is sent.")
+    allowed = _ask_yes_no(
+        "Check for new versions?", default=True, unattended=False
+    )
+    release.set_update_check_consent(allowed)
+    if allowed:
+        tui.ok("Checking once a day. flanner status says when one is out.")
+    else:
+        tui.note("Not checking. Nothing here reaches the network unasked.")
+
+
 def _offer_skill_watching(project_root: str) -> None:
     """Ask once whether to record which skills the agents here use.
 
@@ -711,6 +783,7 @@ def init(
         if sync:
             _import_existing_plans(project_root)
 
+    _offer_update_check()
     _first_thing_to_try(adopted=bool(project_root))
 
 
@@ -2219,7 +2292,29 @@ def status() -> None:
     if claude_status.get("action_needed"):
         console.print()
         tui.warn(str(claude_status["action_needed"]))
+    _say_if_behind()
     console.print()
+
+
+def _say_if_behind() -> None:
+    """One line when a newer release exists, on the command people already run.
+
+    Here rather than after every command: `status` is where somebody has
+    come to ask whether this machine is in good order, so a version being
+    old is an answer to the question they asked. A nag on every command
+    would be a second product deciding what is worth interrupting for.
+
+    Silent unless the check was allowed at init, and silent on any
+    failure. See `release.newer_release`.
+    """
+    from . import __version__, release
+
+    latest = release.newer_release(__version__)
+    if not latest:
+        return
+    console.print()
+    tui.note(f"Version {latest} is out; this is {__version__}.")
+    tui.hint(f"  {tui.command('uv tool upgrade flanner')}")
 
 
 def _cut_footer(shown: int, total: int | None, noun: str) -> str | None:

@@ -29,6 +29,9 @@ FOUNDATION = {
     # a boolean, imported by every surface that has to decide whether to
     # offer something, so it reaches for nothing itself.
     "features",
+    # What version ran last, and whether pypi lists a newer one. Read on
+    # every command and before the store opens, so it imports nothing.
+    "release",
     "git_integration",
     # Deciding whether a body carries a credential. Pure regex and
     # arithmetic, so it can be tested with a table of strings and reused by
