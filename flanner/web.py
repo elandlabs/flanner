@@ -2844,6 +2844,7 @@ async def memory_page(
     scope: str = "",
     sort: str = "newest",
     said: str = "",
+    tag: str = "",
 ) -> HTMLResponse:
     """Everything remembered on this machine: searched, filtered, sorted and paged.
 
@@ -2866,6 +2867,11 @@ async def memory_page(
     scope = scope if scope in MEMORY_SCOPES else ""
     sort = sort if sort in MEMORY_SORTS else "newest"
     shown_status = None if status == "all" else status
+    try:
+        tags = memory_ops.normalise_tags([tag] if tag else [])
+    except ValueError:
+        tags = []
+    tag = tags[0] if tags else ""
 
     if q:
         # `search_all`, not `recall`. Recall's scope is a boundary for an
@@ -2880,6 +2886,7 @@ async def memory_page(
             for row in found
             if (not category or row.get("category") == category)
             and (not scope or row.get("scope") == scope)
+            and (not tag or tag in row.get("tags", ()))
         ]
         reason = True
         pager_extra: dict[str, Any] = {}
@@ -2891,6 +2898,7 @@ async def memory_page(
                 status=shown_status,
                 category=category or None,
                 scope=scope or None,
+                tags=tags,
             )
         )
         page, per, offset = _paging(request, total)
@@ -2903,6 +2911,7 @@ async def memory_page(
                 "scope": m.scope,
                 "status": m.status,
                 "confidence": m.confidence,
+                "tags": memory_ops.tags_of(m),
                 "created_by": m.created_by,
                 "created_at": m.created_at.isoformat() + "Z" if m.created_at else None,
                 "match_reason": "",
@@ -2917,6 +2926,7 @@ async def memory_page(
                     order=sort,
                     limit=per,
                     offset=offset,
+                    tags=tags,
                 )
             )
         ]
@@ -2933,6 +2943,7 @@ async def memory_page(
             "category": category,
             "scope": scope,
             "sort": sort,
+            "tag": tag,
             "said": said,
             "statuses": MEMORY_STATUSES,
             "categories": MEMORY_CATEGORIES,
@@ -2953,6 +2964,7 @@ async def memory_new_form(
     category: str = Form(...),
     scope: str = Form("project"),
     title: str = Form(""),
+    tags: str = Form(""),
 ) -> RedirectResponse:
     """Save a memory from the page, as `flanner mem remember` does.
 
@@ -2970,6 +2982,7 @@ async def memory_new_form(
                 "category": category,
                 "scope": scope,
                 "title": title.strip() or None,
+                "tags": _split_tags(tags),
                 "created_by": "web",
             },
         )
@@ -2978,6 +2991,36 @@ async def memory_new_form(
     if result.get("error") or not result.get("id"):
         return RedirectResponse(f"/memory?said={said}", status_code=303)
     return RedirectResponse(f"/memory/{result['id']}?said={said}", status_code=303)
+
+
+def _split_tags(raw: str) -> list[str]:
+    """Tags typed into one box, separated by commas."""
+    return [part for part in (piece.strip() for piece in raw.split(",")) if part]
+
+
+@app.post("/memory/{memory_id}/tags")
+async def memory_tags_form(
+    memory_id: str, add: str = Form(""), remove: str = Form("")
+) -> RedirectResponse:
+    """Add or remove tags, as `flanner mem tag` does. The memory is not versioned."""
+    ensure_db()
+    result = await run_in_threadpool(
+        functools.partial(
+            dispatch,
+            "memory_tag",
+            {
+                "memory_id": memory_id,
+                "add": _split_tags(add),
+                "remove": _split_tags(remove),
+                "created_by": "web",
+            },
+        )
+    )
+    # A successful change shows on the page itself; only a refusal needs words.
+    if not result.get("error"):
+        return RedirectResponse(f"/memory/{memory_id}", status_code=303)
+    said = quote(str(result.get("message", "")))
+    return RedirectResponse(f"/memory/{memory_id}?said={said}", status_code=303)
 
 
 @app.post("/memory/{memory_id}/forget")
@@ -3310,11 +3353,19 @@ async def memory_detail(request: Request, memory_id: str, said: str = "") -> HTM
     except Exception:
         raise HTTPException(status_code=404, detail="No such memory") from None
 
+    here = await run_in_threadpool(memory_ops.resolve_project, session)
+    related = await run_in_threadpool(
+        functools.partial(
+            memory_ops.related, session, UUID(memory_id), project_id=here.id if here else None
+        )
+    )
+
     return templates.TemplateResponse(
         request,
         "memory_detail.html",
         {
             "memory": detail,
+            "related": related,
             "said": said,
             "attachments": await run_in_threadpool(
                 memory_ops.attachments_of, session, UUID(memory_id)

@@ -300,6 +300,22 @@ OPERATIONS: tuple[Operation, ...] = (
     ),
     _op(
         "memory",
+        "Tag a memory, or change its tags",
+        "write",
+        cli=("mem tag",),
+        mcp=("memory_tag",),
+        web=("POST /memory/{memory_id}/tags",),
+    ),
+    _op(
+        "memory",
+        "See the tags in use",
+        "read",
+        cli=("mem tags",),
+        mcp=("memory_tags",),
+        web=(),
+    ),
+    _op(
+        "memory",
         "Stop recalling a memory",
         "write",
         cli=("mem forget",),

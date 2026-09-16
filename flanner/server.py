@@ -26,6 +26,7 @@ from .database import list_plan_files as db_list_plan_files
 from .database import list_projects as db_list_projects
 
 # Import our modules
+from .exceptions import ValidationError
 from .freshness import compute_freshness
 from .services import ensure_database
 from .storage import (
@@ -1554,6 +1555,7 @@ def memory_remember(
     sensitivity: str = "normal",
     source_refs: list[str] | None = None,
     created_by: str = "claude",
+    tags: list[str] | None = None,
 ) -> dict[str, Any]:
     """
     Save one durable fact the user asked you to keep.
@@ -1584,9 +1586,13 @@ def memory_remember(
         confirmed for something you worked out yourself.
     source_refs: what supports it, e.g. ["plan:architecture_v4",
         "file:src/auth.py"].
+    tags: topics it belongs to, e.g. ["auth", "billing"]. Lowercase; a-z,
+        0-9, -, _ and /; at most 10. Reuse what `memory_tags` lists before
+        inventing a near-duplicate.
 
     Remembering the same thing twice returns the first memory rather than
-    making a second, so a retry is safe.
+    making a second, so a retry is safe. Tags given the second time are
+    added to it.
     """
     return dispatch(
         "memory_remember",
@@ -1600,6 +1606,7 @@ def memory_remember(
             "sensitivity": sensitivity,
             "source_refs": source_refs,
             "created_by": created_by,
+            "tags": tags,
         },
     )
 
@@ -1611,6 +1618,7 @@ def memory_recall(
     include_personal: bool = True,
     limit: int = 8,
     full: bool = False,
+    tags: list[str] | None = None,
 ) -> dict[str, Any]:
     """
     Search durable context from earlier sessions.
@@ -1629,6 +1637,9 @@ def memory_recall(
 
     full=True returns whole bodies; the default returns summaries, which is
     usually enough to decide which one you need.
+
+    tags narrows the search to memories carrying every tag given. A plain
+    query also matches tags, so this is for "only these", not for finding.
     """
     ensure_database()
     session = get_session()
@@ -1640,23 +1651,33 @@ def memory_recall(
     else:
         project = memory_ops.resolve_project(session)
 
-    return memory_ops.recall(
-        session,
-        query=query,
-        project_id=project.id if project else None,
-        include_personal=include_personal,
-        limit=limit,
-        full=full,
-    )
+    try:
+        return memory_ops.recall(
+            session,
+            query=query,
+            project_id=project.id if project else None,
+            include_personal=include_personal,
+            limit=limit,
+            full=full,
+            tags=tags or (),
+        )
+    except ValidationError as e:  # a malformed tag is an answer, not a crash
+        return {"error": True, "message": str(e)}
 
 
 @mcp.tool()
-def memory_get(memory_id: str) -> dict[str, Any]:
+def memory_get(memory_id: str, related: bool = False) -> dict[str, Any]:
     """
     Read one memory in full, with its history.
 
-    Includes the body, its provenance, whether it has been superseded, and
-    every event: created, corrected, forgotten, restored.
+    Includes the body, its provenance, its tags, whether it has been
+    superseded, and every event: created, corrected, retagged, forgotten,
+    restored.
+
+    related=True also returns up to 8 connected memories, strongest first,
+    each with `why`: a correction link, the same source file or plan, or
+    shared tags. Use it when a memory is central to the task. Only
+    memories you could recall here are offered.
     """
     ensure_database()
     session = get_session()
@@ -1664,10 +1685,42 @@ def memory_get(memory_id: str) -> dict[str, Any]:
 
     try:
         detail = memory_ops.describe(session, UUID(memory_id))
+        if related:
+            here = memory_ops.resolve_project(session)
+            detail["related"] = memory_ops.related(
+                session, UUID(memory_id), project_id=here.id if here else None
+            )
     except Exception as e:  # noqa: BLE001 - a bad id is an answer, not a crash
         return {"error": True, "message": str(e)}
     detail["attachments"] = memory_ops.attachments_of(session, UUID(memory_id))
     return detail
+
+
+@mcp.tool()
+def memory_tags(project_id: str = "", include_personal: bool = True) -> dict[str, Any]:
+    """
+    List the tags already in use, most used first, with counts.
+
+    Check this before tagging, and reuse an existing tag rather than adding
+    a near-duplicate (`auth`, not `authentication` beside it). Covers the
+    memories you could recall here: this project's and your personal ones.
+    """
+    ensure_database()
+    session = get_session()
+    from . import memory_ops
+
+    project = (
+        get_project(session, UUID(project_id))
+        if project_id
+        else memory_ops.resolve_project(session)
+    )
+    return {
+        "tags": memory_ops.tags_in_use(
+            session,
+            project_id=project.id if project else None,
+            include_personal=include_personal,
+        )
+    }
 
 
 @mcp.tool()
@@ -1677,13 +1730,15 @@ def memory_list(
     status: str = "active",
     project_id: str = "",
     limit: int = 50,
+    tags: list[str] | None = None,
 ) -> dict[str, Any]:
     """
     Browse memories without searching.
 
     For "what do I know about this project" rather than a specific
     question. status defaults to active; pass "" for everything, including
-    superseded and forgotten ones.
+    superseded and forgotten ones. tags keeps only memories carrying every
+    tag given: "everything tagged auth".
     """
     ensure_database()
     session = get_session()
@@ -1691,6 +1746,10 @@ def memory_list(
     from .database import list_memories
 
     project = get_project(session, UUID(project_id)) if project_id else None
+    try:
+        wanted = memory_ops.normalise_tags(tags)
+    except ValidationError as e:
+        return {"error": True, "message": str(e)}
     memories = list_memories(
         session,
         scope=scope or None,
@@ -1698,6 +1757,7 @@ def memory_list(
         category=category or None,
         status=status or None,
         limit=limit,
+        tags=wanted,
     )
     return {
         "handling": memory_ops.HANDLING,
@@ -1710,12 +1770,34 @@ def memory_list(
                 "scope": m.scope,
                 "status": m.status,
                 "confidence": m.confidence,
+                "tags": memory_ops.tags_of(m),
                 "created_by": m.created_by,
                 "created_at": m.created_at.isoformat() + "Z" if m.created_at else None,
             }
             for m in memories
         ],
     }
+
+
+@mcp.tool()
+def memory_tag(
+    memory_id: str,
+    add: list[str] | None = None,
+    remove: list[str] | None = None,
+    created_by: str = "claude",
+) -> dict[str, Any]:
+    """
+    Add or remove tags on a memory that already exists.
+
+    Only when the user asks you to label or relabel a memory. The memory
+    keeps its id and text; only its tags change, and the change is recorded
+    in its history. A forgotten or superseded memory is not retagged.
+    Tags follow the same rules as in `memory_remember`.
+    """
+    return dispatch(
+        "memory_tag",
+        {"memory_id": memory_id, "add": add, "remove": remove, "created_by": created_by},
+    )
 
 
 @mcp.tool()

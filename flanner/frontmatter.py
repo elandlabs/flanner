@@ -302,6 +302,7 @@ def generate_memory_frontmatter(
     sensitivity: str = "normal",
     source_type: str = "explicit",
     source_refs: list[str] | tuple[str, ...] | None = None,
+    tags: list[str] | tuple[str, ...] | None = None,
     supersedes: UUID | None = None,
     expires_at: datetime | None = None,
     created_at: datetime | None = None,
@@ -334,6 +335,7 @@ def generate_memory_frontmatter(
         ("project_id", str(project_id) if project_id else None),
         ("workspace_id", workspace_id),
         ("source_refs", list(source_refs) if source_refs else None),
+        ("tags", list(tags) if tags else None),
         ("supersedes", str(supersedes) if supersedes else None),
         ("expires_at", expires_at.isoformat() + "Z" if expires_at else None),
     ):

@@ -26,6 +26,7 @@ from sqlalchemy import (
     UniqueConstraint,
     cast,
     create_engine,
+    exists,
     func,
     inspect,
 )
@@ -59,7 +60,7 @@ class Base(DeclarativeBase):
 
 # Bump when the table layout changes incompatibly; stamped into SQLite's
 # PRAGMA user_version so future releases can detect and migrate old files.
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 class GUID(TypeDecorator[uuid.UUID]):
@@ -312,6 +313,9 @@ class MemoryModel(Base):
     source_type: Mapped[str] = mapped_column(String, nullable=False, default="explicit")
     # A JSON list of strings: "plan:name_v4", "file:src/auth.py", a url.
     source_refs: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    # A JSON list of normalised topic labels. Header metadata: changing it
+    # changes neither the content hash nor a shared memory's signature.
+    tags: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
 
     supersedes_id: Mapped[uuid.UUID | None] = mapped_column(GUID, ForeignKey("memories.id"))
     content_hash: Mapped[str] = mapped_column(String, nullable=False)
@@ -1158,11 +1162,22 @@ def _migration_4(conn: Connection) -> None:
     )
 
 
+def _migration_5(conn: Connection) -> None:
+    """Give memories topic tags.
+
+    A JSON list beside `source_refs` rather than a join table: filtering
+    scans it with `json_each`, which is plenty for one person's store.
+    """
+    # ponytail: JSON scan; a memory_tags(memory_id, tag) table if filtering gets slow.
+    _add_column(conn, "memories", "tags", "TEXT NOT NULL DEFAULT '[]'")
+
+
 MIGRATIONS: dict[int, Callable[[Connection], None]] = {
     1: _migration_1,
     2: _migration_2,
     3: _migration_3,
     4: _migration_4,
+    5: _migration_5,
 }
 
 
@@ -2331,6 +2346,7 @@ def create_memory(
     sensitivity: str = "normal",
     source_type: str = "explicit",
     source_refs: str = "[]",
+    tags: str = "[]",
     status: str = "active",
     supersedes_id: uuid.UUID | None = None,
     expires_at: datetime | None = None,
@@ -2364,6 +2380,7 @@ def create_memory(
         sensitivity=sensitivity,
         source_type=source_type,
         source_refs=source_refs,
+        tags=tags,
         supersedes_id=supersedes_id,
         content_hash=content_hash,
         file_path=file_path,
@@ -2406,6 +2423,7 @@ def list_memories(
     limit: int | None = None,
     offset: int = 0,
     order: str = "newest",
+    tags: Collection[str] = (),
 ) -> list[MemoryModel]:
     """Memories matching every filter given, newest first; optionally a page.
 
@@ -2422,6 +2440,10 @@ def list_memories(
         query = query.filter_by(category=category)
     if status is not None:
         query = query.filter_by(status=status)
+    for tag in tags:
+        # Every tag given must be present.
+        each = func.json_each(MemoryModel.tags).table_valued("value")
+        query = query.filter(exists().where(each.c.value == tag))
     if order == "oldest":
         query = query.order_by(MemoryModel.created_at.asc(), MemoryModel.id)
     elif order == "title":
@@ -2466,9 +2488,13 @@ def count_memories(
     status: str | None = "active",
     category: str | None = None,
     scope: str | None = None,
+    tags: Collection[str] = (),
 ) -> int:
     """How many memories match, for the nav badge and for paging a filtered list."""
     query = session.query(MemoryModel)
+    for tag in tags:
+        each = func.json_each(MemoryModel.tags).table_valued("value")
+        query = query.filter(exists().where(each.c.value == tag))
     if status is not None:
         query = query.filter_by(status=status)
     if category is not None:

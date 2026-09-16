@@ -36,6 +36,7 @@
   <select class="btn btn-sm" id="mem-sort" name="sort" data-auto-submit{% if query %} disabled title="A search is ordered by how well each memory matches"{% endif %}>
     {% for value, label in sorts.items() %}<option value="{{ value }}"{% if value == sort %} selected{% endif %}>{{ label }}</option>{% endfor %}
   </select>
+  {% if tag %}<input type="hidden" name="tag" value="{{ tag }}">{% endif %}
   <button class="btn btn-sm btn-primary">Search</button>
 </form>
 {% endblock %}
@@ -72,6 +73,9 @@
         </select>
         <button class="btn btn-primary" type="submit">Remember</button>
       </div>
+      <label class="sr-only" for="new-tags">Tags</label>
+      <input class="input" type="text" id="new-tags" name="tags" autocomplete="off"
+             placeholder="Tags, separated by commas (optional): auth, billing">
       <p class="hint">Checked against this project's memory policy, and refused if it looks like a credential.</p>
     </form>
   </details>
@@ -88,6 +92,13 @@
   <div class="notice info" style="margin-bottom:14px">
     This Python's SQLite has no full-text index, so search is a slower scan
     with no ranking. Everything still works.
+  </div>
+  {% endif %}
+
+  {% if tag %}
+  <div class="notice info tag-filter" style="margin-bottom:14px">
+    Showing memories tagged <span class="tagchip">{{ tag }}</span>
+    <a href="/memory?q={{ query | urlencode }}&amp;status={{ status }}&amp;category={{ category }}&amp;scope={{ scope }}&amp;sort={{ sort }}">Show every tag</a>
   </div>
   {% endif %}
 
@@ -110,7 +121,8 @@
     <div class="grid-row {{ cols }}" data-list-item>
       <span><a class="name" href="/memory/{{ row.id }}">{{ row.title }}</a>{% if row.status and row.status != 'active' %}
         <span class="pill pill-quiet">{{ row.status }}</span>{% endif %}
-        {% if rest %}<span class="hint">{{ rest }}</span>{% endif %}</span>
+        {% if rest %}<span class="hint">{{ rest }}</span>{% endif %}
+        {% if row.tags %}<span class="tags">{% for t in row.tags %}<a class="tagchip" href="/memory?tag={{ t | urlencode }}" title="Every memory tagged {{ t }}">{{ t }}</a>{% endfor %}</span>{% endif %}</span>
       <span data-cell="meta"><span class="pill pill-{{ row.category }}">{{ row.category }}</span></span>
       <span class="muted" data-cell="meta">{{ row.scope }}</span>
       <span class="muted" data-cell="meta">{{ row.created_by }}</span>
@@ -122,7 +134,11 @@
   {% else %}
   {% if query %}
     {% call empty.state('search', 'Nothing remembered about that') %}
-    <p>No memory in this project or your personal memory matches “{{ query }}”.</p>
+    <p>No memory in this project or your personal memory matches “{{ query }}”{% if tag %} with the tag {{ tag }}{% endif %}.</p>
+    {% endcall %}
+  {% elif tag %}
+    {% call empty.state('memory', 'Nothing tagged ' ~ tag) %}
+    <p>No memory with this status, category and scope carries that tag.</p>
     {% endcall %}
   {% else %}
     {% call empty.state('memory', 'Nothing remembered yet') %}

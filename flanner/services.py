@@ -844,6 +844,7 @@ def memory_remember(
     source_refs: list[str] | None = None,
     created_by: str = "claude",
     expires_at: str | None = None,
+    tags: list[str] | None = None,
 ) -> dict[str, Any]:
     """Store one memory."""
     from . import memory_ops
@@ -874,6 +875,7 @@ def memory_remember(
             source_refs=source_refs,
             created_by=created_by,
             expires_at=_memory_time(expires_at),
+            tags=tags,
         )
     except Exception as e:  # noqa: BLE001 - the seam returns, never raises
         return {"error": True, "message": str(e)}
@@ -883,6 +885,7 @@ def memory_remember(
         "title": memory.title,
         "scope": memory.scope,
         "category": memory.category,
+        "tags": memory_ops.tags_of(memory),
         "path": memory.file_path,
         "created": created,
         "message": (
@@ -899,6 +902,7 @@ def memory_supersede(
     reason: str = "",
     created_by: str = "claude",
     title: str | None = None,
+    tags: list[str] | None = None,
 ) -> dict[str, Any]:
     """Replace a memory with a corrected one."""
     from . import memory_ops
@@ -918,6 +922,7 @@ def memory_supersede(
             reason=reason,
             created_by=created_by,
             title=title,
+            tags=tags,
         )
     except Exception as e:  # noqa: BLE001
         return {"error": True, "message": str(e)}
@@ -956,6 +961,43 @@ def memory_forget(
         else "Forgotten. It will not be recalled; `flanner mem restore` brings it back."
     )
     return outcome
+
+
+def memory_tag(
+    memory_id: str,
+    add: list[str] | None = None,
+    remove: list[str] | None = None,
+    created_by: str = "claude",
+) -> dict[str, Any]:
+    """Add or remove tags on one memory, without a new version."""
+    from . import memory_ops
+
+    try:
+        ensure_database()
+        session = get_session()
+        before = get_memory(session, UUID(memory_id))
+        was = memory_ops.tags_of(before) if before is not None else []
+        memory = memory_ops.retag(
+            session,
+            memory_id=UUID(memory_id),
+            add=add or (),
+            remove=remove or (),
+            created_by=created_by,
+        )
+    except Exception as e:  # noqa: BLE001 - the seam returns, never raises
+        return {"error": True, "message": str(e)}
+
+    tags = memory_ops.tags_of(memory)
+    return {
+        "id": str(memory.id),
+        "tags": tags,
+        "changed": tags != was,
+        "message": (
+            f"Tags on {memory.title!r}: {', '.join(tags) or 'none'}."
+            if tags != was
+            else "Nothing to change."
+        ),
+    }
 
 
 def memory_restore(memory_id: str, created_by: str = "claude") -> dict[str, Any]:
@@ -1019,6 +1061,7 @@ def memory_consider(
                 explicit=bool(item.get("explicit")),
                 sensitivity=str(item.get("sensitivity") or "normal"),
                 source_type=str(item.get("source_type") or "agent_suggested"),
+                tags=tuple(item.get("tags") or ()),
             )
             for item in candidates
         ]
@@ -1344,6 +1387,7 @@ REGISTRY: dict[str, Callable[..., Any]] = {
     "memory_supersede": memory_supersede,
     "memory_forget": memory_forget,
     "memory_restore": memory_restore,
+    "memory_tag": memory_tag,
     "memory_rebuild": memory_rebuild,
     "memory_consider": memory_consider,
     "memory_decide": memory_decide,

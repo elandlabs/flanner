@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_icon.html" as ico %}
 {% block title %}{{ memory.title }}{% endblock %}
 
 {% block topbar_back %}
@@ -59,6 +60,42 @@
 
   <div class="card card-pad">
     <p class="card-text">{{ memory.body }}</p>
+  </div>
+
+  {#
+    Tags are labels, not content: changing them keeps the id and the text,
+    and records a line in the history below. Only an active memory or a
+    proposal takes new ones.
+  #}
+  <div class="card">
+    <div class="card-head">Tags <span class="note">{{ memory.tags | length }}</span></div>
+    <div class="card-pad">
+      {% if memory.tags %}
+      <ul class="tags tags-edit" aria-label="Tags">
+        {% for t in memory.tags %}
+        <li class="tagchip">
+          <a href="/memory?tag={{ t | urlencode }}" title="Every memory tagged {{ t }}">{{ t }}</a>
+          {% if memory.status in ('active', 'proposed') %}
+          <form method="post" action="/memory/{{ memory.id }}/tags">
+            <input type="hidden" name="remove" value="{{ t }}">
+            <button class="tagchip-x" type="submit" aria-label="Remove the tag {{ t }}" title="Remove {{ t }}">{{ ico.icon('close', 12) }}</button>
+          </form>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      {% elif memory.status not in ('active', 'proposed') %}
+      <p class="hint" style="margin:0">No tags.</p>
+      {% endif %}
+      {% if memory.status in ('active', 'proposed') %}
+      <form class="dropzone-row" method="post" action="/memory/{{ memory.id }}/tags">
+        <label class="sr-only" for="add-tags">Add tags</label>
+        <input class="input" type="text" id="add-tags" name="add" autocomplete="off" required
+               placeholder="Add tags, separated by commas">
+        <button class="btn" type="submit">Add</button>
+      </form>
+      {% endif %}
+    </div>
   </div>
 
   {% if memory.status == 'active' %}
@@ -132,6 +169,19 @@
     </div>
   </div>
 
+  {% if related %}
+  <div class="card">
+    <div class="card-head">Related <span class="note">{{ related | length }}</span></div>
+    {% for item in related %}
+    <div class="grid-row cols-related">
+      <span><a class="name" href="/memory/{{ item.id }}">{{ item.title }}</a>{% if item.status != 'active' %}
+        <span class="pill pill-quiet">{{ item.status }}</span>{% endif %}</span>
+      <span class="muted" data-cell="meta">{{ item.why }}</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
   {#
     Files that back up the memory. Attaching goes through the same service
     as `flanner mem attach`, so this project's size and type limits apply.
@@ -180,7 +230,8 @@
       {% for event in memory.events %}
       <div class="grid-row cols-events">
         <span>{{ event.action }}{% if event.detail.name %}
-          <span class="hint">{{ event.detail.name }}</span>{% endif %}</span>
+          <span class="hint">{{ event.detail.name }}</span>{% endif %}{% if event.action == 'retagged' %}
+          <span class="hint">{{ event.detail.after | join(', ') or 'no tags' }}</span>{% endif %}</span>
         <span class="muted">{{ event.actor }}</span>
         <span class="when tnum">{{ (event.at or '')[:16] | replace('T', ' ') }}</span>
       </div>

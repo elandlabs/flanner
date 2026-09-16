@@ -940,6 +940,7 @@ def _mem_or_exit(session: Any, memory_id: str) -> Any:
     help="How much this is stood behind",
 )
 @click.option("--ref", "refs", multiple=True, help="What supports it; repeatable")
+@click.option("--tag", "tags", multiple=True, help="A topic it belongs to; repeatable")
 @click.option("--by", "created_by", default=None, help="Who is remembering (defaults to you)")
 def mem_remember(
     content: str,
@@ -949,6 +950,7 @@ def mem_remember(
     title: str | None,
     confidence: str,
     refs: tuple[str, ...],
+    tags: tuple[str, ...],
     created_by: str | None,
 ) -> None:
     """Save one durable fact
@@ -959,6 +961,8 @@ def mem_remember(
     Examples:
 
       flanner mem remember "Use UTC-naive timestamps in SQLite" --category decision
+
+      flanner mem remember "Tokens rotate daily" --category fact --tag auth
 
       flanner mem remember - --category lesson < note.txt
     """
@@ -982,6 +986,7 @@ def mem_remember(
             confidence=confidence,
             source_refs=list(refs),
             created_by=created_by or _whoami(),
+            tags=tags,
         )
     except memory_ops.SecretRejected as e:
         console.print()
@@ -1002,6 +1007,8 @@ def mem_remember(
         tui.note(f"Already remembered: {memory.title}")
     console.print(f"  {tui.code(str(memory.id))}", style="muted")
     console.print(f"  {tui.code(memory.file_path)}", style="muted")
+    if memory_ops.tags_of(memory):
+        console.print(f"  tags: {', '.join(memory_ops.tags_of(memory))}", style="muted")
     console.print()
 
 
@@ -1011,9 +1018,16 @@ def mem_remember(
 @click.option("--no-personal", is_flag=True, help="Search this project only")
 @click.option("--limit", default=8, help="How many results at most")
 @click.option("--full", is_flag=True, help="Whole bodies rather than summaries")
+@click.option("--tag", "tags", multiple=True, help="Only memories with this tag; repeatable")
 @click.option("--output", type=click.Choice(["table", "json"]), default="table")
 def mem_recall(
-    query: str, project: str | None, no_personal: bool, limit: int, full: bool, output: str
+    query: str,
+    project: str | None,
+    no_personal: bool,
+    limit: int,
+    full: bool,
+    tags: tuple[str, ...],
+    output: str,
 ) -> None:
     """Search what earlier sessions knew
 
@@ -1024,14 +1038,19 @@ def mem_recall(
 
     session = _require_session()
     proj = _mem_project(session, project)
-    found = memory_ops.recall(
-        session,
-        query=query,
-        project_id=proj.id if proj else None,
-        include_personal=not no_personal,
-        limit=limit,
-        full=full,
-    )
+    try:
+        found = memory_ops.recall(
+            session,
+            query=query,
+            project_id=proj.id if proj else None,
+            include_personal=not no_personal,
+            limit=limit,
+            full=full,
+            tags=tags,
+        )
+    except ValueError as e:
+        tui.bad(str(e))
+        raise SystemExit(1) from None
 
     if output == "json":
         import json
@@ -1043,7 +1062,8 @@ def mem_recall(
     if not found["memories"]:
         from .database import count_memories
 
-        tui.note(f"Nothing remembered about {query!r}.")
+        tagged = f" tagged {', '.join(found['tags'])}" if found["tags"] else ""
+        tui.note(f"Nothing remembered about {query!r}{tagged}.")
         if found["search"] == "scan":
             console.print(
                 "  This Python's SQLite has no full-text index, so this was a plain scan.",
@@ -1074,6 +1094,8 @@ def mem_recall(
             f"{item['match_reason']}",
             style="muted",
         )
+        if item["tags"]:
+            console.print(f"  tags: {', '.join(item['tags'])}", style="muted")
         console.print(f"  {tui.code(item['id'])}", style="muted")
         console.print()
 
@@ -1084,14 +1106,20 @@ def mem_recall(
 
 @mem.command("show")
 @click.argument("memory_id")
+@click.option("--related", is_flag=True, help="Also list connected memories, and why")
 @click.option("--output", type=click.Choice(["table", "json"]), default="table")
-def mem_show(memory_id: str, output: str) -> None:
+def mem_show(memory_id: str, related: bool, output: str) -> None:
     """One memory in full, with everything that happened to it"""
     from . import memory_ops
 
     session = _require_session()
     _mem_or_exit(session, memory_id)
     detail = memory_ops.describe(session, UUID(memory_id))
+    if related:
+        here = memory_ops.resolve_project(session)
+        detail["related"] = memory_ops.related(
+            session, UUID(memory_id), project_id=here.id if here else None
+        )
 
     if output == "json":
         import json
@@ -1116,6 +1144,8 @@ def mem_show(memory_id: str, output: str) -> None:
         console.print(f"{label:<12}{detail[key]}", style="muted")
     if detail["source_refs"]:
         console.print(f"{'Sources':<12}{', '.join(detail['source_refs'])}", style="muted")
+    if detail["tags"]:
+        console.print(f"{'Tags':<12}{', '.join(detail['tags'])}", style="muted")
     if detail["supersedes"]:
         console.print(f"{'Replaces':<12}{detail['supersedes']}", style="muted")
 
@@ -1133,6 +1163,15 @@ def mem_show(memory_id: str, output: str) -> None:
         console.print()
         for event in detail["events"]:
             console.print(f"  {event['at']}  {event['action']} by {event['actor']}", style="muted")
+
+    if related:
+        console.print()
+        if not detail["related"]:
+            tui.note("Nothing related: no shared tags, sources or corrections.")
+        for item in detail["related"]:
+            console.print(f"  {item['title']}", style="value")
+            console.print(f"    {item['why']}", style="muted")
+            console.print(f"    {tui.code(item['id'])}", style="muted")
     console.print()
 
 
@@ -1143,6 +1182,7 @@ def mem_show(memory_id: str, output: str) -> None:
 @click.option("--project", default=None, help="Project name (uses current directory if omitted)")
 @click.option("--output", type=click.Choice(["table", "json"]), default="table")
 @click.option("--limit", default=50, show_default=True, help="Rows to show; 0 for all")
+@click.option("--tag", "tags", multiple=True, help="Only memories with this tag; repeatable")
 def mem_list(
     scope: str | None,
     category: str | None,
@@ -1150,11 +1190,18 @@ def mem_list(
     project: str | None,
     output: str,
     limit: int,
+    tags: tuple[str, ...],
 ) -> None:
     """Browse memories rather than searching them"""
+    from . import memory_ops
     from .database import list_memories
 
     session = _require_session()
+    try:
+        wanted = memory_ops.normalise_tags(tags)
+    except ValueError as e:
+        tui.bad(str(e))
+        raise SystemExit(1) from None
     proj = _mem_project(session, project) if scope != "personal" else None
     # One more than the cap, so the footer can say there is more without a
     # second query to count everything the filters match.
@@ -1165,6 +1212,7 @@ def mem_list(
         category=category,
         status=None if status == "all" else status,
         limit=limit + 1 if limit else None,
+        tags=wanted,
     )
     more = bool(limit) and len(memories) > limit
     memories = memories[:limit] if limit else memories
@@ -1181,6 +1229,7 @@ def mem_list(
                         "category": m.category,
                         "scope": m.scope,
                         "status": m.status,
+                        "tags": memory_ops.tags_of(m),
                         "created_at": m.created_at.isoformat() + "Z" if m.created_at else None,
                     }
                     for m in memories
@@ -1197,11 +1246,12 @@ def mem_list(
         console.print()
         return
 
-    table = tui.table("Memory", "Category", "Scope", "Written")
+    table = tui.table("Memory", "Category", "Tags", "Scope", "Written")
     for memory in memories:
         table.add_row(
             memory.title[:60],
             memory.category,
+            ", ".join(memory_ops.tags_of(memory)),
             memory.scope,
             memory.created_at.strftime("%Y-%m-%d") if memory.created_at else "",
         )
@@ -1234,6 +1284,69 @@ def mem_supersede(memory_id: str, content: str, reason: str) -> None:
     tui.ok(result["message"])
     console.print(f"  {tui.code(result['id'])}", style="muted")
     console.print()
+
+
+@mem.command("tag")
+@click.argument("memory_id")
+@click.argument("add", nargs=-1)
+@click.option("--remove", "remove", multiple=True, help="A tag to take off; repeatable")
+def mem_tag(memory_id: str, add: tuple[str, ...], remove: tuple[str, ...]) -> None:
+    """Add or remove tags on a memory
+
+    The memory keeps its id and its text; only the labels change.
+
+    Examples:
+
+      flanner mem tag <id> auth billing
+
+      flanner mem tag <id> --remove billing
+    """
+    if not add and not remove:
+        tui.bad("Name a tag to add, or --remove one.")
+        raise SystemExit(1)
+    result = _dispatch_or_exit(
+        "memory_tag",
+        {
+            "memory_id": memory_id,
+            "add": list(add),
+            "remove": list(remove),
+            "created_by": _whoami(),
+        },
+    )
+    console.print()
+    (tui.ok if result["changed"] else tui.note)(result["message"])
+    console.print()
+
+
+@mem.command("tags")
+@click.option("--project", default=None, help="Project name (uses current directory if omitted)")
+@click.option("--no-personal", is_flag=True, help="This project's memories only")
+@click.option("--output", type=click.Choice(["table", "json"]), default="table")
+def mem_tags(project: str | None, no_personal: bool, output: str) -> None:
+    """The tags in use, most used first"""
+    from . import memory_ops
+
+    session = _require_session()
+    proj = _mem_project(session, project)
+    counted = memory_ops.tags_in_use(
+        session, project_id=proj.id if proj else None, include_personal=not no_personal
+    )
+    if output == "json":
+        import json
+
+        click.echo(json.dumps(counted, indent=2))
+        return
+
+    console.print()
+    if not counted:
+        tui.note("No tags yet.")
+        tui.hint(f"  {tui.command('flanner mem tag <id> <tag>')} adds one.")
+        console.print()
+        return
+    table = tui.table("Tag", "Memories")
+    for row in counted:
+        table.add_row(row["tag"], str(row["count"]))
+    tui.listing(table)
 
 
 @mem.command("forget")

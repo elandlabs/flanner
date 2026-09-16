@@ -28,6 +28,8 @@ import hashlib
 import json
 import logging
 import re
+from collections import Counter
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -139,6 +141,48 @@ def content_hash(body: str) -> str:
     return hashlib.sha256(normalise(body).encode("utf-8")).hexdigest()
 
 
+#: Tags are for finding things. A memory with twenty labels is found by
+#: everything, and a label longer than this is a sentence.
+MAX_TAG_CHARS = 40
+MAX_TAGS = 10
+_TAG = re.compile(r"[a-z0-9][a-z0-9_/-]*")
+
+
+def normalise_tag(raw: str) -> str:
+    """One tag in its canonical form, or a ValidationError saying why not.
+
+    Lowercased, with inner whitespace folded to `-`, so `Auth Flow` and
+    `auth-flow` are one tag rather than two that drift apart. `/` is allowed
+    so `area/auth` can stand in for a hierarchy without building one.
+    """
+    tag = "-".join(str(raw).strip().lower().split())
+    if not tag:
+        raise ValidationError("a tag cannot be empty")
+    if len(tag) > MAX_TAG_CHARS:
+        raise ValidationError(f"tag {tag[:20]!r}... is longer than {MAX_TAG_CHARS} characters")
+    if not _TAG.fullmatch(tag):
+        raise ValidationError(
+            f"tag {tag!r} may use only a-z, 0-9, -, _ and /, and must start "
+            "with a letter or a digit"
+        )
+    if memory_guard.scan(tag):
+        raise SecretRejected("a tag looks like a credential, and tags are stored in plain text")
+    return tag
+
+
+def normalise_tags(raw: Iterable[str] | None) -> list[str]:
+    """Canonical tags, duplicates dropped, first-seen order kept."""
+    tags = list(dict.fromkeys(normalise_tag(tag) for tag in raw or ()))
+    if len(tags) > MAX_TAGS:
+        raise ValidationError(f"a memory takes at most {MAX_TAGS} tags, not {len(tags)}")
+    return tags
+
+
+def tags_of(memory: MemoryModel) -> list[str]:
+    """A memory's tags as a list."""
+    return list(json.loads(memory.tags or "[]"))
+
+
 def derive_title(body: str) -> str:
     """A title from the first sentence, when the caller gave none.
 
@@ -203,7 +247,15 @@ def _reindex(session: Session, memory: MemoryModel) -> None:
             {
                 "title": memory.title,
                 "body": " ".join([memory.body, *_attachment_text(session, memory.id)]),
-                "refs": " ".join(json.loads(memory.source_refs or "[]")),
+                # Tags ride in the refs column as `tag:<name>`. The tokenizer
+                # splits on the colon, so a plain search for the tag finds it,
+                # and the index needs no new column.
+                "refs": " ".join(
+                    [
+                        *json.loads(memory.source_refs or "[]"),
+                        *(f"tag:{tag}" for tag in tags_of(memory)),
+                    ]
+                ),
                 "category": memory.category,
                 "mid": str(memory.id),
             },
@@ -256,6 +308,7 @@ def _render(memory: MemoryModel, project: ProjectModel | None) -> str:
         sensitivity=memory.sensitivity,
         source_type=memory.source_type,
         source_refs=json.loads(memory.source_refs or "[]"),
+        tags=tags_of(memory),
         supersedes=memory.supersedes_id,
         expires_at=memory.expires_at,
         created_at=memory.created_at,
@@ -296,14 +349,17 @@ def remember(
     created_by: str = "claude",
     status: str = "active",
     supersedes_id: UUID | None = None,
+    tags: Iterable[str] | None = None,
 ) -> tuple[MemoryModel, bool]:
     """Store one memory. Returns it and whether it was newly created.
 
     Idempotent on content. Remembering the same thing twice in the same
     scope returns the first memory rather than making a second, which is
     both the deduplication a person expects and what makes a retried write
-    safe when the reply to the first was lost.
+    safe when the reply to the first was lost. Tags given the second time
+    are added to the first memory rather than lost.
     """
+    wanted_tags = normalise_tags(tags)
     body = normalise(content)
     if not body:
         raise ValidationError("a memory needs a body")
@@ -329,6 +385,10 @@ def remember(
         session, scope=scope, project_id=project_id, content_hash=digest
     )
     if existing is not None:
+        if set(wanted_tags) - set(tags_of(existing)):
+            existing = retag(
+                session, memory_id=existing.id, add=wanted_tags, created_by=created_by
+            )
         return existing, False
 
     directory = memory_dir(scope, project)
@@ -350,6 +410,7 @@ def remember(
         sensitivity=sensitivity,
         source_type=source_type,
         source_refs=json.dumps(source_refs or []),
+        tags=json.dumps(wanted_tags),
         supersedes_id=supersedes_id,
         content_hash=digest,
         file_path=str(path),
@@ -374,6 +435,7 @@ def remember(
                 sensitivity=sensitivity,
                 source_type=source_type,
                 source_refs=draft.source_refs,
+                tags=draft.tags,
                 supersedes_id=supersedes_id,
                 content_hash=digest,
                 file_path=str(path),
@@ -409,12 +471,16 @@ def supersede(
     reason: str = "",
     created_by: str = "claude",
     title: str | None = None,
+    tags: Iterable[str] | None = None,
 ) -> MemoryModel:
     """Correct a memory by writing its replacement.
 
     The old memory is not edited and not deleted. It leaves recall and
     keeps pointing at what replaced it, so somebody reading a decision from
     six months ago can still find out what was believed at the time.
+
+    The replacement keeps the old tags unless new ones are given: a
+    correction is still about the same thing.
     """
     old = get_memory(session, memory_id)
     if old is None:
@@ -433,6 +499,7 @@ def supersede(
         source_refs=json.loads(old.source_refs or "[]"),
         created_by=created_by,
         supersedes_id=old.id,
+        tags=tags_of(old) if tags is None else tags,
     )
     if not created and replacement.id == old.id:
         raise ValidationError("the replacement is identical to the memory it would supersede")
@@ -510,6 +577,51 @@ def restore(session: Session, *, memory_id: UUID, created_by: str = "claude") ->
     session.commit()
     _reindex(session, memory)
     record_memory_event(session, memory_id=memory.id, action="restored", actor=created_by)
+    return memory
+
+
+def retag(
+    session: Session,
+    *,
+    memory_id: UUID,
+    add: Iterable[str] = (),
+    remove: Iterable[str] = (),
+    created_by: str = "claude",
+) -> MemoryModel:
+    """Change a memory's tags without making a new version of it.
+
+    Tags live in the header, and neither the content hash nor a shared
+    memory's signature covers the header, so relabelling changes nothing a
+    peer or a deduplication check relies on. Not refused when capture is
+    off: like a correction, it is not new capture.
+    """
+    memory = get_memory(session, memory_id)
+    if memory is None:
+        raise NotFoundError(f"No memory with id {memory_id}")
+    if memory.status not in ("active", "proposed"):
+        raise ValidationError(
+            f"this memory is {memory.status}; only an active memory or a proposal is retagged"
+        )
+
+    before = tags_of(memory)
+    dropped = set(normalise_tags(remove))
+    after = normalise_tags([tag for tag in before if tag not in dropped] + normalise_tags(add))
+    if after == before:
+        return memory
+
+    path = Path(memory.file_path)
+    with exclusive_lock(path.parent, str(memory.id)):
+        memory.tags = json.dumps(after)
+        session.commit()
+        atomic_write_text(path, _render(memory, _project_of(session, memory)))
+    _reindex(session, memory)
+    record_memory_event(
+        session,
+        memory_id=memory.id,
+        action="retagged",
+        actor=created_by,
+        detail=json.dumps({"before": before, "after": after}),
+    )
     return memory
 
 
@@ -647,6 +759,7 @@ def recall(
     limit: int = DEFAULT_LIMIT,
     max_context_chars: int = DEFAULT_MAX_CONTEXT_CHARS,
     full: bool = False,
+    tags: Iterable[str] = (),
 ) -> dict[str, Any]:
     """Find the memories that answer a question, and say why each is here.
 
@@ -657,6 +770,15 @@ def recall(
     """
     now = utcnow()
     allowed = _visible(session, project_id=project_id, include_personal=include_personal)
+    wanted = set(normalise_tags(tags))
+    if wanted:
+        # Narrowed before searching, like scope, so ranking never sees the rest.
+        allowed = [
+            memory_id
+            for memory_id in allowed
+            if (memory := get_memory(session, memory_id)) is not None
+            and wanted <= set(tags_of(memory))
+        ]
     scored = _search_ids(session, query, allowed)
 
     results: list[Recalled] = []
@@ -690,6 +812,7 @@ def recall(
     return {
         "handling": HANDLING,
         "query": query,
+        "tags": sorted(wanted),
         "scope": {
             "project_id": str(project_id) if project_id else None,
             "include_personal": include_personal,
@@ -712,6 +835,7 @@ def _as_payload(result: Recalled, *, full: bool) -> dict[str, Any]:
         "sensitivity": memory.sensitivity,
         "source_type": memory.source_type,
         "source_refs": json.loads(memory.source_refs or "[]"),
+        "tags": tags_of(memory),
         "created_by": memory.created_by,
         "created_at": memory.created_at.isoformat() + "Z" if memory.created_at else None,
         "expires_at": memory.expires_at.isoformat() + "Z" if memory.expires_at else None,
@@ -774,6 +898,104 @@ def describe(session: Session, memory_id: UUID) -> dict[str, Any]:
         for event in list_memory_events(session, memory.id)
     ]
     return payload
+
+
+#: How many related memories one lookup returns.
+RELATED_LIMIT = 8
+
+
+def _summary(memory: MemoryModel) -> str:
+    body = memory.body
+    return body if len(body) <= SUMMARY_CHARS else body[:SUMMARY_CHARS] + "…"
+
+
+def related(
+    session: Session,
+    memory_id: UUID,
+    *,
+    project_id: UUID | None = None,
+    include_personal: bool = True,
+    limit: int = RELATED_LIMIT,
+) -> list[dict[str, Any]]:
+    """Memories connected to this one, each with the reason it is.
+
+    Three kinds of connection, strongest first: a correction link (what
+    this replaced, or what replaced it), a shared source such as the same
+    file or plan, and shared tags, ranked by how many. Only memories the
+    caller could recall are offered, using the same visibility as recall;
+    a project memory is judged against its own project.
+    """
+    memory = get_memory(session, memory_id)
+    if memory is None:
+        raise NotFoundError(f"No memory with id {memory_id}")
+
+    found: list[tuple[tuple[int, int], MemoryModel, str]] = []
+
+    links: list[tuple[MemoryModel | None, str]] = [
+        (
+            get_memory(session, memory.supersedes_id) if memory.supersedes_id else None,
+            "this memory replaced it",
+        ),
+        (
+            session.query(MemoryModel).filter_by(supersedes_id=memory.id).first(),
+            "it replaced this memory",
+        ),
+    ]
+    for other, why in links:
+        if other is not None:
+            found.append(((0, 0), other, why))
+    linked = {other.id for _, other, _ in found}
+
+    own_project = memory.project_id if memory.scope == PROJECT else project_id
+    refs = set(json.loads(memory.source_refs or "[]"))
+    tags = set(tags_of(memory))
+    now = utcnow()
+    for other_id in _visible(session, project_id=own_project, include_personal=include_personal):
+        other = get_memory(session, other_id)
+        if other is None or other.id == memory.id or other.id in linked or _expired(other, now):
+            continue
+        shared_refs = refs & set(json.loads(other.source_refs or "[]"))
+        shared_tags = tags & set(tags_of(other))
+        if shared_refs:
+            found.append(
+                ((1, -len(shared_refs)), other, "same source: " + ", ".join(sorted(shared_refs)))
+            )
+        elif shared_tags:
+            found.append(
+                ((2, -len(shared_tags)), other, "shares tags: " + ", ".join(sorted(shared_tags)))
+            )
+
+    found.sort(key=lambda item: item[0])
+    return [
+        {
+            "id": str(other.id),
+            "title": other.title,
+            "status": other.status,
+            "tags": tags_of(other),
+            "summary": _summary(other),
+            "why": why,
+        }
+        for _, other, why in found[:limit]
+    ]
+
+
+def tags_in_use(
+    session: Session, *, project_id: UUID | None = None, include_personal: bool = True
+) -> list[dict[str, Any]]:
+    """Tags on the memories this caller can recall, most used first.
+
+    Offered so an agent reuses `auth` instead of inventing `authentication`
+    beside it.
+    """
+    counts: Counter[str] = Counter()
+    for memory_id in _visible(session, project_id=project_id, include_personal=include_personal):
+        memory = get_memory(session, memory_id)
+        if memory is not None:
+            counts.update(tags_of(memory))
+    return [
+        {"tag": tag, "count": count}
+        for tag, count in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+    ]
 
 
 def expire_due(session: Session, *, now: datetime | None = None) -> int:
@@ -884,6 +1106,7 @@ class Candidate:
     explicit: bool = False
     sensitivity: str = "normal"
     source_type: str = "agent_suggested"
+    tags: tuple[str, ...] = ()
 
 
 def _quota_used_today(session: Session, *, action: str, auto: bool) -> int:
@@ -1079,6 +1302,7 @@ def _consider_one(
             source_refs=list(candidate.source_refs),
             created_by=created_by,
             status=status,
+            tags=candidate.tags,
         )
     except SecretRejected as e:  # pragma: no cover - gate 3 catches these first
         return _refused(REJECTED_SECRET, str(e))
@@ -1212,6 +1436,7 @@ def decide(
             source_type=memory.source_type,
             source_refs=json.loads(memory.source_refs or "[]"),
             created_by=proposer,
+            tags=tags_of(memory),
         )
         record_memory_event(
             session,
@@ -1877,9 +2102,15 @@ def _adopt(session: Session, path: Path, raw: str, project: ProjectModel | None)
     scope = str(fm_data["scope"])
     project_id = project.id if scope == PROJECT and project else NO_PROJECT
 
+    tags = json.dumps(_readable_tags(fm_data.get("tags"), path))
     existing = get_memory(session, memory_id)
     if existing is not None:
-        changed = existing.content_hash != digest or existing.title != str(fm_data["title"])
+        changed = (
+            existing.content_hash != digest
+            or existing.title != str(fm_data["title"])
+            or existing.tags != tags
+        )
+        existing.tags = tags
         existing.title = str(fm_data["title"])
         existing.body = body
         existing.content_hash = digest
@@ -1902,6 +2133,7 @@ def _adopt(session: Session, path: Path, raw: str, project: ProjectModel | None)
         sensitivity=str(fm_data.get("sensitivity", "normal")),
         source_type=str(fm_data.get("source_type", "imported")),
         source_refs=json.dumps(list(fm_data.get("source_refs") or [])),
+        tags=tags,
         content_hash=digest,
         file_path=str(path),
         created_by=str(fm_data["created_by"]),
@@ -1910,6 +2142,24 @@ def _adopt(session: Session, path: Path, raw: str, project: ProjectModel | None)
     )
     _reindex(session, memory)
     return "adopted"
+
+
+def _readable_tags(raw: Any, path: Path) -> list[str]:
+    """The usable tags from a header somebody may have edited by hand.
+
+    A bad tag costs itself, not the memory: the rest are kept and the one
+    that could not be read is logged.
+    """
+    kept: list[str] = []
+    for item in raw if isinstance(raw, list) else []:
+        try:
+            tag = normalise_tag(str(item))
+        except ValidationError as e:
+            logger.warning("Ignoring a tag in %s: %s", path, e)
+            continue
+        if tag not in kept:
+            kept.append(tag)
+    return kept[:MAX_TAGS]
 
 
 def _parse_time(value: Any) -> datetime | None:
