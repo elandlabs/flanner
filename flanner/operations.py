@@ -266,6 +266,8 @@ OPERATIONS: tuple[Operation, ...] = (
         cli=("mem remember",),
         mcp=("memory_remember",),
         web=("POST /memory/new",),
+        note="Takes topic tags as it saves.",
+        note_since="0.13.0",
     ),
     _op(
         "memory",
@@ -274,6 +276,8 @@ OPERATIONS: tuple[Operation, ...] = (
         cli=("mem recall",),
         mcp=("memory_recall",),
         web=("GET /memory",),
+        note="Can be narrowed to memories carrying given tags.",
+        note_since="0.13.0",
     ),
     _op(
         "memory",
@@ -282,6 +286,8 @@ OPERATIONS: tuple[Operation, ...] = (
         cli=("mem show",),
         mcp=("memory_get",),
         web=("GET /memory/{memory_id}",),
+        note="Can list related memories, each with the reason it is related.",
+        note_since="0.13.0",
     ),
     _op(
         "memory",
@@ -304,6 +310,7 @@ OPERATIONS: tuple[Operation, ...] = (
         "write",
         cli=("mem tag",),
         mcp=("memory_tag",),
+        mcp_since="0.13.0",
         web=("POST /memory/{memory_id}/tags",),
     ),
     _op(
@@ -312,6 +319,7 @@ OPERATIONS: tuple[Operation, ...] = (
         "read",
         cli=("mem tags",),
         mcp=("memory_tags",),
+        mcp_since="0.13.0",
         web=(),
     ),
     _op(
