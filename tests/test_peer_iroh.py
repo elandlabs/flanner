@@ -255,6 +255,28 @@ def test_no_configured_relay_means_the_transport_defaults():
     )
 
 
+def test_the_relay_is_asked_for_addresses_on_its_default_port(monkeypatch):
+    """Without a port iroh never asks the relay, and no hole is ever punched."""
+    monkeypatch.delenv(peer_iroh.RELAY_QUIC_PORT_ENV, raising=False)
+    assert peer_iroh.relay_quic_port() == 7842
+
+    monkeypatch.setenv(peer_iroh.RELAY_QUIC_PORT_ENV, "6000")
+    assert peer_iroh.relay_quic_port() == 6000
+
+    monkeypatch.setenv(peer_iroh.RELAY_QUIC_PORT_ENV, "0")
+    assert peer_iroh.relay_quic_port() is None
+
+    monkeypatch.setenv(peer_iroh.RELAY_QUIC_PORT_ENV, "not-a-port")
+    assert peer_iroh.relay_quic_port() == 7842
+
+
+@needs_iroh
+def test_an_organizations_relay_is_still_accepted_with_a_discovery_port(monkeypatch):
+    monkeypatch.delenv(peer_iroh.RELAY_QUIC_PORT_ENV, raising=False)
+    urls = peer_iroh.relay_mode("https://relay.example.com").relay_map().urls()
+    assert any("relay.example.com" in url for url in urls)
+
+
 def test_the_relay_url_survives_a_session_round_trip(tmp_path, monkeypatch):
     """Delivered with the entitlement, so a renewal teaches a device where to relay."""
     from flanner import session as cache

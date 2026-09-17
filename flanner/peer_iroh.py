@@ -63,6 +63,13 @@ DIRECT = "direct"
 RELAY = "relay"
 UNKNOWN = "unknown"
 
+#: The UDP port on which the organization's relay answers QUIC address
+#: discovery. Without it iroh never asks that relay, so a device relying on
+#: it alone never learns its outside address and cannot punch through NAT.
+#: iroh-relay's default; `0` turns discovery off for that relay.
+RELAY_QUIC_PORT_ENV = "FLANNER_RELAY_QUIC_PORT"
+DEFAULT_RELAY_QUIC_PORT = 7842
+
 
 @dataclass(frozen=True)
 class Route:
@@ -218,8 +225,20 @@ def relay_mode(relay_url: str = "", token: str = "") -> Any:
     if not relay_url:
         return iroh.RelayMode.default_mode()
     relays = iroh.RelayMode.default_mode().relay_map()
-    relays.insert(iroh.RelayConfig(url=relay_url, auth_token=token or None))
+    relays.insert(
+        iroh.RelayConfig(url=relay_url, quic_port=relay_quic_port(), auth_token=token or None)
+    )
     return iroh.RelayMode.custom(relays)
+
+
+def relay_quic_port() -> int | None:
+    """The configured relay's address-discovery port, or None to not ask it."""
+    raw = os.environ.get(RELAY_QUIC_PORT_ENV, "").strip()
+    try:
+        port = int(raw) if raw else DEFAULT_RELAY_QUIC_PORT
+    except ValueError:
+        port = DEFAULT_RELAY_QUIC_PORT
+    return port if 0 < port < 65536 else None
 
 
 def _configured_relay() -> tuple[str, str]:
