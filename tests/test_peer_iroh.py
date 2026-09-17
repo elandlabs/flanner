@@ -446,6 +446,34 @@ def test_a_relayed_path_says_so():
     assert route.relayed is True
 
 
+class _Upgrading:
+    """A connection that starts on the relay and goes direct after a few reads."""
+
+    def __init__(self, direct_after):
+        self._reads = 0
+        self._direct_after = direct_after
+
+    def paths(self):
+        self._reads += 1
+        direct = self._reads > self._direct_after
+        return [_Path(is_selected=True, is_relay=not direct, remote_addr="x", rtt_ms=1)]
+
+
+def test_the_route_waits_for_a_relayed_connection_to_go_direct():
+    """iroh connects on the relay and upgrades a moment later."""
+    route = asyncio.run(peer_iroh.settled_route(_Upgrading(3), "dev_1", seconds=2, poll=0.01))
+
+    assert route.connection == peer_iroh.DIRECT
+
+
+def test_a_connection_that_stays_relayed_is_reported_after_the_wait():
+    route = asyncio.run(
+        peer_iroh.settled_route(_Upgrading(10_000), "dev_1", seconds=0.05, poll=0.01)
+    )
+
+    assert route.connection == peer_iroh.RELAY
+
+
 class _Unbound:
     """An endpoint nobody bound in advance, as in a fresh `flanner` process.
 
@@ -474,7 +502,7 @@ def test_a_fresh_process_can_dial_without_deadlocking(monkeypatch):
     monkeypatch.setattr(peer_iroh, "dial_address", lambda remote: object())
     endpoint = _Unbound()
 
-    route = peer_iroh.route_to("dev_1", lambda: None, endpoint=endpoint, timeout=5)
+    route = peer_iroh.route_to("dev_1", lambda: None, endpoint=endpoint, timeout=5, settle=0)
 
     assert route.connection == peer_iroh.DIRECT
     assert endpoint.asked_from and "flanner-iroh" not in endpoint.asked_from

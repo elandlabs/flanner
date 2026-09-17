@@ -63,6 +63,12 @@ DIRECT = "direct"
 RELAY = "relay"
 UNKNOWN = "unknown"
 
+#: How long `route_to` waits for a relayed connection to go direct. iroh
+#: connects over the relay first and upgrades a moment later, so reading
+#: the path at once reports "relay" for connections that are about to be
+#: direct.
+SETTLE_SECONDS = 3.0
+
 #: Lab switches, for flanner-meshlab's closed network. Unset on every real
 #: device. `off` builds the endpoint without n0's discovery service and with
 #: only the configured relay, which is all a network with no internet has.
@@ -598,12 +604,26 @@ def local_status(held: Any, *, endpoint: PeerEndpoint | None = None) -> LocalSta
     )
 
 
+async def settled_route(
+    connection: Any, device_id: str, seconds: float = SETTLE_SECONDS, poll: float = 0.25
+) -> Route:
+    """The route once it has had `seconds` to go direct, or as soon as it has."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + seconds
+    route = route_of(connection, device_id)
+    while route.connection != DIRECT and loop.time() < deadline:
+        await asyncio.sleep(poll)
+        route = route_of(connection, device_id)
+    return route
+
+
 def route_to(
     device_id: str,
     held: Any,
     *,
     endpoint: PeerEndpoint | None = None,
     timeout: float = peer.REQUEST_TIMEOUT,
+    settle: float = SETTLE_SECONDS,
 ) -> Route:
     """Reach a peer and report how the connection travelled.
 
@@ -611,6 +631,9 @@ def route_to(
     question being asked is how this device reaches that one now, and a
     remembered answer from an hour ago on a different network would be a
     confident wrong one.
+
+    Waits up to `settle` seconds for a relayed connection to go direct,
+    because iroh always starts on the relay and upgrades a moment later.
     """
     _iroh()
     local = endpoint or shared_endpoint()
@@ -618,17 +641,17 @@ def route_to(
 
     bound = local.ready(timeout)  # on this thread; see IrohTransport.__call__
 
-    async def dial() -> Any:
+    async def dial() -> Route:
         await bound.online()
-        return await bound.connect(dial_address(remote_hex), ALPN)
+        connection = await bound.connect(dial_address(remote_hex), ALPN)
+        return await settled_route(connection, device_id, settle)
 
     try:
-        connection = _Loop.shared().run(dial(), timeout + CONNECT_TIMEOUT)
+        return _Loop.shared().run(dial(), timeout + CONNECT_TIMEOUT + settle)  # type: ignore[no-any-return]
     except peer.PeerError:
         raise
     except Exception as e:
         raise peer.PeerError(f"could not reach {device_id}: {e}") from None
-    return route_of(connection, device_id)
 
 
 _shared: PeerEndpoint | None = None
