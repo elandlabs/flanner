@@ -21,7 +21,6 @@ peer that receives it.
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from typing import Any
 
@@ -69,13 +68,20 @@ class ReviewResult:
 
 
 def save_event(session: Session, event: Event, plan_file_id: str) -> None:
-    """Store a signed event as an artifact, payload alongside."""
+    """Store a signed event as an artifact, payload alongside.
+
+    Stored in the canonical form the content hash was taken over. Plain
+    `json.dumps` writes a space after each separator, so a peer hashed
+    different bytes and refused every review artifact with "payload does
+    not match content_hash": retirements, proposals, decisions and
+    comments all stopped at the first device that tried to send one.
+    """
     artifact = event.artifact
     save_envelope(
         session,
         artifact,
         plan_file_id=plan_file_id,
-        payload=json.dumps(event.payload),
+        payload=workflow.stored_payload(event.payload),
     )
 
 

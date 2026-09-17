@@ -39,6 +39,42 @@ def plan(project):
     return plan_file, version
 
 
+def test_a_stored_event_hashes_to_what_its_envelope_claims(project, plan):
+    """What a peer checks on arrival, checked here where it is written.
+
+    The payload was stored with `json.dumps`, whose spaces are not in the
+    canonical bytes the content hash covers. Every retirement, proposal,
+    decision and comment was then refused by the receiving device as
+    "payload does not match content_hash", so none of them ever crossed.
+    """
+    from flanner import sync
+    from flanner.database import list_artifacts  # noqa: F401 - used by the helper below
+
+    session, proj = project
+    plan_file, version = plan
+    review.propose(session, project=proj, plan_file=plan_file, actor="alice")
+    review.retire(session, project=proj, plan_file=plan_file, reason="old", actor="alice")
+
+    events = _event_artifacts(session, plan_file)
+    assert {row.artifact_type for row in events} >= {"review.proposal", "plan.tombstone"}
+    for row in events:
+        stored = (row.payload or "").encode("utf-8")
+        digest = sync.payload_digest(row.artifact_type, stored)
+        assert digest == row.content_hash, row.artifact_type
+
+
+def _event_artifacts(session, plan_file):
+    """The artifacts this module writes: each carries a payload of its own."""
+    from flanner.database import list_artifacts
+
+    return [
+        row
+        for row in list_artifacts(session)
+        if row.plan_file_id == str(plan_file.id)
+        and row.artifact_type.startswith(("review.", "plan.tombstone"))
+    ]
+
+
 # --- the loop ---
 
 

@@ -197,6 +197,16 @@ class Event:
         return self.artifact.actor_user_id or self.artifact.actor_device_id
 
 
+def stored_payload(payload: dict[str, Any]) -> str:
+    """An event's payload as the bytes its content hash was taken over.
+
+    Storing it any other way — `json.dumps` puts a space after each
+    separator — makes a peer hash different bytes and refuse the artifact
+    as "payload does not match content_hash".
+    """
+    return artifacts.canonical_bytes(payload).decode("utf-8")
+
+
 def _sign_event(
     artifact_type: str,
     workspace_id: str,
