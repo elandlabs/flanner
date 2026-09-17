@@ -323,3 +323,36 @@ def test_sync_then_materialize_reproduces_the_plan_on_the_other_device(sender, r
 
     on_disk = sorted(p.name for p in _dir(r_project).glob("*.md"))
     assert on_disk == ["arch_v1.md", "arch_v2.md"]
+
+
+def test_a_pushed_plan_becomes_a_file_too(sender, receiver):
+    """A device that is pushed to may never pull, so it cannot wait for one.
+
+    The push path stored the version and stopped there: the artifact was
+    held, no file was written, and the plan did not appear in `flanner
+    plans` until some later pull happened to materialise it.
+    """
+    from flanner import push
+
+    s_session, s_project = sender
+    r_session, r_project = receiver
+    s_project.workspace_id = r_project.workspace_id = "ws_shared"  # one team, two checkouts
+    s_session.commit()
+    r_session.commit()
+    _, version = create_plan(
+        s_session, project=s_project, name="arch", content="# pushed\n", created_by="alice"
+    )
+    s_session.commit()
+    envelope, payload = _transfer(sender, version.artifact_id)
+
+    report = push.accept(
+        r_session,
+        [{"envelope": envelope, "payload": payload.decode("utf-8")}],
+        workspace_id=envelope["workspace_id"],
+        role="maintainer",
+        resolve_key={identity.device_id(): identity.device_public_key_b64()}.get,
+    )
+
+    assert report.accepted == [version.artifact_id], report.rejected
+    assert sorted(p.name for p in _dir(r_project).glob("*.md")) == ["arch_v1.md"]
+    assert get_plan_file(r_session, str(envelope["plan_file_id"])) is not None

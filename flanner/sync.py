@@ -367,7 +367,7 @@ def sync_from_peer(
             report.rejected.append((artifact_id, verdict.reason))
             continue
         report.accepted.append(artifact_id)
-        _make_readable(session, envelope, payload, report, preferred=project)
+        make_readable(session, envelope, payload, report, preferred=project)
 
     _write_what_is_held(session, workspace_id, report, preferred=project)
     return report
@@ -410,10 +410,10 @@ def _write_what_is_held(
     tried = set(report.accepted) | {artifact_id for artifact_id, _ in report.unreadable}
     pending = [a for a in held if a not in written and a not in tried]
     for envelope, payload in LocalPeer(session).fetch(pending):
-        _make_readable(session, envelope, payload, report, preferred=preferred)
+        make_readable(session, envelope, payload, report, preferred=preferred)
 
 
-def _make_readable(
+def make_readable(
     session: Session,
     envelope: dict[str, Any],
     payload: bytes | None,

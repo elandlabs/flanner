@@ -186,7 +186,14 @@ def accept(
     unknown: list[tuple[dict[str, Any], bytes | None, str]] = []
 
     def ingest(envelope: dict[str, Any], payload: bytes | None, resolver: Any) -> Any:
-        return sync.ingest_artifact(session, envelope, payload, resolver)
+        verdict = sync.ingest_artifact(session, envelope, payload, resolver)
+        if verdict:
+            # A pushed plan has to become a file here, because nothing else
+            # will: the pull path materialises what it fetches, and a device
+            # that is pushed to may never pull. Without this the version is
+            # held and the plan simply does not appear.
+            sync.make_readable(session, envelope, payload, report)
+        return verdict
 
     for item in items:
         envelope = item.get("envelope")
@@ -230,19 +237,18 @@ def accept(
         else:
             report.rejected.append((artifact_id, verdict.reason))
 
-    if not unknown:
-        return report
+    if unknown:
+        fresh = relearn(refresh_keys, cooldown)
+        for envelope, payload, artifact_id in unknown:
+            # Without a fresh resolver there is nothing new to try, so the
+            # original refusal stands and is reported as it was.
+            verdict = ingest(envelope, payload, fresh) if fresh else None
+            if verdict is not None and verdict:
+                report.accepted.append(artifact_id)
+            else:
+                reason = verdict.reason if verdict is not None else _stale_reason(envelope)
+                report.rejected.append((artifact_id, reason))
 
-    fresh = relearn(refresh_keys, cooldown)
-    for envelope, payload, artifact_id in unknown:
-        # Without a fresh resolver there is nothing new to try, so the
-        # original refusal stands and is reported as it was.
-        verdict = ingest(envelope, payload, fresh) if fresh else None
-        if verdict is not None and verdict:
-            report.accepted.append(artifact_id)
-        else:
-            reason = verdict.reason if verdict is not None else _stale_reason(envelope)
-            report.rejected.append((artifact_id, reason))
     return report
 
 
