@@ -8708,6 +8708,37 @@ def _attach_examples(group: click.Group, prefix: str = "") -> None:
             _attach_examples(command, f"{path} ")
 
 
+# --- demo -------------------------------------------------------------------
+
+
+@cli.group(hidden=True)
+def demo() -> None:
+    """Build a known catalog, for looking at the UI and for testing it."""
+
+
+@demo.command("seed")
+@click.option(
+    "--home",
+    required=True,
+    type=click.Path(file_okay=False, path_type=Path),
+    help="Where to build it. Becomes FLANNER_HOME for the seeded catalog.",
+)
+@click.option("--signed-in", is_flag=True, help="Also cache a signed-in session.")
+def demo_seed(home: Path, signed_in: bool) -> None:
+    """Seed HOME with two projects, four plans, a review and three memories.
+
+    Hidden because it is a tool for this repository rather than a feature:
+    `scripts/serve_ui.py`, the browser suite and the documentation
+    screenshots all want the same catalog, and this is where it is written.
+    """
+    import json
+
+    from . import demo as demo_data
+
+    manifest = demo_data.seed(home, signed_in=signed_in)
+    click.echo(json.dumps(manifest, indent=2))
+
+
 def main() -> None:
     """Entry point, and the only place an exit code is decided for a fault.
 
