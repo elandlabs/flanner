@@ -363,6 +363,53 @@ def test_a_relayed_path_says_so():
     assert route.relayed is True
 
 
+class _Unbound:
+    """An endpoint nobody bound in advance, as in a fresh `flanner` process.
+
+    The real endpoint's `ready` blocks on the shared loop, so calling it from
+    a coroutine already on that loop waits on itself. This one refuses to be
+    asked from there, which is the bug the fixture's pre-binding hid.
+    """
+
+    def __init__(self):
+        self.asked_from = []
+
+    def ready(self, timeout=0):
+        self.asked_from.append(threading.current_thread().name)
+        assert threading.current_thread().name != "flanner-iroh", "ready() called on the loop"
+        return self
+
+    async def online(self):
+        return None
+
+    async def connect(self, address, alpn):
+        return _Connection(_Path(is_selected=True, is_relay=False, remote_addr="x", rtt_ms=1))
+
+
+class _FakeIroh:
+    """Just enough of the iroh module to build a dial address."""
+
+    class EndpointId:
+        @staticmethod
+        def from_string(value):
+            return value
+
+    @staticmethod
+    def EndpointAddr(*parts):  # noqa: N802 - mirrors the binding's name
+        return parts
+
+
+def test_a_fresh_process_can_dial_without_deadlocking(monkeypatch):
+    monkeypatch.setattr(peer_iroh, "_iroh", lambda: _FakeIroh)
+    monkeypatch.setattr(peer_iroh, "endpoint_id_for", lambda device, held: "ab" * 32)
+    endpoint = _Unbound()
+
+    route = peer_iroh.route_to("dev_1", lambda: None, endpoint=endpoint, timeout=5)
+
+    assert route.connection == peer_iroh.DIRECT
+    assert endpoint.asked_from and "flanner-iroh" not in endpoint.asked_from
+
+
 def test_a_connection_that_will_not_answer_gives_unknown_not_an_exception():
     """A sync that already succeeded must not fail on a cosmetic question."""
 

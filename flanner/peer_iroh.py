@@ -440,9 +440,12 @@ class IrohTransport:
 
     def __call__(self, operation: str, signed: dict[str, Any]) -> dict[str, Any]:
         iroh = _iroh()
+        # Bound here, on the caller's thread. `ready` blocks on the shared
+        # loop, so calling it from a coroutine already running there waits
+        # on itself until the timeout: every dial from a fresh process did.
+        bound = self._local.ready(self._timeout)
 
         async def exchange() -> tuple[dict[str, Any], Any]:
-            bound = self._local.ready(self._timeout)
             await bound.online()
             address = iroh.EndpointAddr(iroh.EndpointId.from_string(self._remote_hex), None, [])
             connection = await bound.connect(address, ALPN)
@@ -542,8 +545,9 @@ def route_to(
     local = endpoint or shared_endpoint()
     remote_hex = endpoint_id_for(device_id, held)
 
+    bound = local.ready(timeout)  # on this thread; see IrohTransport.__call__
+
     async def dial() -> Any:
-        bound = local.ready(timeout)
         await bound.online()
         address = iroh.EndpointAddr(iroh.EndpointId.from_string(remote_hex), None, [])
         return await bound.connect(address, ALPN)
