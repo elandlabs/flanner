@@ -63,6 +63,15 @@ DIRECT = "direct"
 RELAY = "relay"
 UNKNOWN = "unknown"
 
+#: Lab switches, for flanner-meshlab's closed network. Unset on every real
+#: device. `off` builds the endpoint without n0's discovery service and with
+#: only the configured relay, which is all a network with no internet has.
+DISCOVERY_ENV = "FLANNER_DISCOVERY"
+#: An IPv4 address this device announces as its own, with its own port.
+#: Stands in for the relay's address discovery, which needs a certificate
+#: iroh trusts, when the lab relay has none.
+ANNOUNCE_ENV = "FLANNER_ANNOUNCE_ADDR"
+
 #: The UDP port on which the organization's relay answers QUIC address
 #: discovery. Without it iroh never asks that relay, so a device relying on
 #: it alone never learns its outside address and cannot punch through NAT.
@@ -211,7 +220,12 @@ def _secret_bytes() -> bytes:
     )
 
 
-def relay_mode(relay_url: str = "", token: str = "") -> Any:
+def closed_network() -> bool:
+    """Whether this device is in a lab network with no discovery service."""
+    return os.environ.get(DISCOVERY_ENV, "").strip().lower() == "off"
+
+
+def relay_mode(relay_url: str = "", token: str = "", *, only: bool = False) -> Any:
     """Where to relay from, when a direct path cannot be punched through.
 
     An organization's own relay is *added* to the defaults rather than
@@ -224,7 +238,9 @@ def relay_mode(relay_url: str = "", token: str = "") -> Any:
     iroh = _iroh()
     if not relay_url:
         return iroh.RelayMode.default_mode()
-    relays = iroh.RelayMode.default_mode().relay_map()
+    # `only` is for a closed network, where the defaults cannot be reached
+    # and waiting on them only delays coming online.
+    relays = iroh.RelayMap.empty() if only else iroh.RelayMode.default_mode().relay_map()
     relays.insert(
         iroh.RelayConfig(url=relay_url, quic_port=relay_quic_port(), auth_token=token or None)
     )
@@ -283,13 +299,50 @@ async def _bind() -> Any:
     """
     iroh = _iroh()
     url, token = _configured_relay()
+    closed = closed_network()
     builder = iroh.EndpointBuilder()
-    builder.apply_n0()
+    if closed:
+        builder.apply_minimal()
+    else:
+        builder.apply_n0()
     builder.secret_key(_secret_bytes())
     builder.alpns([ALPN])
     # After the preset, not before: this is the half being overridden.
-    builder.relay_mode(relay_mode(url, token))
-    return await builder.bind()
+    builder.relay_mode(relay_mode(url, token, only=closed and bool(url)))
+    endpoint = await builder.bind()
+    await announce(endpoint, os.environ.get(ANNOUNCE_ENV, "").strip())
+    return endpoint
+
+
+async def announce(endpoint: Any, address: str) -> list[str]:
+    """Tell peers this device is reachable at `address`, on each IPv4 port it bound.
+
+    Lab only (`FLANNER_ANNOUNCE_ADDR`). A port-preserving NAT shows the
+    outside world the device's own port on the router's address, which is
+    what the relay's address discovery would have reported.
+    """
+    if not address:
+        return []
+    announced = []
+    for socket_addr in endpoint.bound_sockets():
+        host, _, port = str(socket_addr).rpartition(":")
+        if "." not in host:
+            continue
+        await endpoint.add_external_addr(f"{address}:{port}")
+        announced.append(f"{address}:{port}")
+    return announced
+
+
+def dial_address(remote_hex: str) -> Any:
+    """Where to dial a device. Names the configured relay when one is set.
+
+    With a relay in the address, two devices meet there without a
+    discovery service, which a closed lab network does not have. Without
+    one, discovery finds the device, as it always has.
+    """
+    iroh = _iroh()
+    relay = os.environ.get("FLANNER_RELAY_URL", "").strip() or None
+    return iroh.EndpointAddr(iroh.EndpointId.from_string(remote_hex), relay, [])
 
 
 async def _write(stream: Any, obj: dict[str, Any]) -> None:
@@ -458,7 +511,7 @@ class IrohTransport:
         self._remote_hex = endpoint_id_for(device_id, held)
 
     def __call__(self, operation: str, signed: dict[str, Any]) -> dict[str, Any]:
-        iroh = _iroh()
+        _iroh()
         # Bound here, on the caller's thread. `ready` blocks on the shared
         # loop, so calling it from a coroutine already running there waits
         # on itself until the timeout: every dial from a fresh process did.
@@ -466,8 +519,7 @@ class IrohTransport:
 
         async def exchange() -> tuple[dict[str, Any], Any]:
             await bound.online()
-            address = iroh.EndpointAddr(iroh.EndpointId.from_string(self._remote_hex), None, [])
-            connection = await bound.connect(address, ALPN)
+            connection = await bound.connect(dial_address(self._remote_hex), ALPN)
             stream = await connection.open_bi()
             await _write(stream.send(), {"op": operation, "request": signed})
             return await _read(stream.recv()), connection
@@ -560,7 +612,7 @@ def route_to(
     remembered answer from an hour ago on a different network would be a
     confident wrong one.
     """
-    iroh = _iroh()
+    _iroh()
     local = endpoint or shared_endpoint()
     remote_hex = endpoint_id_for(device_id, held)
 
@@ -568,8 +620,7 @@ def route_to(
 
     async def dial() -> Any:
         await bound.online()
-        address = iroh.EndpointAddr(iroh.EndpointId.from_string(remote_hex), None, [])
-        return await bound.connect(address, ALPN)
+        return await bound.connect(dial_address(remote_hex), ALPN)
 
     try:
         connection = _Loop.shared().run(dial(), timeout + CONNECT_TIMEOUT)

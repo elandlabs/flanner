@@ -255,6 +255,14 @@ def test_no_configured_relay_means_the_transport_defaults():
     )
 
 
+@needs_iroh
+def test_a_closed_network_uses_only_its_own_relay():
+    """flanner-meshlab's lab has no internet, so the defaults are dead weight."""
+    urls = peer_iroh.relay_mode("http://10.10.0.11:3340", only=True).relay_map().urls()
+
+    assert len(urls) == 1 and "10.10.0.11" in urls[0]
+
+
 def test_the_relay_is_asked_for_addresses_on_its_default_port(monkeypatch):
     """Without a port iroh never asks the relay, and no hole is ever punched."""
     monkeypatch.delenv(peer_iroh.RELAY_QUIC_PORT_ENV, raising=False)
@@ -270,11 +278,64 @@ def test_the_relay_is_asked_for_addresses_on_its_default_port(monkeypatch):
     assert peer_iroh.relay_quic_port() == 7842
 
 
+def test_the_network_is_open_unless_the_lab_says_otherwise(monkeypatch):
+    monkeypatch.delenv(peer_iroh.DISCOVERY_ENV, raising=False)
+    assert peer_iroh.closed_network() is False
+
+    monkeypatch.setenv(peer_iroh.DISCOVERY_ENV, "OFF")
+    assert peer_iroh.closed_network() is True
+
+    monkeypatch.setenv(peer_iroh.DISCOVERY_ENV, "on")
+    assert peer_iroh.closed_network() is False
+
+
+class _Announcing:
+    """An endpoint that records what it was told to announce."""
+
+    def __init__(self, *sockets):
+        self._sockets = list(sockets)
+        self.external = []
+
+    def bound_sockets(self):
+        return self._sockets
+
+    async def add_external_addr(self, addr):
+        self.external.append(addr)
+
+
+def test_an_announced_address_uses_each_ipv4_port_this_device_bound():
+    endpoint = _Announcing("0.0.0.0:45839", "[::]:35236")
+
+    announced = asyncio.run(peer_iroh.announce(endpoint, "10.10.0.20"))
+
+    assert announced == ["10.10.0.20:45839"]
+    assert endpoint.external == ["10.10.0.20:45839"]
+
+
+def test_nothing_is_announced_unless_the_lab_asks():
+    endpoint = _Announcing("0.0.0.0:45839")
+
+    assert asyncio.run(peer_iroh.announce(endpoint, "")) == []
+    assert endpoint.external == []
+
+
 @needs_iroh
-def test_an_organizations_relay_is_still_accepted_with_a_discovery_port(monkeypatch):
-    monkeypatch.delenv(peer_iroh.RELAY_QUIC_PORT_ENV, raising=False)
-    urls = peer_iroh.relay_mode("https://relay.example.com").relay_map().urls()
-    assert any("relay.example.com" in url for url in urls)
+def test_a_configured_relay_is_named_in_the_dial_address(monkeypatch):
+    from cryptography.hazmat.primitives import serialization
+
+    remote = (
+        Ed25519PrivateKey.generate()
+        .public_key()
+        .public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+        .hex()
+    )
+    monkeypatch.setenv("FLANNER_RELAY_URL", "http://10.10.0.11:3340")
+    with_relay = peer_iroh.dial_address(remote)
+    monkeypatch.delenv("FLANNER_RELAY_URL")
+    without = peer_iroh.dial_address(remote)
+
+    assert "10.10.0.11" in str(with_relay.relay_url())
+    assert without.relay_url() is None
 
 
 def test_the_relay_url_survives_a_session_round_trip(tmp_path, monkeypatch):
@@ -408,22 +469,9 @@ class _Unbound:
         return _Connection(_Path(is_selected=True, is_relay=False, remote_addr="x", rtt_ms=1))
 
 
-class _FakeIroh:
-    """Just enough of the iroh module to build a dial address."""
-
-    class EndpointId:
-        @staticmethod
-        def from_string(value):
-            return value
-
-    @staticmethod
-    def EndpointAddr(*parts):  # noqa: N802 - mirrors the binding's name
-        return parts
-
-
 def test_a_fresh_process_can_dial_without_deadlocking(monkeypatch):
-    monkeypatch.setattr(peer_iroh, "_iroh", lambda: _FakeIroh)
     monkeypatch.setattr(peer_iroh, "endpoint_id_for", lambda device, held: "ab" * 32)
+    monkeypatch.setattr(peer_iroh, "dial_address", lambda remote: object())
     endpoint = _Unbound()
 
     route = peer_iroh.route_to("dev_1", lambda: None, endpoint=endpoint, timeout=5)
