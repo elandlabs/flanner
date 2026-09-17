@@ -124,13 +124,15 @@
     </div>
     {% endif %}
     <div class="rail-foot">
-      <div class="hd"><span class="dot" aria-hidden="true"></span> 100% local</div>
-      {% if update_check_on() %}
+      <div class="hd"><span class="dot" aria-hidden="true"></span> Your plans stay local</div>
       <p>SQLite on this machine. No account, and your plans never leave it.</p>
-      <p class="credit">Once a day flanner asks pypi.org for the latest version
-        number. <code class="mono">flanner updates off</code> stops it.</p>
-      {% else %}
-      <p>SQLite on this machine. No account, nothing leaves your disk.</p>
+      {% if update_check_on() %}
+      <p class="credit">Checks pypi.org daily for a new version.
+        <code class="mono">flanner updates off</code> stops it.</p>
+      {% endif %}
+      {% if crash_reports_on() %}
+      <p class="credit">Sends crash reports.
+        <code class="mono">flanner crash-reports off</code> stops them.</p>
       {% endif %}
       <p class="credit">Made by <a href="https://github.com/jaysonmulwa">Jayson</a> ·
         <a href="#" data-help-open>shortcuts</a></p>
@@ -199,7 +201,7 @@
         </nav>
         <span class="note">
           &copy; {{ app_year }} flanner &middot;
-          {% if update_check_on() %}your plans never leave this machine{% else %}runs entirely on this machine{% endif %}
+          your plans never leave this machine
         </span>
       </div>
     </footer>

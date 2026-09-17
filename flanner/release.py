@@ -9,9 +9,9 @@ that costs anything to import. It also runs before the database is
 opened, which is why it keeps its own idea of where the home directory
 is rather than reaching for one.
 
-The network half is off until somebody says otherwise. A tool whose
-sidebar says nothing leaves your disk cannot quietly start announcing
-itself to pypi.org once a day, so the check is asked for at `init`,
+The network half is off until somebody says otherwise. A tool that
+promises nothing is sent unless you turn it on cannot quietly start
+announcing itself to pypi.org once a day, so the check is asked for at `init`,
 recorded, and skippable forever. Nothing about the machine, the
 repository or the plans is sent: it is a GET of a public json document.
 """
@@ -209,6 +209,15 @@ def refresh_in_background(now: datetime | None = None) -> bool:
 
 def _spawn_check() -> bool:
     """Run `fetch_and_store` in a child that outlives this command."""
+    return spawn_detached("from flanner import release; release.fetch_and_store()")
+
+
+def spawn_detached(code: str) -> bool:
+    """Run `code` in a Python child that outlives this command, and do not wait.
+
+    `code` is always a literal from this package, never anything a person
+    or a file supplied.
+    """
     import subprocess
     import sys
 
@@ -220,8 +229,8 @@ def _spawn_check() -> bool:
     if hasattr(subprocess, "DETACHED_PROCESS"):
         flags |= subprocess.DETACHED_PROCESS
     try:
-        subprocess.Popen(  # noqa: S603 - sys.executable and a literal argument
-            [sys.executable, "-c", "from flanner import release; release.fetch_and_store()"],
+        subprocess.Popen(  # noqa: S603 - sys.executable and a literal from this package
+            [sys.executable, "-c", code],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,

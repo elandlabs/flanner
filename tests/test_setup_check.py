@@ -42,12 +42,14 @@ def test_the_check_names_everything_a_setup_question_needs(adopted):
         "capture_mode",
         "watching",
         "peers",
+        "sending",
     }
     assert set(found["agents"]) == {"claude_desktop", "claude_code", "codex"}
     assert found["project"]["name"] == "shop"
     assert found["capture_mode"] == "suggest"
     assert found["watching"] == []
     assert found["peers"]["signed_in"] is False
+    assert found["sending"]["crash_reports"] is False
 
 
 def test_the_tools_it_counts_are_the_ones_the_server_advertises(adopted):

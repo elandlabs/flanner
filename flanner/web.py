@@ -287,9 +287,8 @@ templates.env.globals["release_notice"] = _release_notice
 def _update_check_on() -> bool:
     """Whether this machine asks pypi.org for new versions.
 
-    The rail says "nothing leaves your disk". Once the check is allowed,
-    one small request a day does, so the copy has to say so rather than
-    stay true only for the people who declined.
+    The rail promises nothing is sent unless you turn it on. Once the
+    check is allowed, one small request a day is, so the rail says so.
     """
     from . import release
 
@@ -297,6 +296,16 @@ def _update_check_on() -> bool:
 
 
 templates.env.globals["update_check_on"] = _update_check_on
+
+
+def _crash_reports_on() -> bool:
+    """Whether this machine sends crash reports, however that was decided."""
+    from . import crash
+
+    return crash.consent()[0]
+
+
+templates.env.globals["crash_reports_on"] = _crash_reports_on
 # Stamped once at import. A footer year that re-read the clock on every
 # render would be the only thing on the page that could change without the
 # page changing, and nobody is running this process across New Year.
@@ -460,6 +469,11 @@ async def html_validation_pages(request: Request, exc: RequestValidationError) -
 async def html_crash_page(request: Request, exc: Exception) -> Response:
     """Unexpected failures: log the traceback, never show one to the user."""
     logger.exception("Unhandled error on %s", request.url.path)
+    from . import crash
+
+    # The route's pattern, never the path: a path carries plan names and ids.
+    route = getattr(request.scope.get("route"), "path", "")
+    crash.capture(exc, surface="web", command=f"{request.method} {route}".strip())
     if request.url.path.startswith("/api"):
         return JSONResponse({"detail": "Internal server error"}, status_code=500)
     return templates.TemplateResponse(

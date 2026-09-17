@@ -699,6 +699,15 @@ OPERATIONS: tuple[Operation, ...] = (
         "admin",
         cli=("updates",),
         why="A choice about what this machine sends to pypi.org, made by its owner.",
+        why_web="Turning on sending is decided at a terminal, not from a page.",
+    ),
+    _op(
+        "local",
+        "Switch crash reports on or off, and see what they send",
+        "admin",
+        cli=("crash-reports",),
+        why="A choice about what this machine sends to flanner's developers, made by its owner.",
+        why_web="Turning on sending is decided at a terminal, not from a page.",
     ),
     _op(
         "local",

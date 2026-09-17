@@ -46,6 +46,9 @@ FOUNDATION = {
 }
 ALLOWED = {
     **{m: set() for m in FOUNDATION},
+    # Crash reports: reads consent from the release state file and knows
+    # which errors are refusals. Only the surfaces that can crash import it.
+    "crash": {"release", "exceptions"},
     "database": {"exceptions"},
     # Reading skill packages: hashes, health findings, and the one report
     # the CLI, the web UI and MCP all render.
@@ -186,7 +189,15 @@ ALLOWED = {
     # One answer to "is flanner set up here?", shown by `status` and by the
     # agent's context tool. Local reads only.
     "setup_check": FOUNDATION
-    | {"claude_integration", "database", "memory_ops", "operations", "session", "skills_observe"},
+    | {
+        "claude_integration",
+        "crash",
+        "database",
+        "memory_ops",
+        "operations",
+        "session",
+        "skills_observe",
+    },
     # The one history. Needs the table, and the cached session to say who.
     "actions": {"database", "operations", "session"},
     # Previews and applies what an agent may only ask for. Reaches the same
@@ -210,6 +221,7 @@ ALLOWED = {
     "linear_api": {"exceptions", "linear_utils"},
     "server": FOUNDATION
     | {
+        "crash",
         "database",
         "storage",
         "freshness",
@@ -240,6 +252,7 @@ ALLOWED = {
     "push": {"artifacts", "sync", "workflow", "database"},
     "web": FOUNDATION
     | {
+        "crash",
         "database",
         "paging",
         "actions",
@@ -322,6 +335,7 @@ ALLOWED = {
     "plan_ops": FOUNDATION | {"database", "storage", "artifacts", "identity"},
     "cli": FOUNDATION
     | {
+        "crash",
         "tui",
         "actions",
         "setup_check",

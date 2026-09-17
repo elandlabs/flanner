@@ -277,6 +277,7 @@ def cli(verbose: bool, quiet: bool) -> None:
     tui.QUIET = quiet
     _say_what_changed()
     _say_if_behind()
+    _send_waiting_crash_reports()
     level = logging.DEBUG if verbose else logging.ERROR if quiet else logging.WARNING
     logging.basicConfig(
         level=level, stream=sys.stderr, format="%(levelname)s %(name)s: %(message)s"
@@ -613,8 +614,8 @@ def _offer_update_check() -> None:
     """Ask once whether flanner may look up whether a newer release exists.
 
     Asked rather than assumed, for the same reason skill watching is. The
-    sidebar of this product says nothing leaves your disk, and a daily
-    request to pypi.org is something leaving the disk, however little it
+    product promises nothing is sent unless you turn it on, and a daily
+    request to pypi.org is something being sent, however little it
     carries. Somebody who says no is never asked again.
 
     What it costs, said plainly: one GET of a public json document, at
@@ -635,7 +636,41 @@ def _offer_update_check() -> None:
     if allowed:
         tui.ok("Checking once a day. flanner updates off stops it.")
     else:
-        tui.note("Not checking. Nothing here reaches the network unasked.")
+        tui.note("Not checking. flanner won't contact pypi.org.")
+
+
+def _offer_crash_reports() -> None:
+    """Ask once whether flanner may send crash reports. Its own question.
+
+    Separate from the update check because it sends something different to
+    somebody different: a crash report goes to flanner's developers, the
+    version check to pypi.org. No is the default, and neither CI nor
+    `--quiet` is asked at all.
+    """
+    from . import crash
+
+    if crash.asked() or tui.QUIET or os.environ.get("CI"):
+        return
+    console.print()
+    tui.note("Flanner can send a report to its developers when it crashes.")
+    tui.hint("  Only the error type and where in flanner it happened.")
+    tui.hint("  Never your plans, memories, messages, file paths or anything about you.")
+    allowed = _ask_yes_no("Send crash reports?", default=False, unattended=False)
+    crash.set_consent(allowed)
+    if allowed:
+        tui.ok("Sending crash reports. flanner crash-reports show lists what is sent.")
+    else:
+        tui.note("No crash reports. flanner crash-reports on changes that.")
+
+
+def _send_waiting_crash_reports() -> None:
+    """Hand anything waiting to a detached sender. Never slows a command down."""
+    from . import crash
+
+    try:
+        crash.send_in_background()
+    except Exception:  # noqa: BLE001, S110 - sending must never fail a command
+        pass
 
 
 def _offer_skill_watching(project_root: str) -> None:
@@ -657,7 +692,7 @@ def _offer_skill_watching(project_root: str) -> None:
     console.print()
     tui.note("Flanner can record which skills your agents actually use.")
     tui.hint("  Which skill was invoked and when. Not your prompts, not the")
-    tui.hint("  agent's replies, not the files it touched. Nothing leaves this")
+    tui.hint("  agent's replies, not the files it touched. None of it leaves this")
     tui.hint("  machine, and nothing is recorded until you say so here.")
     if not _ask_yes_no("Record skill use in this repository?", default=True, unattended=False):
         tui.note(f"Not recording. {tui.command('flanner skills observe enable')} turns it on.")
@@ -810,6 +845,7 @@ def init(
             _import_existing_plans(project_root)
 
     _offer_update_check()
+    _offer_crash_reports()
     _first_thing_to_try(adopted=bool(project_root), project_root=project_root)
 
 
@@ -2443,6 +2479,23 @@ def _setup_rows(setup: dict[str, Any]) -> list[tuple[str, Any]]:
         )
     else:
         rows.append(("Peers", Text("not signed in", style="muted")))
+
+    sending = setup["sending"]
+    sent = []
+    if sending["update_check"]:
+        sent.append("a daily version check to pypi.org")
+    if sending["crash_reports"]:
+        sent.append("crash reports")
+    if sending["crash_reports_decided_by"] in ("DO_NOT_TRACK", "FLANNER_CRASH_REPORTS"):
+        sent.append(f"crash reports decided by {sending['crash_reports_decided_by']}")
+    rows.append(
+        (
+            "Sends",
+            Text("; ".join(sent), style="value")
+            if sent
+            else Text("nothing; your plans never leave this machine", style="muted"),
+        )
+    )
     return rows
 
 
@@ -3550,7 +3603,7 @@ def skills_observe_enable(agent: str, project: str | None, retention_days: int) 
 
     What is recorded is that a named skill was invoked, when, and by which
     local session. Not your prompts, not the agent's replies, not the files
-    it touched. Nothing leaves this machine.
+    it touched. None of it leaves this machine.
 
     Only explicit invocations are visible. Claude Code shows every skill's
     description to the model whether or not it is used, and does not report
@@ -7616,10 +7669,76 @@ def updates(choice: str | None) -> None:
             tui.hint(f"  {newer} is out; this is {__version__}. {upgrade}")
         tui.hint(f"  {tui.command('flanner updates off')} stops it.")
     else:
-        tui.ok("Not checking for new versions. Nothing here reaches the network unasked.")
+        tui.ok("Not checking for new versions. flanner won't contact pypi.org.")
         tui.hint(f"  {tui.command('flanner updates on')} turns it on.")
     console.print()
 
+
+@cli.command("crash-reports")
+@click.argument("choice", required=False, type=click.Choice(["on", "off", "show"]))
+def crash_reports(choice: str | None) -> None:
+    """Show or set whether flanner sends crash reports
+
+    A report is the error type and where in flanner it happened, with the
+    flanner version, the platform and how it was installed. Never your plans,
+    memories, messages, file paths or anything about you. `show` prints
+    exactly what is waiting to be sent, or what was sent last.
+    """
+    from . import crash
+
+    if choice == "show":
+        _show_crash_reports()
+        return
+    if choice is not None:
+        crash.set_consent(choice == "on")
+    allowed, why = crash.consent()
+    console.print()
+    if why in ("DO_NOT_TRACK", crash.SWITCH_ENV):
+        state = "on" if allowed else "off"
+        tui.note(f"Crash reports are {state}, because {why} is set.")
+        tui.hint("  The environment decides before any saved answer.")
+    elif why == "not asked":
+        tui.note("Not decided yet, so no crash reports are sent. flanner init asks.")
+        tui.hint(f"  {tui.command('flanner crash-reports on')} to allow them now.")
+    elif allowed:
+        tui.ok("Sending crash reports to flanner's developers.")
+        waiting = len(crash.waiting())
+        if waiting:
+            tui.note(f"  {waiting} waiting to be sent.")
+        if not crash.dsn():
+            tui.note("  This build has no address to send to, so reports are only kept here.")
+        tui.hint(f"  {tui.command('flanner crash-reports show')} prints what is sent.")
+        tui.hint(f"  {tui.command('flanner crash-reports off')} stops it.")
+    else:
+        tui.ok("No crash reports are sent.")
+        tui.hint(f"  {tui.command('flanner crash-reports on')} turns them on.")
+    console.print()
+
+
+def _show_crash_reports() -> None:
+    """Print the reports as they are, or will be, sent."""
+    import json
+
+    from . import crash
+
+    waiting = crash.waiting()
+    if waiting:
+        for path in waiting:
+            click.echo(path.read_text(encoding="utf-8"))
+        return
+    last = crash.last_sent()
+    if last is not None:
+        console.print("Nothing waiting. The last report sent:", style="muted")
+        click.echo(json.dumps(last, indent=2))
+        return
+    console.print(
+        "Nothing waiting or sent. A report for a made-up error looks like this:", style="muted"
+    )
+    try:
+        raise RuntimeError("an example; this message is never sent")
+    except RuntimeError as example:
+        report = crash.build_report(example, surface="cli", command="crash-reports show")
+    click.echo(json.dumps(report, indent=2))
 
 
 @peer.command("pushes")
@@ -8610,6 +8729,27 @@ def main() -> None:
         tui.bad(f"{e}")
         tui.note("A failure on this machine, not a problem with the command itself.")
         raise SystemExit(2) from None
+    except Exception as e:
+        from . import crash
+
+        crash.capture(e, surface="cli", command=_command_names(sys.argv[1:]))
+        raise
+
+
+def _command_names(args: list[str]) -> str:
+    """The command names in `args`, and nothing a person typed after them.
+
+    Walks the command tree, so an argument that happens to share a name
+    with nothing is never included. Options end the walk too.
+    """
+    names: list[str] = []
+    group: click.Command = cli
+    for arg in args:
+        if not isinstance(group, click.Group) or arg not in group.commands:
+            break
+        names.append(arg)
+        group = group.commands[arg]
+    return " ".join(names)
 
 
 _attach_examples(cli)

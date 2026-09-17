@@ -3,10 +3,12 @@
 Observability for a local tool is a different problem from observability for
 a service, and the difference is not one of scale.
 
-**Nothing is ever shipped.** The whole promise of this tool is that plan
-contents stay on the machine that wrote them, so there is no aggregator, no
-endpoint, and no telemetry — not as a cost decision, as the product. What
-this module does is make the information *available when somebody asks*.
+**Nothing recorded here is ever sent.** The promise of this tool is that
+plan contents stay on the machine that wrote them, so this module has no
+aggregator and no endpoint. What it does is make the information *available
+when somebody asks*. The one thing that may leave the machine is a crash
+report, off unless somebody turned it on, and `crash` builds it from an
+allowlist that holds no message, no arguments and no paths.
 
 Three questions, three shapes:
 

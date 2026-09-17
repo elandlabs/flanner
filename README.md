@@ -290,8 +290,29 @@ that hits an error and quietly works around it would otherwise leave no
 trace at all. Plan bodies are never written there; `flanner peer serve`
 records the requests it answers to the same file.
 
-**Nothing is ever sent anywhere.** There is no telemetry and no endpoint —
-not as a cost decision, as the product.
+**Your plans, memories and skills never leave your machine.** flanner sends
+nothing else unless you turn it on. See [What flanner sends](#what-flanner-sends).
+
+## What flanner sends
+
+Nothing, by default. Two things can be turned on, each with its own question
+at `flanner init` and its own command:
+
+| | Where it goes | What it carries | Turn it off |
+|---|---|---|---|
+| Version check | pypi.org, once a day | A request for flanner's public version list. Nothing about you or your work. | `flanner updates off` |
+| Crash reports | flanner's developers, through Sentry (EU) | The error type; where in flanner it happened (module, function, line, paths relative to the package); the flanner version, OS, Python version and how flanner was installed; which surface crashed and the command name. | `flanner crash-reports off` |
+
+A crash report never contains the error message, local variables, source
+lines, command arguments, full file paths, your user or machine name, or
+anything that identifies or counts people. `flanner crash-reports show`
+prints exactly what is waiting to be sent, or what was sent last. Reports
+are sent by a separate background process, never by the command that
+crashed. `DO_NOT_TRACK=1` or `FLANNER_CRASH_REPORTS=0` turns crash reports
+off whatever you answered.
+
+Plan, memory and skill contents only ever travel through Flanner Mesh,
+directly to your own team's devices.
 
 ## Exit codes
 

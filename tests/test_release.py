@@ -85,7 +85,7 @@ def _seed(**values):
 
 
 def test_nothing_is_fetched_before_anybody_has_been_asked(home, monkeypatch):
-    """The sidebar says nothing leaves your disk. Consent comes first."""
+    """Nothing is sent unless somebody turned it on. Consent comes first."""
     monkeypatch.setattr(release, "_spawn_check", lambda: pytest.fail("spawned without consent"))
     assert release.refresh_in_background() is False
     assert release.known_newer("0.0.1") is None
@@ -208,7 +208,7 @@ def test_updates_command_changes_the_answer_init_recorded(home):
     off = runner.invoke(cli, ["updates", "off"])
     assert off.exit_code == 0
     assert release.update_check_consent() is False
-    assert "Nothing here reaches the network unasked" in off.output
+    assert "flanner won't contact pypi.org" in off.output
 
 
 def test_turning_it_off_silences_a_notice_already_cached(home):

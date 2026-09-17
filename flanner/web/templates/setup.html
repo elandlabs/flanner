@@ -67,5 +67,21 @@
     {% endif %}
   </div>
 
+  {#
+    What leaves this machine. Read-only on purpose: turning on sending is a
+    decision made at a terminal, like applying what an agent asked for.
+  #}
+  <div class="card card-pad">
+    <h2 class="card-title" style="margin-bottom:2px">What this machine sends</h2>
+    <p class="hint">Your plans, memories and skills never leave this machine. Anything
+      else is off until you turn it on.</p>
+    <div class="kv"><span>Version check to pypi.org</span>
+      <b>{{ 'once a day' if check.sending.update_check else 'off' }}</b></div>
+    <div class="kv"><span>Crash reports to flanner's developers</span>
+      <b>{{ 'on' if check.sending.crash_reports else 'off' }}{% if check.sending.crash_reports_decided_by in ('DO_NOT_TRACK', 'FLANNER_CRASH_REPORTS') %} ({{ check.sending.crash_reports_decided_by }}){% endif %}</b></div>
+    {{ terminal.row(cli_only("Switch the daily new-version check on or off"), "flanner updates on|off") }}
+    {{ terminal.row(cli_only("Switch crash reports on or off, and see what they send"), "flanner crash-reports on|off|show") }}
+  </div>
+
 </div>
 {% endblock %}

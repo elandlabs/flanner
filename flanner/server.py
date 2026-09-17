@@ -12,7 +12,7 @@ from uuid import UUID
 
 from mcp.server.fastmcp import FastMCP
 
-from . import artifacts, assurance, observe, review
+from . import artifacts, assurance, crash, observe, review
 from . import services as _services
 from .database import (
     artifact_parents,
@@ -85,6 +85,7 @@ class _Observed:
                         client=_client_name(),
                         **_loggable(call_kwargs),
                     )
+                    crash.capture(e, surface="mcp", command=fn.__name__)
                     raise
                 # A tool that returns `{"error": ...}` has failed as surely
                 # as one that raised. Both are what an agent has to work
@@ -2217,6 +2218,7 @@ def main(argv: list[str] | None = None) -> None:
     # Initialize the database before serving: tools assume a live session,
     # and an MCP client's first call is otherwise "Database not initialized"
     ensure_database()
+    crash.send_in_background()
 
     if not args.http:
         mcp.run(transport="stdio")

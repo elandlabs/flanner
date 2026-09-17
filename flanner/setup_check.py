@@ -17,7 +17,16 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from . import claude_integration, features, memory_ops, observe, operations, skills_observe
+from . import (
+    claude_integration,
+    crash,
+    features,
+    memory_ops,
+    observe,
+    operations,
+    release,
+    skills_observe,
+)
 from . import session as cache
 from .utils import format_relative_time
 
@@ -90,6 +99,16 @@ def peers() -> dict[str, Any]:
     }
 
 
+def sending() -> dict[str, Any]:
+    """What this machine may send, and to whom. Both are off until somebody says yes."""
+    reports, why = crash.consent()
+    return {
+        "update_check": release.update_check_consent() is True,
+        "crash_reports": reports,
+        "crash_reports_decided_by": why,
+    }
+
+
 def check(session: Session, cwd: Path | None = None) -> dict[str, Any]:
     """Everything a setup question needs, in one place."""
     here = cwd or Path.cwd()
@@ -106,6 +125,7 @@ def check(session: Session, cwd: Path | None = None) -> dict[str, Any]:
         "capture_mode": None,
         "watching": [],
         "peers": peers(),
+        "sending": sending(),
     }
     project = memory_ops.resolve_project(session, str(here))
     if project is None:
