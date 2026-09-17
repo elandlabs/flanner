@@ -43,11 +43,54 @@ jobs:
       # suite actually sits (86%), so a change that stops testing something
       # fails here rather than being noticed a release later. It was 80,
       # which left six points of room to quietly lose.
+      # `-m "not browser"`: the browser suite has its own job below, and
+      # this one measures exactly what it measured before it existed.
       - name: Tests with coverage gate
-        run: pytest --cov=flanner --cov-fail-under=85 -q
+        run: pytest -m "not browser" --cov=flanner --cov-fail-under=85 -q
       - name: Audit dependencies
         run: pip-audit --skip-editable
         continue-on-error: false
+
+  # The JavaScript, which nothing else in this repo can see. `TestClient`
+  # checks that a route answers 200 and the template contains a string; it
+  # cannot check that a button works, that the shell swaps without a reload,
+  # or that text on a card can be read.
+  #
+  # Budget: 6 minutes. It runs in about 70 seconds today, seeding and server
+  # start included. Past the budget, shard the journeys across two runners
+  # before dropping any of them — a job that is disabled for being slow
+  # covers nothing at all.
+  #
+  # No coverage here: these tests live under `tests/` but the gate is the
+  # unit job's, and adding a second measurement would move a floor that is
+  # meant to be a ratchet.
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      # The browser build is pinned by the playwright pin in pyproject, so
+      # a Chromium upgrade arrives as a commit rather than as a Tuesday.
+      - name: Install Chromium
+        run: playwright install --with-deps chromium
+      - name: Browser journeys
+        run: >-
+          pytest -m browser -q
+          --tracing=retain-on-failure
+          --screenshot=only-on-failure
+          --output=browser-artifacts
+      - name: Keep the traces from a failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-artifacts
+          path: browser-artifacts/
+          retention-days: 7
+          if-no-files-found: ignore
 
   # The dependency set CI itself runs on, pinned by hash.
   #
