@@ -570,5 +570,10 @@ class LocalPeer:
                 "content_hash": row.content_hash,
                 "signature": row.signature,
             }
+            # Only when set, exactly as `Artifact.to_dict` writes it: the id
+            # covers this field, so leaving it out made every shared memory
+            # fail the receiver's "id does not match its envelope" check.
+            if row.memory_id:
+                envelope["memory_id"] = row.memory_id
             out.append((envelope, self._payload_for(row)))
         return out

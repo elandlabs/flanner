@@ -347,6 +347,28 @@ def test_a_verified_artifact_becomes_a_memory_without_a_second_call(store, peer_
     assert mem.recall(session, query="staging cluster", project_id=project.id)["memories"]
 
 
+def test_a_served_memory_keeps_the_field_its_id_was_built_from(store):
+    """The envelope a peer is handed must hash to the id it carries.
+
+    `memory_id` is part of the signed fields but is written only when set, and
+    the serving side rebuilt the envelope from its row without it. Every
+    shared memory was then refused as "artifact id does not match its
+    envelope", so memory reached no teammate at all.
+    """
+    from flanner import sync
+
+    session, project, home = store
+    memory, _ = mem.remember(session, content="A decision.", category="decision", project=project)
+    shared = mem.promote(session, memory_id=memory.id, workspace_id=WORKSPACE)
+
+    [(envelope, payload)] = sync.LocalPeer(session).fetch([shared["artifact_id"]])
+
+    assert envelope["memory_id"] == str(memory.id)
+    rebuilt = artifacts.Artifact.from_dict(envelope)
+    assert artifacts.compute_artifact_id(rebuilt) == envelope["artifact_id"]
+    assert payload
+
+
 def test_a_memory_a_peer_holds_is_offered_in_the_manifest(store):
     """Otherwise nothing would ever ask for it."""
     from flanner import sync
