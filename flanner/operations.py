@@ -743,6 +743,13 @@ OPERATIONS: tuple[Operation, ...] = (
         web=("POST /actions/{action_id}/decide",),
         why="The request is the agent's. The decision is yours.",
     ),
+    _op(
+        "local",
+        "Seed a demo catalog for previews and tests",
+        "write",
+        cli=("demo seed",),
+        why="A hidden tool for this repository's UI previews and browser suite, not a feature.",
+    ),
     # --- integrations, behind FLANNER_INTEGRATIONS ---------------------------
     _op(
         "integrations",

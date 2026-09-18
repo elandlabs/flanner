@@ -43,11 +43,56 @@ jobs:
       # suite actually sits (86%), so a change that stops testing something
       # fails here rather than being noticed a release later. It was 80,
       # which left six points of room to quietly lose.
+      # `-m "not browser"`: the browser suite has its own job below, and
+      # this one measures exactly what it measured before it existed.
       - name: Tests with coverage gate
-        run: pytest --cov=flanner --cov-fail-under=85 -q
+        run: pytest -m "not browser" --cov=flanner --cov-fail-under=85 -q
       - name: Audit dependencies
         run: pip-audit --skip-editable
         continue-on-error: false
+
+  # The JavaScript, which nothing else in this repo can see. `TestClient`
+  # checks that a route answers 200 and the template contains a string; it
+  # cannot check that a button works, that the shell swaps without a reload,
+  # or that text on a card can be read.
+  #
+  # Budget: 6 minutes. It runs in about 70 seconds today, seeding and server
+  # start included. Past the budget, shard the journeys across two runners
+  # before dropping any of them — a job that is disabled for being slow
+  # covers nothing at all.
+  #
+  # No coverage here: these tests live under `tests/` but the gate is the
+  # unit job's, and adding a second measurement would move a floor that is
+  # meant to be a ratchet.
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # The image `tests/browser/Dockerfile` builds on, so this job and
+    # `docker compose -f compose.browser.yml run --rm browser` run the same
+    # Chromium, fonts and system libraries. It carries the browser, so there
+    # is no `playwright install` step. The tag must match the playwright pin
+    # in requirements-dev.lock; bump both in one commit.
+    container:
+      image: mcr.microsoft.com/playwright/python:v1.63.0-noble
+    steps:
+      - uses: actions/checkout@v4
+      # From the lock, like the image, not a fresh resolve of pyproject.
+      - run: pip install --require-hashes -r requirements-dev.lock
+      - run: pip install --no-deps -e .
+      - name: Browser journeys
+        run: >-
+          pytest -m browser -q
+          --tracing=retain-on-failure
+          --screenshot=only-on-failure
+          --output=browser-artifacts
+      - name: Keep the traces from a failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-artifacts
+          path: browser-artifacts/
+          retention-days: 7
+          if-no-files-found: ignore
 
   # The dependency set CI itself runs on, pinned by hash.
   #

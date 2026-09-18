@@ -356,7 +356,6 @@ def _say_if_behind() -> None:
     tui.notices.print()
 
 
-
 def _print_breakdown() -> None:
     """Where this invocation spent its time, under `--verbose`.
 
@@ -629,9 +628,7 @@ def _offer_update_check() -> None:
     tui.note("Flanner can check whether a newer version has been released.")
     tui.hint("  One request to pypi.org a day, for a public list of versions.")
     tui.hint("  Nothing about this machine, your repositories or your plans is sent.")
-    allowed = _ask_yes_no(
-        "Check for new versions?", default=True, unattended=False
-    )
+    allowed = _ask_yes_no("Check for new versions?", default=True, unattended=False)
     release.set_update_check_consent(allowed)
     if allowed:
         tui.ok("Checking once a day. flanner updates off stops it.")
@@ -2861,9 +2858,11 @@ def web(port: int, host: str, open_browser: bool) -> None:
     from . import web as web_module
 
     if beyond_loopback(host):
-        tui.warn(f"Binding {host} exposes the web UI beyond localhost. It has no "
+        tui.warn(
+            f"Binding {host} exposes the web UI beyond localhost. It has no "
             "authentication; anyone who can reach this address can read and edit "
-            "your plans. Use 127.0.0.1 unless you have put auth in front of it.")
+            "your plans. Use 127.0.0.1 unless you have put auth in front of it."
+        )
         # The Host header check stands down too. It exists to stop a domain
         # pointed at 127.0.0.1 reaching a local-only tool, and no list here
         # can predict which names will reach a deliberately exposed one. The
@@ -8706,6 +8705,37 @@ def _attach_examples(group: click.Group, prefix: str = "") -> None:
             command.epilog = "Examples:\n\n\b\n" + "\n".join(f"  {line}" for line in lines)
         if isinstance(command, click.Group):
             _attach_examples(command, f"{path} ")
+
+
+# --- demo -------------------------------------------------------------------
+
+
+@cli.group(hidden=True)
+def demo() -> None:
+    """Build a known catalog, for looking at the UI and for testing it."""
+
+
+@demo.command("seed")
+@click.option(
+    "--home",
+    required=True,
+    type=click.Path(file_okay=False, path_type=Path),
+    help="Where to build it. Becomes FLANNER_HOME for the seeded catalog.",
+)
+@click.option("--signed-in", is_flag=True, help="Also cache a signed-in session.")
+def demo_seed(home: Path, signed_in: bool) -> None:
+    """Seed HOME with two projects, four plans, a review and three memories.
+
+    Hidden because it is a tool for this repository rather than a feature:
+    `scripts/serve_ui.py`, the browser suite and the documentation
+    screenshots all want the same catalog, and this is where it is written.
+    """
+    import json
+
+    from . import demo as demo_data
+
+    manifest = demo_data.seed(home, signed_in=signed_in)
+    click.echo(json.dumps(manifest, indent=2))
 
 
 def main() -> None:

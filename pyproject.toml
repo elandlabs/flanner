@@ -83,6 +83,11 @@ dev = [
     "hypothesis>=6.100,<7",
     "types-PyYAML",
     "types-Markdown",
+    # The browser suite. Pinned to a minor: the Playwright version decides
+    # which Chromium build `playwright install` fetches, so a browser
+    # upgrade is a deliberate commit rather than a Tuesday.
+    "playwright>=1.63,<1.64",
+    "pytest-playwright>=0.9,<1",
 ]
 
 [project.scripts]
@@ -142,3 +147,9 @@ flanner = ["py.typed", "web/templates/*.html", "web/static/**/*"]
 # Per test. The slowest genuine test is under a minute; five minutes is a
 # hang detector, not a performance gate.
 timeout = 300
+# `browser` is opt-in: it needs a Chromium build and a uvicorn subprocess,
+# so every existing job runs `-m "not browser"` and measures what it always
+# did. `pytest -m browser` is the new job, and `make browser` locally.
+markers = [
+    "browser: drives the local web UI in a real browser (needs `playwright install chromium`)",
+]

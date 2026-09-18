@@ -128,7 +128,11 @@ def test_the_block_carries_the_version_that_wrote_it(db, git_repo):
 def test_a_block_written_before_stamps_existed_reads_as_zero(db, git_repo):
     """It has to be found and replaced, not duplicated beside the new one."""
     (git_repo / "CLAUDE.md").write_text(
-        "<!-- flanner:managed -->" + chr(10) + "old" + chr(10) + "<!-- /flanner:managed -->"
+        "<!-- flanner:managed -->"
+        + chr(10)
+        + "old"
+        + chr(10)
+        + "<!-- /flanner:managed -->"
         + chr(10),
         encoding="utf-8",
     )

@@ -333,6 +333,22 @@ ALLOWED = {
         "artifacts",
     },
     "plan_ops": FOUNDATION | {"database", "storage", "artifacts", "identity"},
+    # The demo catalog. Reaches every write path on purpose: seeding
+    # through the domain layer rather than through SQL is the whole point
+    # of it, and a seeder that could not call `review` or `memory_ops`
+    # would have to reimplement them. Nothing imports it except `cli`.
+    "demo": FOUNDATION
+    | {
+        "database",
+        "plan_ops",
+        "review",
+        "memory_ops",
+        "workflow",
+        "identity",
+        "session",
+        "artifacts",
+        "entitlements",
+    },
     "cli": FOUNDATION
     | {
         "crash",
@@ -382,6 +398,8 @@ ALLOWED = {
         "authz",
         "entitlements",
         "identity",
+        # Seeding a known catalog, behind the hidden `demo` group.
+        "demo",
         # `doctor` reports how far this machine's clock is from the server's,
         # and the threshold it compares against is the peer freshness window.
         # Naming the module that owns that rule is better than copying the

@@ -161,6 +161,7 @@ def test_init_creates_project(runner, home, git_repo):
     mcp_json = json.loads((git_repo / ".mcp.json").read_text())
     assert mcp_json["mcpServers"]["flanner"]["command"] == "flanner-mcp"
 
+
 def test_init_ends_with_everyday_commands_and_how_to_join_a_team(runner, home, git_repo):
     result = runner.invoke(
         cli, ["init", "--skip-claude", "--project-root", str(git_repo)], input="myproj\n"

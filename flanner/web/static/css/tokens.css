@@ -79,7 +79,7 @@
   --accent:      #17805a;
   --on-accent:   #ffffff;   /* text and knobs on the accent surface, both themes */
   --accent-hi:   #0e5c3f;
-  --accent-ink:  #157e58;   /* accent as text: 4.9:1 on white */
+  --accent-ink:  #157c57;   /* accent as text: 5.2:1 on white, 4.5:1 on --chip */
   --accent-ink-hi: #0e5c3f;
   --accent-soft: #e9f7f0;
   --accent-line: #cdeadd;
