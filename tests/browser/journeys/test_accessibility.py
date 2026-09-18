@@ -37,24 +37,6 @@ STATIC_PAGES = (
 
 WIDTHS = (1280, 1024, 375)
 
-#: Contrast the app does not currently meet, as `(theme, selector, text)`.
-#:
-#: A ratchet, like the coverage floor: anything not on this list fails, and
-#: anything on it that starts passing fails too, so a fix cannot leave a
-#: stale entry behind. Every one is a near miss in the app's own palette
-#: rather than a bug in a journey — the small `--text-4` count chips at
-#: 3.94 and 4.47, and the accent link on a tint at 4.42. Fixing them is a
-#: change to `tokens.css`, which is a colour decision and not this suite's
-#: to make. Delete the entry with the fix.
-KNOWN_CONTRAST_MISSES = frozenset(
-    {
-        ("light", "span.note", "3"),
-        ("dark", "span.note", "3"),
-        ("light", "a", "Review"),
-        ("light", "a", "Decide on it"),
-    }
-)
-
 
 @pytest.fixture(scope="session")
 def seeded_pages(catalog: dict[str, Any]) -> tuple[str, ...]:
@@ -76,25 +58,15 @@ def test_every_seeded_page_meets_wcag_aa(
 ) -> None:
     """Light mode fails in different places from dark, so both are checked."""
     unexpected: list[str] = []
-    seen: set[tuple[str, str, str]] = set()
     for path in every_page:
         page.goto(path, wait_until="domcontentloaded")
         helpers.set_theme(page, theme)
         for failure in helpers.contrast_failures(page):
-            key = (theme, failure["selector"], failure["text"])
-            if key in KNOWN_CONTRAST_MISSES:
-                seen.add(key)
-                continue
             unexpected.append(
                 f"{path} {theme}: {failure['ratio']} < {failure['need']} "
                 f"on {failure['selector']} — {failure['text']!r}"
             )
     assert not unexpected, "text that cannot be read:\n" + "\n".join(unexpected)
-
-    fixed = {k for k in KNOWN_CONTRAST_MISSES if k[0] == theme} - seen
-    assert not fixed, "these now pass — delete them from KNOWN_CONTRAST_MISSES:\n" + "\n".join(
-        str(k) for k in sorted(fixed)
-    )
 
 
 @pytest.mark.parametrize("width", WIDTHS)

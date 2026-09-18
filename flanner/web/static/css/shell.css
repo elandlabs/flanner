@@ -458,6 +458,7 @@ a.tagchip:hover, .tagchip a:hover { color: var(--accent-ink); }
    are the reason the page exists. Each row is the link. */
 .needs.is-waiting { border-color: var(--aging); background: var(--aging-bg); }
 .needs.is-waiting .card-head { border-bottom-color: rgba(233, 162, 59, .3); }
+.needs.is-waiting .card-head .note { color: var(--text-on-tint); }
 .needs-row { grid-template-columns: 1fr auto; color: inherit; }
 .needs.is-waiting .needs-row:hover { background: transparent; }
 .needs-row:hover .name { text-decoration: underline; }
