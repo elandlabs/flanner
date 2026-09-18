@@ -5,9 +5,12 @@ nothing touches the real ~/.flanner. Claude-config-writing commands monkeypatch
 get_claude_config_path so the real Claude config is never written.
 """
 
+import ast
 import json
 import os
 import re
+import subprocess
+import sys
 from pathlib import Path
 from uuid import uuid4
 
@@ -1840,3 +1843,24 @@ def test_a_flag_answers_it_without_a_prompt(runner, git_repo):
         input="myproj\n",
     )
     assert "Record skill use in this repository?" not in quiet.output
+
+
+def test_python_dash_m_flanner_cli_sees_the_last_command():
+    # Run as __main__, the module dispatches at its guard, so any command
+    # defined below the guard is missing. `why` is the last one defined.
+    # The environment is the one the autouse fixture already isolated.
+    result = subprocess.run(
+        [sys.executable, "-m", "flanner.cli", "why", "--help"],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Why a plan is judged fresh" in result.stdout
+
+
+def test_main_guard_is_the_last_statement_in_cli():
+    # Keeps the test above honest for commands added after `why`.
+    last = ast.parse(Path(cli_module.__file__).read_text(encoding="utf-8")).body[-1]
+    assert isinstance(last, ast.If)
+    assert ast.unparse(last.test) == "__name__ == '__main__'"
