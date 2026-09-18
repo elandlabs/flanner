@@ -6,7 +6,63 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
-## [0.13.0] - 2026-09-18
+## [0.14.0] - 2026-09-18
+
+### Added
+- **Crash reports, built but not switched on.** This release has nowhere to
+  send them, so `flanner init` does not ask and `flanner crash-reports on`
+  says they are not available yet; nothing is kept or sent. A later release
+  that adds the address turns on what is described here. Then `init` asks,
+  as its own question, defaulting to no; `flanner crash-reports on|off`
+  changes it, and `flanner crash-reports show` prints exactly what is
+  waiting or was last sent. A report is the error type, where in flanner it
+  happened (paths relative to the package), the flanner version, OS, Python
+  version, how flanner was installed, and which command crashed.
+- **The setup check says what this machine sends.** `flanner status`, the
+  setup page and `project_context` show whether the version check and crash
+  reports are on, and what decided it.
+
+### Changed
+- **The privacy wording is precise instead of absolute.** "Nothing leaves
+  your disk" and "no telemetry" became "your plans never leave your machine;
+  nothing else is sent unless you turn it on", in the web UI, the CLI and
+  the README, which gains a "What flanner sends" section.
+
+### Fixed
+- **Teammates now actually receive what is shared.** Shared memories were
+  refused by every receiving device, and so were review proposals,
+  decisions, comments, retirements and restorations: each was stored in a
+  form that did not match what its signature covered. Both now arrive.
+- **A plan pushed to you becomes a file.** Accepting a push stored the
+  version without writing it, so `flanner plans` listed nothing until some
+  later pull.
+- **The same words shared twice no longer stop a device syncing.** When two
+  teammates shared a memory with the same text, a third device failed at
+  it on every pull from then on and received nothing after it.
+- **Devices punch through NAT.** flanner never told iroh which port the
+  organization's relay answers address discovery on, so a device relying on
+  that relay never learned its outside address and every connection went
+  through the relay.
+- **`peer pull <device-id>` no longer hangs.** A fresh process dialling a
+  peer waited on itself and failed after about 30 seconds.
+- **A crash no longer locks a plan for 30 seconds.** A writer killed
+  mid-write left its lock behind, and every write to that plan or memory
+  failed until the lock aged out; the retry made straight away always
+  failed. A lock whose holder has exited is now taken at once.
+- **`mesh status` stops reporting direct connections as relayed.** It read
+  the route before the connection had upgraded from the relay.
+
+  All seven were found by running real devices behind simulated home
+  routers and carrier-grade NAT, rather than by unit tests alone.
+
+### Security
+- **A crash report never carries content or identity.** No error message,
+  local variables, source lines, command arguments, full paths, user or
+  machine name, and no identifier. `DO_NOT_TRACK=1` or
+  `FLANNER_CRASH_REPORTS=0` turns reports off whatever was answered, and
+  turning them off deletes any not yet sent.
+
+## [0.13.0] - 2026-09-16
 
 ### Added
 - **Memories can be tagged, and related memories found.** Tag a memory when
@@ -116,75 +172,11 @@ versioning follows [SemVer](https://semver.org/).
   was cut. A table taller than the terminal is shown through the system
   pager when stdout is a terminal; piped output is unchanged.
 
-- **Crash reports, built but not switched on.** This release has nowhere to
-  send them, so `flanner init` does not ask and `flanner crash-reports on`
-  says they are not available yet; nothing is kept or sent. A later release
-  that adds the address turns on what is described here. Then `init` asks,
-  as its own question, defaulting to no; `flanner crash-reports on|off`
-  changes it, and `flanner crash-reports show` prints exactly what is
-  waiting or was last sent. A report is the error type, where in flanner it
-  happened (paths relative to the package), the flanner version, OS, Python
-  version, how flanner was installed, and which command crashed.
-- **The setup check says what this machine sends.** `flanner status`, the
-  setup page and `project_context` show whether the version check and crash
-  reports are on, and what decided it.
-
 ### Changed
 - The Linear and Jira page is now called Issue trackers. The old name clashed with the agent integration settings.
 - **Evaluations say what they are.** `flanner skills eval` stores comparison
   results that somebody else produced, and every report now says flanner ran
   none of them. Running comparisons is on the roadmap.
-
-- **The privacy wording is precise instead of absolute.** "Nothing leaves
-  your disk" and "no telemetry" became "your plans never leave your machine;
-  nothing else is sent unless you turn it on", in the web UI, the CLI and
-  the README, which gains a "What flanner sends" section.
-
-### Fixed
-- **`flanner init --project-root .` leaves a project flanner can find.** The
-  root was saved as `.`, so every later command said the repository had no
-  project. Roots are now saved as absolute paths.
-- **`flanner web` no longer starts on a port another program holds.** On
-  Windows a second program could bind the same port, so the check said it
-  was free. It now connects first and binds exclusively.
-- **Entitlements renew on use.** Nothing renewed one except
-  `flanner whoami --refresh`, so a device that only synced lost push after a
-  day and everything else after the grace period. `peer pull`, `peer push`
-  and `peer serve` now renew when needed, and a renewal also fetches the
-  organization's device keys instead of keeping the old ones. Offline, the
-  cached entitlement is used as before.
-- **Agents offer a settled decision for approval.** Codex saved decisions nobody asked it to keep, and Claude Code acknowledged them without offering anything. The tool descriptions, the managed instructions and the memory skill now say which tool is for what, and when. Both hosts then passed both capture checks three times out of three.
-- **A form that fails keeps what you typed.** Two new-project errors came back empty, a plan edit whose save failed lost the edit, and a refused skill draft revision dropped the edited body.
-- A project's plan list counted hidden plans out and listed them anyway; the
-  count and the rows now agree.
-- **`remember` is refused when capture is off**, from the CLI and from the
-  agent's tool. The policy file always said so; only suggestions honoured it.
-
-- **Teammates now actually receive what is shared.** Shared memories were
-  refused by every receiving device, and so were review proposals,
-  decisions, comments, retirements and restorations: each was stored in a
-  form that did not match what its signature covered. Both now arrive.
-- **A plan pushed to you becomes a file.** Accepting a push stored the
-  version without writing it, so `flanner plans` listed nothing until some
-  later pull.
-- **The same words shared twice no longer stop a device syncing.** When two
-  teammates shared a memory with the same text, a third device failed at
-  it on every pull from then on and received nothing after it.
-- **Devices punch through NAT.** flanner never told iroh which port the
-  organization's relay answers address discovery on, so a device relying on
-  that relay never learned its outside address and every connection went
-  through the relay.
-- **`peer pull <device-id>` no longer hangs.** A fresh process dialling a
-  peer waited on itself and failed after about 30 seconds.
-- **A crash no longer locks a plan for 30 seconds.** A writer killed
-  mid-write left its lock behind, and every write to that plan or memory
-  failed until the lock aged out; the retry made straight away always
-  failed. A lock whose holder has exited is now taken at once.
-- **`mesh status` stops reporting direct connections as relayed.** It read
-  the route before the connection had upgraded from the relay.
-
-  All seven were found by running real devices behind simulated home
-  routers and carrier-grade NAT, rather than by unit tests alone.
 
 ### Security
 - **Approvals do not count while the team roster is in its grace period.**
@@ -227,11 +219,25 @@ versioning follows [SemVer](https://semver.org/).
   new teammate is not turned away. A device's own reads of what it already
   holds keep the grace period.
 
-- **A crash report never carries content or identity.** No error message,
-  local variables, source lines, command arguments, full paths, user or
-  machine name, and no identifier. `DO_NOT_TRACK=1` or
-  `FLANNER_CRASH_REPORTS=0` turns reports off whatever was answered, and
-  turning them off deletes any not yet sent.
+### Fixed
+- **`flanner init --project-root .` leaves a project flanner can find.** The
+  root was saved as `.`, so every later command said the repository had no
+  project. Roots are now saved as absolute paths.
+- **`flanner web` no longer starts on a port another program holds.** On
+  Windows a second program could bind the same port, so the check said it
+  was free. It now connects first and binds exclusively.
+- **Entitlements renew on use.** Nothing renewed one except
+  `flanner whoami --refresh`, so a device that only synced lost push after a
+  day and everything else after the grace period. `peer pull`, `peer push`
+  and `peer serve` now renew when needed, and a renewal also fetches the
+  organization's device keys instead of keeping the old ones. Offline, the
+  cached entitlement is used as before.
+- **Agents offer a settled decision for approval.** Codex saved decisions nobody asked it to keep, and Claude Code acknowledged them without offering anything. The tool descriptions, the managed instructions and the memory skill now say which tool is for what, and when. Both hosts then passed both capture checks three times out of three.
+- **A form that fails keeps what you typed.** Two new-project errors came back empty, a plan edit whose save failed lost the edit, and a refused skill draft revision dropped the edited body.
+- A project's plan list counted hidden plans out and listed them anyway; the
+  count and the rows now agree.
+- **`remember` is refused when capture is off**, from the CLI and from the
+  agent's tool. The policy file always said so; only suggestions honoured it.
 
 ## [0.12.0] - 2026-09-09
 
