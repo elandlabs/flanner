@@ -24,6 +24,13 @@ versioning follows [SemVer](https://semver.org/).
   nothing else is sent unless you turn it on", in the web UI, the CLI and
   the README, which gains a "What flanner sends" section.
 
+### Fixed
+- **`python -m flanner.cli` knows every command.** It started before the
+  last third of the CLI was defined, so `why`, `diff`, `history`, `retire`,
+  `login`, `peer`, `mesh`, `review comment` and the other commands defined
+  after them answered "No such command". `flanner` and `python -m flanner`
+  were never affected.
+
 ### Security
 - **A crash report never carries content or identity.** No error message,
   local variables, source lines, command arguments, full paths, user or

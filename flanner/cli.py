@@ -6737,10 +6737,6 @@ def linear_refresh(plan_name: str, project: str | None) -> None:
             console.print(f"  {link.linear_issue_id}: {e}", style="red")
 
 
-if __name__ == "__main__":
-    cli()
-
-
 # --- account -----------------------------------------------------------------
 # Team features need a signed entitlement; local plan work never does. These
 # commands are the only ones in the CLI that talk to the control plane.
@@ -8753,3 +8749,7 @@ def _command_names(args: list[str]) -> str:
 
 
 _attach_examples(cli)
+
+
+if __name__ == "__main__":
+    cli()
