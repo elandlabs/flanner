@@ -153,3 +153,8 @@ timeout = 300
 markers = [
     "browser: drives the local web UI in a real browser (needs `playwright install chromium`)",
 ]
+# Opt-in in fact, not only in CI. Playwright's synchronous API leaves an
+# event loop running in the test process, and every later test that calls
+# asyncio.run() then fails: a plain local `pytest` failed ten. `-m browser`
+# on the command line replaces this and selects them.
+addopts = "-m 'not browser'"
