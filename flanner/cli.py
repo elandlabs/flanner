@@ -356,7 +356,6 @@ def _say_if_behind() -> None:
     tui.notices.print()
 
 
-
 def _print_breakdown() -> None:
     """Where this invocation spent its time, under `--verbose`.
 
@@ -629,9 +628,7 @@ def _offer_update_check() -> None:
     tui.note("Flanner can check whether a newer version has been released.")
     tui.hint("  One request to pypi.org a day, for a public list of versions.")
     tui.hint("  Nothing about this machine, your repositories or your plans is sent.")
-    allowed = _ask_yes_no(
-        "Check for new versions?", default=True, unattended=False
-    )
+    allowed = _ask_yes_no("Check for new versions?", default=True, unattended=False)
     release.set_update_check_consent(allowed)
     if allowed:
         tui.ok("Checking once a day. flanner updates off stops it.")
@@ -649,7 +646,7 @@ def _offer_crash_reports() -> None:
     """
     from . import crash
 
-    if crash.asked() or tui.QUIET or os.environ.get("CI"):
+    if crash.asked() or tui.QUIET or os.environ.get("CI") or not crash.dsn():
         return
     console.print()
     tui.note("Flanner can send a report to its developers when it crashes.")
@@ -2861,9 +2858,11 @@ def web(port: int, host: str, open_browser: bool) -> None:
     from . import web as web_module
 
     if beyond_loopback(host):
-        tui.warn(f"Binding {host} exposes the web UI beyond localhost. It has no "
+        tui.warn(
+            f"Binding {host} exposes the web UI beyond localhost. It has no "
             "authentication; anyone who can reach this address can read and edit "
-            "your plans. Use 127.0.0.1 unless you have put auth in front of it.")
+            "your plans. Use 127.0.0.1 unless you have put auth in front of it."
+        )
         # The Host header check stands down too. It exists to stop a domain
         # pointed at 127.0.0.1 reaching a local-only tool, and no list here
         # can predict which names will reach a deliberately exposed one. The
@@ -7689,11 +7688,18 @@ def crash_reports(choice: str | None) -> None:
     if choice == "show":
         _show_crash_reports()
         return
+    if choice == "on" and not crash.dsn():
+        console.print()
+        tui.note("Crash reports are not available in this build yet, so nothing was changed.")
+        console.print()
+        return
     if choice is not None:
         crash.set_consent(choice == "on")
     allowed, why = crash.consent()
     console.print()
-    if why in ("DO_NOT_TRACK", crash.SWITCH_ENV):
+    if why == crash.NOT_AVAILABLE:
+        tui.note("Crash reports are not available in this build yet. Nothing is sent.")
+    elif why in ("DO_NOT_TRACK", crash.SWITCH_ENV):
         state = "on" if allowed else "off"
         tui.note(f"Crash reports are {state}, because {why} is set.")
         tui.hint("  The environment decides before any saved answer.")
@@ -7705,8 +7711,6 @@ def crash_reports(choice: str | None) -> None:
         waiting = len(crash.waiting())
         if waiting:
             tui.note(f"  {waiting} waiting to be sent.")
-        if not crash.dsn():
-            tui.note("  This build has no address to send to, so reports are only kept here.")
         tui.hint(f"  {tui.command('flanner crash-reports show')} prints what is sent.")
         tui.hint(f"  {tui.command('flanner crash-reports off')} stops it.")
     else:

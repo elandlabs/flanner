@@ -28,6 +28,9 @@ def home(tmp_path, monkeypatch):
     monkeypatch.setenv("FLANNER_HOME", str(tmp_path / "home"))
     for name in ("DO_NOT_TRACK", crash.SWITCH_ENV, crash.DSN_ENV, "CI"):
         monkeypatch.delenv(name, raising=False)
+    # A build that has somewhere to send reports. `.test` is reserved and
+    # never resolves, so nothing here can reach a real server.
+    monkeypatch.setattr(crash, "DSN", "https://publickey@o1.ingest.example.test/42")
     return tmp_path / "home"
 
 
@@ -324,14 +327,24 @@ def test_an_old_report_is_dropped_unsent(sender):
     assert crash.waiting() == []
 
 
-def test_nothing_is_sent_without_an_address(monkeypatch):
-    _on()
-    monkeypatch.setattr(crash, "_post", lambda report: pytest.fail("sent with no address"))
-    _kept()
+def test_a_build_with_no_address_asks_keeps_and_sends_nothing(monkeypatch):
+    """A yes that could never be acted on would be a promise the build breaks.
 
-    assert crash.dsn() == ""
+    Released without an address, crash reports are simply not there: the
+    question is never put, an earlier yes counts for nothing, and a crash
+    leaves no report behind.
+    """
+    monkeypatch.setattr(crash, "DSN", "")
+    monkeypatch.setattr(crash, "_post", lambda report: pytest.fail("sent with no address"))
+    _on()
+
+    assert crash.consent() == (False, crash.NOT_AVAILABLE)
+    try:
+        raise RuntimeError("x")
+    except RuntimeError as error:
+        assert crash.capture(error, surface="cli") is None
+    assert crash.waiting() == []
     assert crash.send_waiting() == 0
-    assert len(crash.waiting()) == 1
 
 
 def test_the_envelope_goes_to_the_address_in_the_dsn(monkeypatch):
@@ -381,9 +394,8 @@ def test_a_sender_is_started_only_when_there_is_something_to_send(monkeypatch):
 
     assert crash.send_in_background() is False  # off
     _on()
+    assert crash.send_in_background() is False  # nothing waiting
     _kept()
-    assert crash.send_in_background() is False  # no address
-    monkeypatch.setenv(crash.DSN_ENV, "https://k@h.example.test/1")
     assert crash.send_in_background() is True
     assert started == ["from flanner import crash; crash.send_waiting()"]
 
@@ -484,7 +496,7 @@ def test_the_command_switches_shows_and_explains():
     assert "Not decided yet" in runner.invoke(cli, ["crash-reports"]).output
     on = runner.invoke(cli, ["crash-reports", "on"])
     assert on.exit_code == 0 and crash.consent() == (True, "setting")
-    assert "no address to send to" in on.output
+    assert "Sending crash reports" in on.output
 
     shown = runner.invoke(cli, ["crash-reports", "show"])
     assert shown.exit_code == 0
@@ -593,3 +605,14 @@ def test_no_absolute_nothing_is_sent_claim_is_left():
         if phrase in path.read_text(encoding="utf-8").lower()
     ]
     assert not found, found
+
+
+def test_turning_them_on_in_a_build_with_no_address_changes_nothing(monkeypatch):
+    from flanner.cli import cli
+
+    monkeypatch.setattr(crash, "DSN", "")
+    on = CliRunner().invoke(cli, ["crash-reports", "on"])
+
+    assert on.exit_code == 0
+    assert "not available in this build" in on.output
+    assert not crash.asked()
