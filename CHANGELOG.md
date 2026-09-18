@@ -34,6 +34,9 @@ versioning follows [SemVer](https://semver.org/).
   `login`, `peer`, `mesh`, `review comment` and the other commands defined
   after them answered "No such command". `flanner` and `python -m flanner`
   were never affected.
+- **The web UI's small text meets WCAG AA contrast.** The count on the
+  "needs a decision" card and the links inside notices, such as "Review" on
+  the memory page, sat just under 4.5:1 in light or dark mode.
 - **Teammates now actually receive what is shared.** Shared memories were
   refused by every receiving device, and so were review proposals,
   decisions, comments, retirements and restorations: each was stored in a
