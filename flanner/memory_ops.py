@@ -2000,6 +2000,20 @@ def materialise(
         )
         return {"outcome": "updated", "id": str(memory_id)}
 
+    # The same words, already shared under another id: two teammates who
+    # each shared "deploys go out on Tuesdays". Every received memory lives
+    # under NO_PROJECT, where the words are unique, so inserting a second
+    # row failed the constraint, the error escaped the pull, and every later
+    # pull from that peer failed at the same place. One copy is enough to
+    # recall; the second artifact is still stored and verified.
+    same = (
+        session.query(MemoryModel)
+        .filter_by(scope=WORKSPACE, project_id=NO_PROJECT, content_hash=content_hash(clean))
+        .first()
+    )
+    if same is not None:
+        return {"outcome": "duplicate", "id": str(same.id)}
+
     memory = create_memory(
         session,
         memory_id=memory_id,

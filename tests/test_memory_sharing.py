@@ -202,6 +202,35 @@ def test_a_received_memory_becomes_something_this_device_can_recall(store, peer_
     assert [m["id"] for m in found["memories"]] == [outcome["id"]]
 
 
+def test_the_same_words_shared_twice_are_held_once(store, peer_key):
+    """Two teammates each share "deploys go out on Tuesdays".
+
+    The second arrived as a second row with the same words, which the
+    memories table forbids. The error escaped the pull, and every later pull
+    from that peer failed at the same place: found by the mesh lab at 2,050
+    shared memories, where a device received a quarter of what it was owed.
+    """
+    session, project, home = store
+    body = "Deploys go out on Tuesdays."
+    first = mem.materialise(
+        session,
+        envelope=_theirs(peer_key, body=body, memory_id=str(uuid4())),
+        body=body,
+        workspace_id=WORKSPACE,
+    )
+
+    second = mem.materialise(
+        session,
+        envelope=_theirs(peer_key, body=body, memory_id=str(uuid4())),
+        body=body,
+        workspace_id=WORKSPACE,
+    )
+
+    assert second == {"outcome": "duplicate", "id": first["id"]}
+    found = mem.recall(session, query="deploys tuesdays", project_id=project.id)
+    assert [m["id"] for m in found["memories"]] == [first["id"]]
+
+
 def test_a_received_memory_is_written_as_a_file_like_any_other(store, peer_key):
     session, project, home = store
     body = "The staging cluster is rebuilt every Sunday night."
