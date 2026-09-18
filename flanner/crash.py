@@ -53,6 +53,9 @@ DSN = ""
 #: before the address above is filled in.
 DSN_ENV = "FLANNER_CRASH_REPORTS_DSN"
 
+#: Why reports are off in a build that has no address to send them to.
+NOT_AVAILABLE = "not available in this build"
+
 #: `0` or `1` decides without asking, for people who manage machines.
 SWITCH_ENV = "FLANNER_CRASH_REPORTS"
 
@@ -89,6 +92,10 @@ def consent() -> tuple[bool, str]:
     whatever somebody clicked. `DO_NOT_TRACK` is the convention other tools
     honour; being off is the only thing it can mean here.
     """
+    if not dsn():
+        # A build with nowhere to send reports: asking would get a yes that
+        # did nothing, so the question is never put and nothing is kept.
+        return False, NOT_AVAILABLE
     if _truthy(os.environ.get("DO_NOT_TRACK", "")):
         return False, "DO_NOT_TRACK"
     switch = os.environ.get(SWITCH_ENV, "").strip()

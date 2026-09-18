@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "flanner"
-version = "0.13.0"
+version = "0.14.0"
 description = "Plan file management for AI assistants via MCP"
 authors = [{ name = "Jayson Mulwa", email = "jayson.mulwa@gmail.com" }]
 license = "MIT"

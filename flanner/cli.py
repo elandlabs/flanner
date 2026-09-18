@@ -646,7 +646,7 @@ def _offer_crash_reports() -> None:
     """
     from . import crash
 
-    if crash.asked() or tui.QUIET or os.environ.get("CI"):
+    if crash.asked() or tui.QUIET or os.environ.get("CI") or not crash.dsn():
         return
     console.print()
     tui.note("Flanner can send a report to its developers when it crashes.")
@@ -7684,11 +7684,18 @@ def crash_reports(choice: str | None) -> None:
     if choice == "show":
         _show_crash_reports()
         return
+    if choice == "on" and not crash.dsn():
+        console.print()
+        tui.note("Crash reports are not available in this build yet, so nothing was changed.")
+        console.print()
+        return
     if choice is not None:
         crash.set_consent(choice == "on")
     allowed, why = crash.consent()
     console.print()
-    if why in ("DO_NOT_TRACK", crash.SWITCH_ENV):
+    if why == crash.NOT_AVAILABLE:
+        tui.note("Crash reports are not available in this build yet. Nothing is sent.")
+    elif why in ("DO_NOT_TRACK", crash.SWITCH_ENV):
         state = "on" if allowed else "off"
         tui.note(f"Crash reports are {state}, because {why} is set.")
         tui.hint("  The environment decides before any saved answer.")
@@ -7700,8 +7707,6 @@ def crash_reports(choice: str | None) -> None:
         waiting = len(crash.waiting())
         if waiting:
             tui.note(f"  {waiting} waiting to be sent.")
-        if not crash.dsn():
-            tui.note("  This build has no address to send to, so reports are only kept here.")
         tui.hint(f"  {tui.command('flanner crash-reports show')} prints what is sent.")
         tui.hint(f"  {tui.command('flanner crash-reports off')} stops it.")
     else:

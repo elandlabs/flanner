@@ -6,14 +6,18 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-09-18
+
 ### Added
-- **Crash reports, if you turn them on.** `flanner init` asks, as its own
-  question, and the answer defaults to no. `flanner crash-reports on|off`
-  changes it, and `flanner crash-reports show` prints exactly what is waiting
-  or was last sent. A report is the error type, where in flanner it happened
-  (paths relative to the package), the flanner version, OS, Python version,
-  how flanner was installed, and which command crashed. It is written to disk
-  by the crashing command and sent later by a separate background process.
+- **Crash reports, built but not switched on.** This release has nowhere to
+  send them, so `flanner init` does not ask and `flanner crash-reports on`
+  says they are not available yet; nothing is kept or sent. A later release
+  that adds the address turns on what is described here. Then `init` asks,
+  as its own question, defaulting to no; `flanner crash-reports on|off`
+  changes it, and `flanner crash-reports show` prints exactly what is
+  waiting or was last sent. A report is the error type, where in flanner it
+  happened (paths relative to the package), the flanner version, OS, Python
+  version, how flanner was installed, and which command crashed.
 - **The setup check says what this machine sends.** `flanner status`, the
   setup page and `project_context` show whether the version check and crash
   reports are on, and what decided it.
