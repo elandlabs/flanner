@@ -1,0 +1,23 @@
+# The browser image copies the repo; none of this is needed to run it.
+.git
+.venv
+venv
+**/__pycache__
+**/*.py[cod]
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.hypothesis
+.coverage
+htmlcov
+*.egg-info
+build
+dist
+test-results
+browser-artifacts
+.plans
+.flanner
+.claude
+.agents
+.codex
+.ui-preview

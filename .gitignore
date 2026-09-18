@@ -80,3 +80,6 @@ docs/cloud-design.md
 
 # Traces and screenshots the browser suite writes on a failure.
 browser-artifacts/
+
+# Browser suite output (pytest-playwright)
+test-results/

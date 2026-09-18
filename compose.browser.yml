@@ -1,0 +1,20 @@
+# The browser suite in Playwright's own image, the same one CI runs in.
+#
+#   docker compose -f compose.browser.yml run --rm browser
+#   docker compose -f compose.browser.yml run --rm browser -k palette -x
+#
+# Traces and screenshots from a failure land in ./test-results.
+services:
+  browser:
+    build:
+      context: .
+      dockerfile: tests/browser/Dockerfile
+    # Rebuild on every run. The code is copied in, not mounted, so without
+    # this an old image would quietly test old code. Unchanged layers are
+    # cached, so a run after an edit rebuilds only the last copy.
+    pull_policy: build
+    # Chromium's renderers share memory through /dev/shm, and Docker's
+    # 64MB default crashes tabs on a heavy page.
+    ipc: host
+    volumes:
+      - ./test-results:/repo/test-results

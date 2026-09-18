@@ -67,16 +67,18 @@ jobs:
   browser:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # The image `tests/browser/Dockerfile` builds on, so this job and
+    # `docker compose -f compose.browser.yml run --rm browser` run the same
+    # Chromium, fonts and system libraries. It carries the browser, so there
+    # is no `playwright install` step. The tag must match the playwright pin
+    # in requirements-dev.lock; bump both in one commit.
+    container:
+      image: mcr.microsoft.com/playwright/python:v1.63.0-noble
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - run: pip install -e ".[dev]"
-      # The browser build is pinned by the playwright pin in pyproject, so
-      # a Chromium upgrade arrives as a commit rather than as a Tuesday.
-      - name: Install Chromium
-        run: playwright install --with-deps chromium
+      # From the lock, like the image, not a fresh resolve of pyproject.
+      - run: pip install --require-hashes -r requirements-dev.lock
+      - run: pip install --no-deps -e .
       - name: Browser journeys
         run: >-
           pytest -m browser -q
