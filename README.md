@@ -360,7 +360,7 @@ That is a design decision, not a milestone waiting to be funded.
 
 ## Contributing
 
-Setup, the CI gates, benchmarks, and the release process are in [CONTRIBUTING.md](CONTRIBUTING.md).
+Setup, the CI gates, how to run the unit and browser tests, benchmarks, and the release process are in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

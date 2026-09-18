@@ -37,7 +37,44 @@ activating anything (drop the `uv run` prefix if your venv is active):
 uv run ruff check flanner/ tests/ benchmarks/
 uv run ruff format --check flanner/ tests/ benchmarks/
 uv run mypy --strict flanner/
-uv run pytest --cov=flanner --cov-fail-under=80
+uv run pytest -m "not browser" --cov=flanner --cov-fail-under=85
+```
+
+The unit suite leaves the browser tests out: they start a server and drive
+Chromium, so they are a separate command and a separate CI job, and they run
+without coverage so the 85% floor measures the same thing it always has.
+
+### Browser tests
+
+`tests/browser/` opens the local web UI in a real browser and walks through
+it: adopting a project, writing and revising a plan, the freshness stream,
+live updates, navigation, the command palette, and an accessibility sweep
+(WCAG AA contrast in light and dark, no sideways scrolling at three widths).
+Each run seeds its own catalog and starts its own server; nothing touches
+your `~/.flanner`.
+
+```bash
+python scripts/run_browser_tests.py             # fetches Chromium once, then runs
+python scripts/run_browser_tests.py -k palette  # anything after goes to pytest
+uv run pytest -m browser                        # the same, if Chromium is installed
+```
+
+With nothing installed but Docker, run them in the same Playwright image CI
+uses, so the browser, fonts and system libraries match exactly:
+
+```bash
+python scripts/run_browser_tests.py --docker
+docker compose -f compose.browser.yml run --rm browser   # the same, by hand
+```
+
+On a failure, the trace, a screenshot and the console log land in
+`test-results/`. Open a trace with `playwright show-trace <path>/trace.zip`.
+
+To look at the UI with the same data the tests use:
+
+```bash
+flanner demo seed --home ./.demo-home
+FLANNER_HOME=./.demo-home flanner web
 ```
 
 ## Ground rules
