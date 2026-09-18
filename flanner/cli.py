@@ -356,7 +356,6 @@ def _say_if_behind() -> None:
     tui.notices.print()
 
 
-
 def _print_breakdown() -> None:
     """Where this invocation spent its time, under `--verbose`.
 
@@ -629,9 +628,7 @@ def _offer_update_check() -> None:
     tui.note("Flanner can check whether a newer version has been released.")
     tui.hint("  One request to pypi.org a day, for a public list of versions.")
     tui.hint("  Nothing about this machine, your repositories or your plans is sent.")
-    allowed = _ask_yes_no(
-        "Check for new versions?", default=True, unattended=False
-    )
+    allowed = _ask_yes_no("Check for new versions?", default=True, unattended=False)
     release.set_update_check_consent(allowed)
     if allowed:
         tui.ok("Checking once a day. flanner updates off stops it.")
@@ -2861,9 +2858,11 @@ def web(port: int, host: str, open_browser: bool) -> None:
     from . import web as web_module
 
     if beyond_loopback(host):
-        tui.warn(f"Binding {host} exposes the web UI beyond localhost. It has no "
+        tui.warn(
+            f"Binding {host} exposes the web UI beyond localhost. It has no "
             "authentication; anyone who can reach this address can read and edit "
-            "your plans. Use 127.0.0.1 unless you have put auth in front of it.")
+            "your plans. Use 127.0.0.1 unless you have put auth in front of it."
+        )
         # The Host header check stands down too. It exists to stop a domain
         # pointed at 127.0.0.1 reaching a local-only tool, and no list here
         # can predict which names will reach a deliberately exposed one. The
