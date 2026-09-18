@@ -24,6 +24,33 @@ versioning follows [SemVer](https://semver.org/).
   nothing else is sent unless you turn it on", in the web UI, the CLI and
   the README, which gains a "What flanner sends" section.
 
+### Fixed
+- **Teammates now actually receive what is shared.** Shared memories were
+  refused by every receiving device, and so were review proposals,
+  decisions, comments, retirements and restorations: each was stored in a
+  form that did not match what its signature covered. Both now arrive.
+- **A plan pushed to you becomes a file.** Accepting a push stored the
+  version without writing it, so `flanner plans` listed nothing until some
+  later pull.
+- **The same words shared twice no longer stop a device syncing.** When two
+  teammates shared a memory with the same text, a third device failed at
+  it on every pull from then on and received nothing after it.
+- **Devices punch through NAT.** flanner never told iroh which port the
+  organization's relay answers address discovery on, so a device relying on
+  that relay never learned its outside address and every connection went
+  through the relay.
+- **`peer pull <device-id>` no longer hangs.** A fresh process dialling a
+  peer waited on itself and failed after about 30 seconds.
+- **A crash no longer locks a plan for 30 seconds.** A writer killed
+  mid-write left its lock behind, and every write to that plan or memory
+  failed until the lock aged out; the retry made straight away always
+  failed. A lock whose holder has exited is now taken at once.
+- **`mesh status` stops reporting direct connections as relayed.** It read
+  the route before the connection had upgraded from the relay.
+
+  All seven were found by running real devices behind simulated home
+  routers and carrier-grade NAT, rather than by unit tests alone.
+
 ### Security
 - **A crash report never carries content or identity.** No error message,
   local variables, source lines, command arguments, full paths, user or
