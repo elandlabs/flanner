@@ -129,6 +129,46 @@ def test_two_plans_in_one_project_do_not_wait_for_each_other(plan, monkeypatch):
             pass  # no timeout
 
 
+def _dead_pid() -> int:
+    """The id of a process on this machine that has certainly exited."""
+    import subprocess
+    import sys
+
+    child = subprocess.Popen([sys.executable, "-c", "pass"])  # noqa: S603
+    child.wait()
+    return child.pid
+
+
+def test_a_lock_whose_holder_died_here_is_taken_at_once(plan, monkeypatch):
+    """A killed writer's lock no longer blocks every write for 30 seconds.
+
+    Found by the mesh lab: a pull killed with SIGKILL left its lock, and
+    the pull retried straight afterwards timed out, because a waiter gives
+    up after 10 s and a lock only counted as abandoned after 30.
+    """
+    session, project, plan_file = plan
+    monkeypatch.setattr(storage, "LOCK_TIMEOUT_S", 0.3)
+    lock_path = _lock_path(project, plan_file.id)
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path.write_text(f"{_dead_pid()} {storage._HOST}", encoding="utf-8")
+
+    with plan_write_lock(project.project_root, project.plan_directory, plan_file.id):
+        assert lock_path.read_text(encoding="utf-8").startswith(f"{os.getpid()} ")
+
+
+def test_a_fresh_lock_from_another_machine_is_still_waited_for(plan, monkeypatch):
+    """On a shared drive another machine's process id means nothing here."""
+    session, project, plan_file = plan
+    monkeypatch.setattr(storage, "LOCK_TIMEOUT_S", 0.3)
+    lock_path = _lock_path(project, plan_file.id)
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path.write_text(f"{_dead_pid()} some-other-machine", encoding="utf-8")
+
+    with pytest.raises(DatabaseError, match="write lock"):
+        with plan_write_lock(project.project_root, project.plan_directory, plan_file.id):
+            pass
+
+
 def test_stale_lock_is_taken_over(plan):
     session, project, plan_file = plan
     lock_path = _lock_path(project, plan_file.id)

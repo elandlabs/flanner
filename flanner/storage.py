@@ -7,6 +7,8 @@ Handles file system operations for plan files.
 import contextlib
 import logging
 import os
+import platform
+import sys
 import tempfile
 import time
 from collections.abc import Iterator
@@ -85,12 +87,17 @@ def exclusive_lock(directory: Path, key: str) -> Iterator[None]:
     while True:
         try:
             fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-            os.write(fd, str(os.getpid()).encode())
+            os.write(fd, f"{os.getpid()} {_HOST}".encode())
             os.close(fd)
             break
         except FileExistsError:
             with contextlib.suppress(OSError):
-                if time.time() - lock_path.stat().st_mtime > LOCK_STALE_S:
+                # A holder that died on this machine is known at once. The
+                # age rule alone left every write failing for LOCK_STALE_S
+                # after a crash, longer than any waiter waits, so the retry
+                # a person or an agent makes straight away always failed.
+                abandoned = _holder_is_gone(lock_path)
+                if abandoned or time.time() - lock_path.stat().st_mtime > LOCK_STALE_S:
                     lock_path.unlink()
                     continue
             if time.monotonic() > deadline:
@@ -101,6 +108,53 @@ def exclusive_lock(directory: Path, key: str) -> Iterator[None]:
     finally:
         with contextlib.suppress(OSError):
             lock_path.unlink()
+
+
+#: Which machine wrote a lock. A process id only means something here: a
+#: plans folder on a shared drive can hold another machine's lock, and its
+#: holder's id says nothing about processes on this one.
+_HOST = platform.node() or "unknown"
+
+
+def _holder_is_gone(lock_path: Path) -> bool:
+    """True only when the lock's holder ran on this machine and has exited.
+
+    Anything uncertain (another machine, an older lock without a host, an
+    unreadable file) answers False and leaves it to the age rule.
+    """
+    pid_text, _, host = lock_path.read_text(encoding="utf-8").strip().partition(" ")
+    if host != _HOST or not pid_text.isdigit():
+        return False
+    pid = int(pid_text)
+    if pid == os.getpid():
+        return False
+    return not _process_exists(pid)
+
+
+def _process_exists(pid: int) -> bool:
+    if sys.platform == "win32":
+        # Not os.kill(pid, 0): on Windows signal 0 is CTRL_C_EVENT, which
+        # would interrupt the holder rather than ask whether it exists.
+        import ctypes
+
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not handle:
+            return False
+        try:
+            code = ctypes.c_ulong()
+            kernel32.GetExitCodeProcess(handle, ctypes.byref(code))
+            return code.value == 259  # STILL_ACTIVE
+        finally:
+            kernel32.CloseHandle(handle)
+    else:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True  # it exists; it is somebody else's
+        return True
 
 
 def init_storage(base_path: str) -> None:
