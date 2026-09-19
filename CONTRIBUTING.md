@@ -14,7 +14,7 @@
 With [uv](https://docs.astral.sh/uv/) (recommended, cross-platform, one step):
 
 ```bash
-git clone https://github.com/jaysonmulwa/flanner.git
+git clone https://github.com/elandlabs/flanner.git
 cd flanner
 uv sync --extra dev        # creates .venv and installs everything from uv.lock
 uv run pre-commit install

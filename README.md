@@ -2,7 +2,7 @@
 
 [![PyPI](https://img.shields.io/pypi/v/flanner.svg)](https://pypi.org/project/flanner/)
 [![Python](https://img.shields.io/pypi/pyversions/flanner.svg)](https://pypi.org/project/flanner/)
-[![CI](https://github.com/jaysonmulwa/flanner/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/jaysonmulwa/flanner/actions/workflows/ci.yml)
+[![CI](https://github.com/elandlabs/flanner/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/elandlabs/flanner/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 <!-- mcp-name: io.github.jaysonmulwa/flanner -->

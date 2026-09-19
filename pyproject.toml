@@ -96,9 +96,9 @@ flanner-mcp = "flanner.server:main"
 
 [project.urls]
 Homepage = "https://flanner.io"
-Repository = "https://github.com/jaysonmulwa/flanner"
-Changelog = "https://github.com/jaysonmulwa/flanner/blob/main/CHANGELOG.md"
-Issues = "https://github.com/jaysonmulwa/flanner/issues"
+Repository = "https://github.com/elandlabs/flanner"
+Changelog = "https://github.com/elandlabs/flanner/blob/main/CHANGELOG.md"
+Issues = "https://github.com/elandlabs/flanner/issues"
 
 [tool.mypy]
 strict = true

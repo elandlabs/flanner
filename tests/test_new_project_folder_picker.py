@@ -118,4 +118,4 @@ def test_another_site_cannot_open_a_dialog(client, monkeypatch):
 def test_the_footer_source_link_points_at_the_repository(client):
     page = client.get("/projects/new").text
 
-    assert 'href="https://github.com/jaysonmulwa/flanner"' in page
+    assert 'href="https://github.com/elandlabs/flanner"' in page
