@@ -5159,6 +5159,9 @@ def _print_comments(session: Session, plan_file: Any) -> None:
         AMBIGUOUS: ("several matches", "warn"),
         "moved": ("text changed", "warn"),
     }
+    from .session import teammate_labels
+
+    name = teammate_labels()
     for event in notes:
         payload = event.payload
         anchor_data = payload.get("anchor") or {}
@@ -5169,7 +5172,7 @@ def _print_comments(session: Session, plan_file: Any) -> None:
             label, style = marks.get(state.status, ("anchored", "ok"))
             mark = Text(label, style=style)
         listing.add_row(
-            Text(str(event.actor or "unknown"), style="muted"),
+            Text(name(str(event.actor)) if event.actor else "unknown", style="muted"),
             Text(str(anchor_data.get("quote") or "")[:40], style="muted"),
             Text(str(payload.get("body") or ""), style="value"),
             mark,
@@ -5243,14 +5246,17 @@ def review_status(plan_name: str | None, project: str | None) -> None:
         _print_external_review(session, plan_file)
         return
 
+    from .session import teammate_labels
+
+    name = teammate_labels()
     table = tui.table("Proposal", "State", "Proposer", "Approvals")
     for view in state.proposals.values():
         style = _REVIEW_STYLES.get(view.state, "white")
         table.add_row(
             view.proposal_id[:19] + "...",
             f"[{style}]{view.state}[/{style}]",
-            view.proposer,
-            ", ".join(view.approvals) or "--",
+            name(view.proposer),
+            ", ".join(name(user) for user in view.approvals) or "--",
         )
     console.print(table)
 
@@ -7293,11 +7299,13 @@ def members() -> None:
     result = _console_call(account.list_members)
     console.print(f"Seats in use: {result.get('seats', 0)}\n")
 
-    table = tui.table("Member", "Email", "Role", "State")
+    table = tui.table("Member", "Name", "Email", "Role", "State")
     for member in result.get("members") or []:
         style = "dim" if member["state"] != "active" else None
+        handle = member.get("handle")
         table.add_row(
-            member.get("user_id") or "(not joined)",
+            f"@{handle}" if handle else member.get("user_id") or "(not joined)",
+            member.get("name") or "-",
             member.get("email") or "-",
             member["role"],
             member["state"],

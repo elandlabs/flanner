@@ -739,6 +739,9 @@ def _comments(session: Any, plan_file: Any, body: str) -> list[dict[str, Any]]:
         AMBIGUOUS: ("quoted text appears several times", "aging"),
         STRANDED: ("lost its place", "stale"),
     }
+    from .session import teammate_labels
+
+    name = teammate_labels()
     out: list[dict[str, Any]] = []
     for event in load_comments(session, str(plan_file.id)):
         payload = event.payload
@@ -747,7 +750,7 @@ def _comments(session: Any, plan_file: Any, body: str) -> list[dict[str, Any]]:
         label, tone = said[state.status]
         out.append(
             {
-                "by": str(event.actor or "unknown"),
+                "by": name(str(event.actor)) if event.actor else "unknown",
                 "quote": str(raw.get("quote") or ""),
                 "body": str(payload.get("body") or ""),
                 "version": payload.get("target_version"),

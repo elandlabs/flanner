@@ -6,6 +6,17 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Teammates by name.** Review comments in the CLI and the web UI, the
+  proposer and approvers in `flanner review status`, and `flanner members`
+  show people as `@ben (Ben Otieno)` instead of a user id. Names come from
+  the signed roster, so a teammate cannot choose what they are shown as. A roster from an older control plane carries no names,
+  and ids are shown as before.
+- The roster also carries how long the organization keeps messages
+  (`Roster.message_retention_days`, default 90), and `MESH_MESSAGES` names
+  the entitlement feature that allows messaging. Both are groundwork for
+  mesh messaging and change nothing on their own yet.
+
 ## [0.14.0] - 2026-09-18
 
 ### Added

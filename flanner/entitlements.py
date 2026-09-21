@@ -49,6 +49,13 @@ MEM_SYNC = "mem_sync"
 #: things to be paying for, and an organization may reasonably want its
 #: procedures shared while its durable context stays put.
 SKILL_SYNC = "skill_sync"
+#: Messages between members' devices (the mesh messaging plan). Withheld
+#: when the organization switches messaging off.
+MESH_MESSAGES = "mesh_messages"
+
+#: How long messages are kept when a roster does not say, as one from a
+#: control plane older than messaging does not.
+DEFAULT_MESSAGE_RETENTION_DAYS = 90
 
 # How long an expired entitlement keeps working offline before team features
 # stop. Local plan work never depends on this (§18.4).
@@ -265,6 +272,18 @@ class Member:
     user_id: str
     role: str
     devices: tuple[str, ...] = ()
+    #: How teammates address this person, `ben`. Derived from their email by
+    #: the control plane and never chosen, so it cannot be used to pass as
+    #: someone. Empty in a roster from a control plane older than messaging.
+    handle: str = ""
+    #: The name they set in the console, or their email before the @.
+    name: str = ""
+
+    @property
+    def label(self) -> str:
+        """`@ben (Ben Otieno)`, or as much of it as the roster carries."""
+        handle = f"@{self.handle or self.user_id[:8]}"
+        return f"{handle} ({self.name})" if self.name else handle
 
 
 @dataclass(frozen=True)
@@ -278,9 +297,26 @@ class Roster:
 
     organization_id: str
     workspaces: dict[str, tuple[Member, ...]]
+    #: How long this organization's devices keep messages. Here rather than
+    #: in the entitlement, whose claims a client rebuilds from a fixed field
+    #: list before checking the signature: a new field there would make
+    #: every older client refuse its own entitlement.
+    message_retention_days: int = DEFAULT_MESSAGE_RETENTION_DAYS
 
     def members(self, workspace_id: str) -> tuple[Member, ...]:
         return self.workspaces.get(workspace_id, ())
+
+    def label_for(self, user_id: str) -> str:
+        """How to show a user: `@ben (Ben Otieno)`, or the id if not listed.
+
+        Someone who has left the team is no longer on the roster, and their
+        id is still the truest thing to show beside what they did.
+        """
+        for members in self.workspaces.values():
+            for member in members:
+                if member.user_id == user_id:
+                    return member.label
+        return user_id
 
 
 def read_signed(token: str, keyring: dict[str, str], kind: str) -> dict[str, Any] | None:
@@ -324,11 +360,16 @@ def verify_roster(
                         user_id=str(m["user_id"]),
                         role=str(m["role"]),
                         devices=tuple(str(d) for d in m.get("devices") or ()),
+                        handle=str(m.get("handle") or ""),
+                        name=str(m.get("name") or ""),
                     )
                     for m in members
                 )
                 for workspace_id, members in dict(data["workspaces"]).items()
             },
+            message_retention_days=int(
+                data.get("message_retention_days") or DEFAULT_MESSAGE_RETENTION_DAYS
+            ),
         )
     except (KeyError, TypeError, ValueError):
         return None

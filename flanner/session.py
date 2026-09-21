@@ -16,13 +16,14 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from . import identity
-from .entitlements import EntitlementStore, Verdict
+from .entitlements import EntitlementStore, Verdict, verify_roster
 
 SESSION_FILENAME = "session.json"
 DEFAULT_ENDPOINT = "https://api.flanner.io"
@@ -113,6 +114,21 @@ def load() -> Session | None:
         # A corrupt cache is indistinguishable from never having logged in,
         # and both are fixed the same way. Refusing to start would be worse.
         return None
+
+
+def teammate_labels() -> Callable[[str], str]:
+    """A function turning a user id into `@ben (Ben Otieno)`.
+
+    Read once and returned as a function, so a page listing fifty comments
+    loads and verifies the roster once rather than fifty times. Without a
+    session or a roster that verifies, ids are shown as they are: a name
+    that has not been signed for is not worth showing.
+    """
+    current = load()
+    roster = verify_roster(current.roster, current.keyring) if current and current.roster else None
+    if roster is None:
+        return lambda user_id: user_id
+    return roster.label_for
 
 
 def save(session: Session) -> Path:
