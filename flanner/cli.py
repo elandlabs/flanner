@@ -8571,7 +8571,8 @@ def _wire_messaging_agents() -> None:
 
 
 @mesh.command("hook", hidden=True)
-def mesh_hook() -> None:
+@click.option("--agent", default="", help="claude or codex, set by the installer")
+def mesh_hook(agent: str) -> None:
     """Called by Claude Code and Codex: add new messages to the session's context"""
     # Never fails and never blocks the agent: a hook that errors or hangs
     # costs the person their prompt, and a message can always wait.
@@ -8595,6 +8596,7 @@ def mesh_hook() -> None:
             agent_session=agent_session,
             event=event,
             label=cache.teammate_labels(),
+            agent=agent,
         )
     except Exception:  # noqa: BLE001 - see above
         return
@@ -8670,19 +8672,22 @@ def mesh_watch() -> None:
 
 
 @mesh.command("interrupt")
-@click.argument("choice", required=False, type=click.Choice(["tool", "prompt"]))
+@click.argument("choice", required=False, type=click.Choice(["channel", "tool", "prompt"]))
 def mesh_interrupt(choice: str | None) -> None:
-    """How agents show new messages: after tool calls, or at your next prompt"""
+    """How agents show new messages: channel, after tool calls, or at your next prompt"""
     from . import mesh_messages
 
     if choice:
         mesh_messages.set_interrupt(choice)
     current = mesh_messages.settings()["interrupt"]
-    said = (
-        "between tool calls, at most once a minute, and at your next prompt"
-        if current == "tool"
-        else "at your next prompt only"
-    )
+    said = {
+        "channel": (
+            "the moment they arrive in Claude Code started with channels, and between "
+            "tool calls in Codex"
+        ),
+        "tool": "between tool calls, at most once a minute, and at your next prompt",
+        "prompt": "at your next prompt only",
+    }[current]
     (tui.ok if choice else console.print)(f"Agents show new messages {said}")
 
 

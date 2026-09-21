@@ -656,23 +656,22 @@ MESSAGES_BLOCK = (
 )
 
 
-def _add_hook_events(path: Path) -> bool:
+def _add_hook_events(path: Path, agent: str) -> bool:
     """Merge the messaging hook into an agent's hooks table. True if changed."""
+    command = f"{MESH_HOOK_COMMAND} --agent {agent}"
     config = _existing_object(path)
     hooks = config.setdefault("hooks", {})
     changed = False
     for event in MESH_HOOK_EVENTS:
         entries = hooks.setdefault(event, [])
         present = any(
-            h.get("type") == "command" and h.get("command") == MESH_HOOK_COMMAND
+            h.get("type") == "command" and h.get("command") == command
             for entry in entries
             if isinstance(entry, dict)
             for h in entry.get("hooks", [])
         )
         if not present:
-            entries.append(
-                {"hooks": [{"type": "command", "command": MESH_HOOK_COMMAND, "timeout": 10}]}
-            )
+            entries.append({"hooks": [{"type": "command", "command": command, "timeout": 10}]})
             changed = True
     if changed:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -684,7 +683,7 @@ def ensure_claude_messaging_hooks() -> bool:
     """The messaging hook in Claude Code's user settings. True if changed."""
     from .agent_paths import claude_config_dir
 
-    return _add_hook_events(claude_config_dir() / "settings.json")
+    return _add_hook_events(claude_config_dir() / "settings.json", "claude")
 
 
 def _requirements_files() -> list[Path]:
@@ -717,8 +716,9 @@ def codex_hooks_restricted() -> bool:
 
 def codex_hook_entry() -> str:
     """The hooks.json an administrator adds to the managed hooks, as text."""
+    command = f"{MESH_HOOK_COMMAND} --agent codex"
     events = {
-        event: [{"hooks": [{"type": "command", "command": MESH_HOOK_COMMAND, "timeout": 10}]}]
+        event: [{"hooks": [{"type": "command", "command": command, "timeout": 10}]}]
         for event in MESH_HOOK_EVENTS
     }
     return json.dumps({"hooks": events}, indent=2)
@@ -737,7 +737,7 @@ def ensure_codex_messaging_hooks() -> str:
         return "not-installed"
     if codex_hooks_restricted():
         return "restricted"
-    return "installed" if _add_hook_events(codex_home() / "hooks.json") else "already"
+    return "installed" if _add_hook_events(codex_home() / "hooks.json", "codex") else "already"
 
 
 def _set_block(path: Path, block: str | None) -> bool:

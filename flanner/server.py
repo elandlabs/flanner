@@ -2283,6 +2283,71 @@ def request_action(operation: str, arguments: dict[str, Any]) -> dict[str, Any]:
     return dispatch("request_action", {"operation": operation, "arguments": arguments})
 
 
+#: How often the channel looks for new messages, and how long it waits after
+#: starting before the first look, so the client has finished initialising.
+CHANNEL_POLL_SECONDS = 2.0
+CHANNEL_START_SECONDS = 3.0
+
+
+def _channel_batch() -> list[tuple[str, dict[str, str]]]:
+    """New messages to push, or nothing. Never raises: the server must live."""
+    from . import mesh_messages
+    from . import session as cache
+    from .entitlements import MESH_MESSAGES
+
+    try:
+        held = cache.load()
+        claims = held.status().claims if held is not None else None
+        if claims is None or not claims.has_feature(MESH_MESSAGES):
+            return []
+        ensure_database()
+        return mesh_messages.for_channel(get_session(), label=cache.teammate_labels())
+    except Exception:  # noqa: BLE001 - a failed look is retried on the next
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "could not read messages for the channel", exc_info=True
+        )
+        return []
+
+
+async def _run_stdio_with_channel() -> None:
+    """Serve over stdio, declaring the Claude Code channel (plan section 10.1).
+
+    The capability is always declared; Claude Code only listens when it was
+    started with channels for this server, and the person says so with
+    `flanner mesh interrupt channel`. Until then nothing is pushed, and the
+    hook at the next prompt does the work.
+    """
+    import anyio
+    from mcp.server.stdio import stdio_server
+    from mcp.shared.message import SessionMessage
+    from mcp.types import JSONRPCMessage, JSONRPCNotification
+
+    server = _mcp._mcp_server
+    options = server.create_initialization_options(
+        experimental_capabilities={"claude/channel": {}}
+    )
+    async with stdio_server() as (read_stream, write_stream):
+
+        async def push() -> None:
+            await anyio.sleep(CHANNEL_START_SECONDS)
+            while True:
+                for content, meta in await anyio.to_thread.run_sync(_channel_batch):
+                    note = JSONRPCNotification(
+                        jsonrpc="2.0",
+                        method="notifications/claude/channel",
+                        params={"content": content, "meta": meta},
+                    )
+                    await write_stream.send(SessionMessage(message=JSONRPCMessage(note)))
+                await anyio.sleep(CHANNEL_POLL_SECONDS)
+
+        async with anyio.create_task_group() as tasks:
+            tasks.start_soon(push)
+            await server.run(read_stream, write_stream, options)
+            tasks.cancel_scope.cancel()
+
+
 def main(argv: list[str] | None = None) -> None:
     """Run the MCP server.
 
@@ -2306,7 +2371,9 @@ def main(argv: list[str] | None = None) -> None:
     crash.send_in_background()
 
     if not args.http:
-        mcp.run(transport="stdio")
+        import anyio
+
+        anyio.run(_run_stdio_with_channel)
         return
 
     from mcp.server.transport_security import TransportSecuritySettings

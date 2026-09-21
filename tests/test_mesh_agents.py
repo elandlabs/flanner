@@ -48,9 +48,9 @@ def arrived(session, n=1, *, sender="bob", body="drop the old column now?", **ex
     session.commit()
 
 
-def shown(session, event="UserPromptSubmit", agent_session="s1", now=None):
+def shown(session, event="UserPromptSubmit", agent_session="s1", now=None, agent=""):
     return mesh_messages.for_agent(
-        session, agent_session=agent_session, event=event, label=LABEL, now=now
+        session, agent_session=agent_session, event=event, label=LABEL, now=now, agent=agent
     )
 
 
@@ -209,7 +209,7 @@ def test_claude_gets_both_hooks_once_and_keeps_its_own(agents):
     assert settings["theme"] == "dark"
     for event in ("UserPromptSubmit", "PostToolUse"):
         (entry,) = settings["hooks"][event]
-        assert entry["hooks"][0]["command"] == "flanner mesh hook"
+        assert entry["hooks"][0]["command"] == "flanner mesh hook --agent claude"
 
 
 def test_a_settings_file_that_will_not_parse_is_left_alone(agents):
@@ -269,3 +269,95 @@ def test_the_instructions_come_and_go_beside_the_existing_block(agents):
     agent_hooks.set_messaging_instructions(False)
     text = (claude / "CLAUDE.md").read_text()
     assert "Messages from teammates" not in text and "nudge" in text
+
+
+# --- the Claude Code channel ------------------------------------------------------
+
+
+def test_with_channel_chosen_claude_code_skips_what_the_channel_delivered(db):
+    session = get_session()
+    arrived(session)
+    mesh_messages.set_interrupt("channel")
+
+    pushed = mesh_messages.for_channel(session, label=LABEL)
+
+    assert len(pushed) == 1 and "From @bob (Bob)" in pushed[0][0]
+    assert shown(session, agent="claude") == ""
+    assert shown(session, agent="codex", agent_session="codex-1"), (
+        "Codex has no channel, so its hook still shows it"
+    )
+    assert mesh_messages.for_channel(session, label=LABEL) == [], "pushed once"
+
+
+def test_the_channel_pushes_nothing_unless_chosen(db):
+    session = get_session()
+    arrived(session)
+    assert mesh_messages.for_channel(session, label=LABEL) == []
+
+
+def test_the_server_declares_the_channel_and_pushes_a_new_message(signed_in, tmp_path):  # noqa: F811
+    """Over real stdio, the way Claude Code talks to it."""
+    import os
+    import subprocess
+    import sys
+    import threading
+    import time
+
+    mesh_messages.set_interrupt("channel")
+    env = {**os.environ, "FLANNER_DESKTOP_NOTIFICATIONS": "off"}
+    server = subprocess.Popen(  # noqa: S603 - our own interpreter and module
+        [sys.executable, "-m", "flanner.server"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        env=env,
+    )
+    lines: list[dict] = []
+
+    def read() -> None:
+        for raw in server.stdout:
+            try:
+                lines.append(json.loads(raw))
+            except ValueError:
+                continue
+
+    threading.Thread(target=read, daemon=True).start()
+
+    def send(message: dict) -> None:
+        server.stdin.write((json.dumps(message) + "\n").encode())
+        server.stdin.flush()
+
+    def wait_for(test, seconds=30):
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline:
+            for line in list(lines):
+                if test(line):
+                    return line
+            time.sleep(0.1)
+        raise AssertionError(f"not seen in {seconds}s: {lines}")
+
+    try:
+        send(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-06-18",
+                    "capabilities": {},
+                    "clientInfo": {"name": "test", "version": "0"},
+                },
+            }
+        )
+        hello = wait_for(lambda m: m.get("id") == 1)
+        assert "claude/channel" in hello["result"]["capabilities"]["experimental"]
+        send({"jsonrpc": "2.0", "method": "notifications/initialized"})
+
+        arrived(get_session())
+
+        note = wait_for(lambda m: m.get("method") == "notifications/claude/channel")
+        assert "From @bob (Bob)" in note["params"]["content"]
+        assert note["params"]["meta"]["from_user"] == "bob"
+    finally:
+        server.kill()
+        server.wait(timeout=10)
