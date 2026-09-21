@@ -7,6 +7,7 @@ Provides command-line interface for managing the Flanner server and projects.
 from __future__ import annotations
 
 import contextlib
+import json
 import logging
 import os
 import signal
@@ -8007,7 +8008,7 @@ def peer_push(address: str, project: str | None) -> None:
 
 @cli.group()
 def mesh() -> None:
-    """Join and inspect the private network this team's devices share"""
+    """Message teammates, and the private network your devices share"""
 
 
 def _runtime(url: str = "") -> Any:
@@ -8112,6 +8113,244 @@ def mesh_leave() -> None:
     runtime.leave()
     tui.ok("Disconnected")
     console.print("Plans and local work are untouched.", style="dim")
+
+
+# --- messages between teammates (the mesh messaging plan, section 8.1) ----------
+#
+# Every command calls the same service functions the MCP tools and the web
+# UI do, so the answers match and `--json` prints them unchanged.
+
+
+def _message_call(op: str, args: dict[str, Any], *, record: bool) -> dict[str, Any]:
+    """Run a messaging operation, or print why it was refused and stop."""
+    from . import services
+
+    _open_store()
+    result = dispatch(op, args) if record else getattr(services, op)(**args)
+    if result.get("error"):
+        tui.bad(result["message"])
+        raise SystemExit(1)
+    return dict(result)
+
+
+def _who(person: dict[str, Any]) -> str:
+    return f"@{person['handle']}" if person.get("handle") else str(person["user_id"])[:12]
+
+
+def _named(person: dict[str, Any]) -> str:
+    return f"{_who(person)} ({person['name']})" if person.get("name") else _who(person)
+
+
+def _local_time(stamp: str) -> str:
+    from datetime import datetime
+
+    return datetime.fromisoformat(stamp.replace("Z", "+00:00")).astimezone().strftime("%H:%M")
+
+
+def _quoted(body: str) -> None:
+    for line in body.splitlines() or [""]:
+        # Plain text only: markup in a teammate's message is shown, never obeyed.
+        console.print(Text("  │ " + line))
+
+
+def _print_delivery(delivery: list[dict[str, Any]]) -> None:
+    for item in delivery:
+        who = _who(item["user"])
+        if item["state"] == "delivered":
+            tui.ok(f"Delivered to {who}")
+        elif item["state"] == "failed":
+            tui.bad(f"Not delivered to {who}: {item.get('message', '')}")
+        else:
+            console.print(
+                f"◌ Queued for {who} · their device is offline; it goes out when they are "
+                "next reachable",
+                style="warn",
+            )
+
+
+def _preview_then_send(op: str, args: dict[str, Any], *, yes: bool, as_json: bool) -> None:
+    preview = _message_call(op, {**args, "confirm": False}, record=False)
+    if not as_json:
+        if preview.get("workspace"):
+            count = preview["count"]
+            noun = "person" if count == 1 else "people"
+            to = f"everyone in {preview['workspace']} ({count} {noun})"
+        else:
+            to = ", ".join(_named(p) for p in preview["to"])
+        console.print(f"  To       {to}")
+        console.print(f"  Thread   {'new' if not preview.get('thread_id') else 'reply'}")
+        _quoted(preview["body"])
+        console.print()
+    if preview.get("workspace") and yes:
+        tui.bad("--yes is refused for a workspace message: it interrupts everybody.")
+        raise SystemExit(1)
+    if not yes and not click.confirm("  Send it?", default=False):
+        console.print("Not sent.", style="dim")
+        return
+    result = _message_call(op, {**args, "confirm": True}, record=True)
+    if as_json:
+        click.echo(json.dumps(result, indent=2))
+        return
+    _print_delivery(result["delivery"])
+
+
+@mesh.command("inbox")
+@click.option("--all", "include_read", is_flag=True, help="Include threads already read")
+@click.option("--json", "as_json", is_flag=True, help="Print the answer as JSON")
+def mesh_inbox(include_read: bool, as_json: bool) -> None:
+    """List messages from your team, unread first"""
+    result = _message_call("mesh_inbox", {"all": include_read}, record=False)
+    if as_json:
+        click.echo(json.dumps(result, indent=2))
+        return
+    threads = result["threads"]
+    if not threads:
+        console.print("No unread messages. Your team can reach you here.", style="dim")
+        return
+    console.print(f"  Unread  {result['unread']}\n")
+    for item in threads:
+        mark = "●" if item["unread"] else " "
+        people = item["people"]
+        if item.get("workspace"):
+            who = f"{_who(item['last']['from'])} → {item['workspace']}"
+        elif len(people) > 1:
+            who = f"{_who(people[0])} +{len(people) - 1}"
+        else:
+            who = _who(item["last"]["from"])
+        line = Text(f"  {mark}  {_local_time(item['last']['sent_at'])}  {item['short']}  ")
+        line.append(f"{who:<22}", style="value")
+        line.append(" " + item["last"]["preview"].replace("\n", " "))
+        if item.get("muted"):
+            line.append("  (muted)", style="muted")
+        console.print(line)
+    console.print(
+        '\n  flanner mesh read <id> to open one · flanner mesh reply <id> "…" to answer',
+        style="dim",
+    )
+
+
+@mesh.command("read")
+@click.argument("thread_id")
+@click.option("--json", "as_json", is_flag=True, help="Print the answer as JSON")
+def mesh_read(thread_id: str, as_json: bool) -> None:
+    """Show one conversation, with delivery for what you sent"""
+    result = _message_call("mesh_inbox", {"thread": thread_id}, record=False)
+    if as_json:
+        click.echo(json.dumps(result, indent=2))
+        return
+    thread = result["thread"]
+    audience = thread.get("workspace") or ", ".join(_who(p) for p in thread["people"])
+    console.print(f"  Thread with {audience}\n")
+    if not thread["complete"]:
+        console.print("  Earlier messages in this thread are not on this device.\n", style="dim")
+    for message in thread["messages"]:
+        head = Text(f"  {_who(message['from'])}   {_local_time(message['sent_at'])}")
+        if "delivery" in message:
+            parts = []
+            for item in message["delivery"]:
+                state = item["state"]
+                at = f" {_local_time(item['at'])}" if item.get("at") else ""
+                parts.append(f"{state} to {_who(item['user'])}{at}")
+            head.append("   " + " · ".join(parts), style="dim")
+        console.print(head)
+        _quoted(message["body"])
+        console.print()
+    console.print(
+        f"  Messages here are deleted after {result['retention_days']} days.", style="dim"
+    )
+    console.print(f'  flanner mesh reply {thread["short"]} "…" to answer', style="dim")
+
+
+@mesh.command("send")
+@click.argument("words", nargs=-1, required=True)
+@click.option("--yes", is_flag=True, help="Send without asking (not for workspace messages)")
+@click.option("--json", "as_json", is_flag=True, help="Print the answer as JSON")
+def mesh_send(words: tuple[str, ...], yes: bool, as_json: bool) -> None:
+    """Message one or more teammates: flanner mesh send ben chen "text\""""
+    if len(words) < 2:
+        raise click.UsageError("name at least one teammate, then the message in quotes")
+    _preview_then_send(
+        "mesh_send", {"to": list(words[:-1]), "body": words[-1]}, yes=yes, as_json=as_json
+    )
+
+
+@mesh.command("broadcast")
+@click.argument("body")
+@click.option(
+    "--workspace", "workspace_id", default="", help="Which workspace (default: this repo's)"
+)
+@click.option("--json", "as_json", is_flag=True, help="Print the answer as JSON")
+def mesh_broadcast(body: str, workspace_id: str, as_json: bool) -> None:
+    """Message everyone in a workspace; always asks first"""
+    if not workspace_id:
+        proj = _resolve_project_or_cwd(_require_session(), None)
+        workspace_id = (proj.workspace_id or "") if proj is not None else ""
+    if not workspace_id:
+        raise click.UsageError("say which workspace with --workspace")
+    _preview_then_send(
+        "mesh_send", {"workspace": workspace_id, "body": body}, yes=False, as_json=as_json
+    )
+
+
+@mesh.command("reply")
+@click.argument("thread_id")
+@click.argument("body")
+@click.option("--yes", is_flag=True, help="Send without asking")
+@click.option("--json", "as_json", is_flag=True, help="Print the answer as JSON")
+def mesh_reply(thread_id: str, body: str, yes: bool, as_json: bool) -> None:
+    """Answer everyone on a thread"""
+    _preview_then_send("mesh_reply", {"thread": thread_id, "body": body}, yes=yes, as_json=as_json)
+
+
+@mesh.command("mute")
+@click.argument("handle")
+@click.option(
+    "--for", "until", default="", help="How long, like 8h or 1d (default: until unmuted)"
+)
+@click.option("--off", is_flag=True, help="Unmute")
+def mesh_mute(handle: str, until: str, off: bool) -> None:
+    """Keep a teammate's messages from interrupting you, on this device"""
+    result = _message_call(
+        "mesh_mute", {"handle": handle, "until": until, "off": off}, record=True
+    )
+    if off:
+        tui.ok(f"Unmuted {handle if handle.startswith('@') else '@' + handle}")
+        return
+    for item in result["muted"]:
+        if item["handle"] == handle.lstrip("@") or item["user_id"] == handle:
+            ends = f" until {_local_time(item['until'])}" if item.get("until") else ""
+            tui.ok(f"Muted @{item['handle']}{ends}")
+            console.print(
+                "Their messages still arrive and are listed; they never interrupt.", style="dim"
+            )
+
+
+@mesh.command("quiet-hours")
+@click.argument("spec", required=False, default="")
+@click.option("--json", "as_json", is_flag=True, help="Print the answer as JSON")
+def mesh_quiet_hours(spec: str, as_json: bool) -> None:
+    """Show or set quiet hours on this device: 22:00-07:00, or off"""
+    result = _message_call("mesh_quiet_hours", {"set": spec}, record=bool(spec))
+    if as_json:
+        click.echo(json.dumps(result, indent=2))
+        return
+    if not result["enabled"]:
+        if spec:
+            tui.ok("Quiet hours off on this device")
+        else:
+            console.print("  Quiet hours   off")
+            console.print("  Set them with: flanner mesh quiet-hours 22:00-07:00", style="dim")
+        return
+    window = f"{result['start']}–{result['end']}"
+    if spec:
+        tui.ok(f"Quiet hours {window}, every day, on this device ({result['timezone']})")
+        console.print(
+            f"  Messages still arrive; agents and notifications stay quiet until {result['end']}.",
+            style="dim",
+        )
+    else:
+        state = "on now" if result["active"] else "not now"
+        console.print(f"  Quiet hours   {window} ({result['timezone']}), {state}")
 
 
 # --- history, diff and why ------------------------------------------------------

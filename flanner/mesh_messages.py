@@ -70,6 +70,11 @@ def now_utc() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
+def stamp(moment: datetime) -> str:
+    """A naive UTC moment as the ISO text every answer uses."""
+    return _stamp(moment)
+
+
 def _stamp(moment: datetime) -> str:
     return moment.replace(tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
 

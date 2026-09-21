@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from . import identity
-from .entitlements import EntitlementStore, Verdict, verify_roster
+from .entitlements import EntitlementStore, Roster, Verdict, verify_roster
 
 SESSION_FILENAME = "session.json"
 DEFAULT_ENDPOINT = "https://api.flanner.io"
@@ -116,6 +116,15 @@ def load() -> Session | None:
         return None
 
 
+def current_roster(current: Any = None) -> Roster | None:
+    """The signed roster this device holds, if it verifies (grace allowed)."""
+    held = current if current is not None else load()
+    raw = getattr(held, "roster", "") if held is not None else ""
+    if not raw:
+        return None
+    return verify_roster(raw, dict(getattr(held, "keyring", {}) or {}))
+
+
 def teammate_labels() -> Callable[[str], str]:
     """A function turning a user id into `@ben (Ben Otieno)`.
 
@@ -124,8 +133,7 @@ def teammate_labels() -> Callable[[str], str]:
     session or a roster that verifies, ids are shown as they are: a name
     that has not been signed for is not worth showing.
     """
-    current = load()
-    roster = verify_roster(current.roster, current.keyring) if current and current.roster else None
+    roster = current_roster()
     if roster is None:
         return lambda user_id: user_id
     return roster.label_for

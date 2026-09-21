@@ -192,6 +192,8 @@ ALLOWED = {
         "actions",
         "requested_actions",
         "skills_learn",
+        "mesh_messages",
+        "mesh_delivery",
     },
     "claude_integration": set(),
     # One answer to "is flanner set up here?", shown by `status` and by the
@@ -282,6 +284,7 @@ ALLOWED = {
         # the agent gets. Same layer as `plan_ops`, already here.
         "memory_ops",
         "ipc",
+        "mesh_messages",
         "services",
         "freshness",
         "claude_integration",

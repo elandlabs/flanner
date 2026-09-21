@@ -1368,6 +1368,113 @@ def decide_action(
         return {"error": True, "message": str(e)}
 
 
+# --- messages between members (the mesh messaging plan) -----------------------
+#
+# One function per operation (plan section 6.1). Each returns the answer
+# the plan lists, or `{"error": True, "code", "message"}`; none raises.
+
+
+def _messaging(action: Callable[[Any], dict[str, Any]]) -> dict[str, Any]:
+    from .mesh_messages import MessageError
+
+    try:
+        ensure_database()
+        return action(get_session())
+    except MessageError as e:
+        return e.to_dict()
+    except Exception as e:  # noqa: BLE001 - the seam returns, never raises
+        return {"error": True, "message": str(e)}
+
+
+def mesh_inbox(thread: str = "", all: bool = False, limit: int = 50) -> dict[str, Any]:  # noqa: A002
+    """Unread threads, or with `thread` one thread, which it marks read."""
+    from . import mesh_delivery, mesh_messages
+
+    def run(session: Any) -> dict[str, Any]:
+        _, roster, claims = mesh_delivery.context(sending=False)
+        mesh_messages.expire(session, roster.message_retention_days)
+        view = mesh_delivery.person_view(roster)
+        if thread:
+            return mesh_messages.thread(
+                session,
+                mesh_messages.find_thread(session, thread),
+                me=claims.user_id,
+                person=view,
+                retention_days=roster.message_retention_days,
+            )
+        answer = mesh_messages.inbox(
+            session, me=claims.user_id, person=view, include_read=all, limit=limit
+        )
+        return {**answer, "retention_days": roster.message_retention_days}
+
+    return _messaging(run)
+
+
+def mesh_send(
+    body: str,
+    to: list[str] | None = None,
+    workspace: str = "",
+    refs: list[dict[str, Any]] | None = None,
+    confirm: bool = False,
+) -> dict[str, Any]:
+    """Preview a message, or with `confirm` send it and report delivery."""
+    from . import mesh_delivery
+
+    def run(session: Any) -> dict[str, Any]:
+        if confirm:
+            mesh_delivery.retry_due(session)
+        return mesh_delivery.send(
+            session, body=body, to=to, workspace=workspace or None, refs=refs, confirm=confirm
+        )
+
+    return _messaging(run)
+
+
+def mesh_reply(thread: str, body: str, confirm: bool = False) -> dict[str, Any]:
+    """Preview a reply to everyone on a thread, or with `confirm` send it."""
+    from . import mesh_delivery
+
+    def run(session: Any) -> dict[str, Any]:
+        if confirm:
+            mesh_delivery.retry_due(session)
+        return mesh_delivery.send(session, body=body, thread=thread, confirm=confirm)
+
+    return _messaging(run)
+
+
+def mesh_mute(handle: str, until: str = "", off: bool = False) -> dict[str, Any]:
+    """Mute a sender on this device, until a time or until unmuted."""
+    from . import mesh_delivery, mesh_messages
+
+    def run(session: Any) -> dict[str, Any]:
+        _, roster, claims = mesh_delivery.context(sending=False)
+        (user,) = mesh_messages.resolve_people(roster, [handle], claims.user_id)
+        ends = mesh_messages.parse_duration(until) if until and not off else None
+        mesh_messages.mute(session, user, until=ends, off=off)
+        view = mesh_delivery.person_view(roster)
+        return {
+            "muted": [
+                {
+                    "user_id": muted_user,
+                    "handle": view(muted_user)["handle"],
+                    "until": mesh_messages.stamp(moment) if moment else None,
+                }
+                for muted_user, moment in sorted(mesh_messages.muted(session).items())
+            ]
+        }
+
+    return _messaging(run)
+
+
+def mesh_quiet_hours(set: str = "") -> dict[str, Any]:  # noqa: A002 - the plan's field name
+    """Report quiet hours on this device, or set them (`22:00-07:00`, `off`)."""
+    from . import mesh_messages
+
+    return _messaging(
+        lambda _session: mesh_messages.set_quiet_hours(set) if set else mesh_messages.quiet_hours()
+    )
+
+
 REGISTRY: dict[str, Callable[..., Any]] = {
     "create_project": create_project,
     "initialize_project": initialize_project,
@@ -1401,6 +1508,10 @@ REGISTRY: dict[str, Callable[..., Any]] = {
     "skills_revise": skills_revise,
     "request_action": request_action,
     "decide_action": decide_action,
+    "mesh_send": mesh_send,
+    "mesh_reply": mesh_reply,
+    "mesh_mute": mesh_mute,
+    "mesh_quiet_hours": mesh_quiet_hours,
 }
 
 #: Operations that write their own history, so dispatch does not add a row.

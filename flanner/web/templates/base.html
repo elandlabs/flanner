@@ -92,10 +92,13 @@
          way. Hiding it also made the sidebar itself inconsistent: any page
          that did not compute the signed-in flag dropped the entry. #}
       <div class="rail-group">Team</div>
-      <a href="/mesh" {% if here.startswith('/mesh') %}class="active" aria-current="page"{% endif %}>
+      <a href="/mesh" {% if here.startswith('/mesh') and not here.startswith('/mesh/messages') %}class="active" aria-current="page"{% endif %}>
         {{ ico.icon('mesh') }} Mesh
         {% if nav_peers %}<span class="n tnum">{{ nav_peers }}</span>
         {% elif not nav_signed_in %}<span class="n">not joined</span>{% endif %}</a>
+      <a href="/mesh/messages" {% if here.startswith('/mesh/messages') %}class="active" aria-current="page"{% endif %}>
+        {{ ico.icon('members') }} Messages
+        {% if nav_messages %}<span class="n tnum">{{ nav_messages }}</span>{% endif %}</a>
       <a href="/review" {% if here.startswith('/review') %}class="active" aria-current="page"{% endif %}>
         {{ ico.icon('review') }} Review
         {% if nav_review %}<span class="n tnum">{{ nav_review }}</span>{% endif %}</a>

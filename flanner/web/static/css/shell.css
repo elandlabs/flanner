@@ -1882,3 +1882,18 @@ code { overflow-wrap: anywhere; }
    the box's middle, which is what `vertical-align` above is for. In a flex
    row the box centres it and the nudge would double, so it is undone. */
 .rail-nav a .ico, .btn .ico, .check .ico { vertical-align: 0; }
+
+/* Messages (the mesh messaging plan, section 8.2). A teammate's message is
+   a quoted block, visibly not the app speaking; plain text, wrapped as sent. */
+.msg-quote { margin: 6px 0; padding: 6px 12px; border-left: 3px solid var(--accent);
+  background: var(--accent-soft); border-radius: var(--r-sm); white-space: pre-wrap;
+  overflow-wrap: anywhere; }
+.msg { margin-bottom: 14px; }
+.msg.mine .msg-quote { border-left-color: var(--border-firm); background: var(--card-sunken); }
+.msg-head { font-size: 13px; color: var(--text-muted, inherit); }
+.msg-row { display: grid; grid-template-columns: 16px minmax(120px, 220px) 1fr auto; gap: 10px;
+  padding: 10px 16px; border-bottom: 1px solid var(--divider); color: inherit; text-decoration: none; }
+.msg-row:last-child { border-bottom: 0; }
+.msg-row.unread .msg-who { font-weight: 600; }
+.msg-preview { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.msg-dot { color: var(--accent); }

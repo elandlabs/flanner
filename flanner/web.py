@@ -245,6 +245,7 @@ templates.env.globals["nav_plans"] = None
 templates.env.globals["nav_attention"] = 0
 templates.env.globals["nav_signed_in"] = False
 templates.env.globals["nav_peers"] = 0
+templates.env.globals["nav_messages"] = 0
 
 
 def _cli_only(action: str) -> dict[str, str]:
@@ -861,6 +862,15 @@ def _review_rows(session: Any) -> list[dict[str, Any]]:
     return rows
 
 
+def _unread_messages(session: Any) -> int:
+    from .mesh_messages import unread_count
+
+    try:
+        return unread_count(session)
+    except Exception:  # noqa: BLE001 - a sidebar count must never break a page
+        return 0
+
+
 def _nav(session: Any) -> dict[str, Any]:
     """Counts the sidebar shows on every page.
 
@@ -886,6 +896,7 @@ def _nav(session: Any) -> dict[str, Any]:
         # and the reason the whole Team group hides itself in that case.
         "nav_signed_in": held is not None,
         "nav_peers": len(held.device_keys or {}) if held else 0,
+        "nav_messages": _unread_messages(session),
         "nav_review": count_review_subjects(session),
         # Cheap, unlike freshness: memory counts are two indexed
         # queries and touch no repository, so this one can be here.
@@ -1736,7 +1747,45 @@ def _catalog_snapshot(session: Any) -> dict[str, str]:
         str(pid): f"{updated}|{current}|{counts.get(pid, 0)}" for pid, updated, current in rows
     }
     signatures["mesh"] = mesh
+    signatures["messages"] = _messages_signature(session)
     return signatures
+
+
+def _messages_signature(session: Any) -> str:
+    """What changed among messages: a count and the newest arrival."""
+    from .database import MeshDeliveryModel, MeshMessageModel
+
+    try:
+        newest = session.query(func.max(MeshMessageModel.received_at)).scalar()
+        count = session.query(func.count(MeshMessageModel.message_id)).scalar()
+        delivered = session.query(func.max(MeshDeliveryModel.delivered_at)).scalar()
+    except Exception:  # noqa: BLE001 - live updates must not fail on a missing table
+        return "none"
+    return f"{count}|{newest}|{delivered}"
+
+
+def _arrival_toast(session: Any) -> str:
+    """Who the newest unread message is from, unless it should not interrupt.
+
+    Names the sender only, never the body: a toast is on screen for anyone
+    looking (plan section 8.2). Nothing during quiet hours or from a muted
+    sender (sections 7.1, 7.2).
+    """
+    from . import mesh_messages
+    from . import session as cache
+    from .database import MeshMessageModel
+
+    if mesh_messages.quiet_hours()["active"]:
+        return ""
+    newest = (
+        session.query(MeshMessageModel)
+        .filter(MeshMessageModel.outgoing.is_(False), MeshMessageModel.read_at.is_(None))
+        .order_by(MeshMessageModel.received_at.desc())
+        .first()
+    )
+    if newest is None or newest.author_user_id in mesh_messages.muted(session):
+        return ""
+    return f"{cache.teammate_labels()(newest.author_user_id)} sent a message"
 
 
 @app.get("/events")
@@ -1773,8 +1822,15 @@ async def events(request: Request) -> StreamingResponse:
             removed = sorted(set(seen) - set(now))
             changed = sorted(k for k in now.keys() & seen.keys() if now[k] != seen[k])
             if added or removed or changed:
+                arrived = (
+                    "messages" in changed
+                    and now["messages"].split("|")[0] > seen.get("messages", "").split("|")[0]
+                )
                 seen = now
-                payload = json.dumps({"added": added, "removed": removed, "changed": changed})
+                news: dict[str, Any] = {"added": added, "removed": removed, "changed": changed}
+                if arrived:
+                    news["message_from"] = await run_in_threadpool(_arrival_toast, session)
+                payload = json.dumps(news)
                 yield f"event: catalog\ndata: {payload}\n\n"
             else:
                 # A comment frame. Keeps the connection warm and lets the
@@ -2646,7 +2702,7 @@ def _sharing(project: Any) -> dict[str, Any]:
 
 
 @app.get("/settings", response_class=HTMLResponse)
-async def settings_page(request: Request) -> HTMLResponse:
+async def settings_page(request: Request, said: str = "") -> HTMLResponse:
     """What this install is configured to do. Read-mostly by design.
 
     Anything that would change a project belongs to that project's page;
@@ -2671,6 +2727,8 @@ async def settings_page(request: Request) -> HTMLResponse:
             "version": __version__,
             "agents": _agent_rows(found, used),
             "team": _team(),
+            "messaging": _messages_settings(session),
+            "said": said,
             "storage": _storage_view(session),
             **_nav(session),
         },
@@ -2813,6 +2871,253 @@ async def mesh_pushes_form(accept: str = Form(...), back: str = Form("/mesh")) -
             else "This device now refuses pushes. It still serves every read."
         )
     return RedirectResponse(f"{where}?said={quote(said)}", status_code=303)
+
+
+# --- messages between teammates (the mesh messaging plan, section 8.2) ---------
+#
+# Every route calls the same service function the CLI and the MCP tools do.
+# Posts are recorded by `record_direct_writes`, so none is recorded here.
+
+
+def _messaging_context() -> dict[str, Any]:
+    """Who can be messaged, from the signed roster, for the new-message form."""
+    from . import session as cache
+
+    held = cache.load()
+    roster = cache.current_roster(held)
+    if held is None or roster is None:
+        return {"teammates": [], "workspaces": [], "me": None}
+    people = {
+        (m.handle, m.name)
+        for members in roster.workspaces.values()
+        for m in members
+        if m.user_id != held.user_id and m.handle
+    }
+    return {
+        "teammates": [{"handle": h, "name": n} for h, n in sorted(people)],
+        "workspaces": sorted(roster.workspaces),
+        "me": held.user_id,
+    }
+
+
+def _who(person: dict[str, Any]) -> str:
+    if person.get("name") and person.get("handle"):
+        return f"{person['name']} (@{person['handle']})"
+    return f"@{person['handle']}" if person.get("handle") else str(person.get("user_id", ""))
+
+
+templates.env.globals["who"] = _who
+
+
+def _delivery_sentence(delivery: list[dict[str, Any]]) -> str:
+    """`Delivered to Ben Otieno (@ben) · Queued for Chen Wu (@chen)`."""
+    parts = []
+    for item in delivery:
+        who = _who(item["user"])
+        if item["state"] == "delivered":
+            parts.append(f"Delivered to {who}")
+        elif item["state"] == "failed":
+            parts.append(f"Not delivered to {who}: {item.get('message', '')}")
+        else:
+            parts.append(f"Queued for {who}; it goes out when their device is reachable")
+    return " · ".join(parts) or "Sent."
+
+
+def _handles(raw: str) -> list[str]:
+    return [part for part in raw.replace(",", " ").split() if part]
+
+
+@app.get("/mesh/messages", response_class=HTMLResponse)
+async def messages_page(request: Request, said: str = "") -> HTMLResponse:
+    """Threads from teammates, unread first, and a form to start one."""
+    from . import services
+
+    ensure_db()
+    session = get_session()
+    inbox = await run_in_threadpool(services.mesh_inbox, "", True)
+    return templates.TemplateResponse(
+        request,
+        "mesh_messages.html",
+        {
+            **_nav(session),
+            **_messaging_context(),
+            "request": request,
+            "inbox": inbox,
+            "said": said,
+            "draft": {},
+        },
+    )
+
+
+@app.get("/mesh/messages/{thread_id}", response_class=HTMLResponse)
+async def message_thread_page(request: Request, thread_id: str, said: str = "") -> HTMLResponse:
+    """One conversation, oldest first. Opening it marks it read."""
+    from . import services
+
+    ensure_db()
+    session = get_session()
+    found = await run_in_threadpool(services.mesh_inbox, thread_id)
+    return templates.TemplateResponse(
+        request,
+        "mesh_thread.html",
+        {**_nav(session), "request": request, "found": found, "said": said, "draft": ""},
+        status_code=404 if found.get("code") == "not_found" else 200,
+    )
+
+
+@app.post("/mesh/messages", response_class=HTMLResponse)
+async def messages_send_form(
+    request: Request,
+    body: str = Form(""),
+    to: str = Form(""),
+    workspace: str = Form(""),
+    confirm: str = Form(""),
+) -> Response:
+    """Review a new message, then send it on a plain yes."""
+    from . import services
+
+    ensure_db()
+    session = get_session()
+    args: dict[str, Any] = {"body": body}
+    if workspace:
+        args["workspace"] = workspace
+    else:
+        args["to"] = _handles(to)
+    result = await run_in_threadpool(lambda: services.mesh_send(**args, confirm=confirm == "1"))
+    if confirm == "1" and not result.get("error"):
+        said = _delivery_sentence(result["delivery"])
+        return RedirectResponse(
+            f"/mesh/messages/{result['short']}?said={quote(said)}", status_code=303
+        )
+    if result.get("error"):
+        actions.failed(result["message"])
+    inbox = await run_in_threadpool(services.mesh_inbox, "", True)
+    return templates.TemplateResponse(
+        request,
+        "mesh_messages.html",
+        {
+            **_nav(session),
+            **_messaging_context(),
+            "request": request,
+            "inbox": inbox,
+            "said": "",
+            "draft": {"body": body, "to": to, "workspace": workspace},
+            "preview": None if result.get("error") else result,
+            "refused": result.get("message") if result.get("error") else "",
+        },
+        status_code=400 if result.get("error") else 200,
+    )
+
+
+@app.post("/mesh/messages/{thread_id}/reply", response_class=HTMLResponse)
+async def message_reply_form(
+    request: Request, thread_id: str, body: str = Form(""), confirm: str = Form("")
+) -> Response:
+    """Review a reply to everyone on the thread, then send it on a plain yes."""
+    from . import services
+
+    ensure_db()
+    session = get_session()
+    result = await run_in_threadpool(
+        lambda: services.mesh_reply(thread_id, body, confirm=confirm == "1")
+    )
+    if confirm == "1" and not result.get("error"):
+        said = _delivery_sentence(result["delivery"])
+        return RedirectResponse(f"/mesh/messages/{thread_id}?said={quote(said)}", status_code=303)
+    if result.get("error"):
+        actions.failed(result["message"])
+    found = await run_in_threadpool(services.mesh_inbox, thread_id)
+    return templates.TemplateResponse(
+        request,
+        "mesh_thread.html",
+        {
+            **_nav(session),
+            "request": request,
+            "found": found,
+            "said": "",
+            "draft": body,
+            "preview": None if result.get("error") else result,
+            "refused": result.get("message") if result.get("error") else "",
+        },
+        status_code=400 if result.get("error") else 200,
+    )
+
+
+def _back_to(back: str, default: str) -> str:
+    """A path on this site only, for a Location header."""
+    safe = back.startswith("/") and not any(bad in back for bad in ("//", ":", chr(92)))
+    return back if safe else default
+
+
+@app.post("/mesh/messages/mute")
+async def message_mute_form(
+    handle: str = Form(...),
+    until: str = Form(""),
+    off: str = Form(""),
+    back: str = Form("/settings#tab-team"),
+) -> RedirectResponse:
+    """Mute or unmute a teammate on this device."""
+    from . import services
+
+    result = await run_in_threadpool(lambda: services.mesh_mute(handle, until, off == "1"))
+    if result.get("error"):
+        said = result["message"]
+        actions.failed(said)
+    else:
+        said = f"Unmuted @{handle.lstrip('@')}." if off == "1" else f"Muted @{handle.lstrip('@')}."
+    where = _back_to(back, "/settings")
+    path, _, anchor = where.partition("#")
+    return RedirectResponse(
+        f"{path}?said={quote(said)}" + (f"#{anchor}" if anchor else ""), status_code=303
+    )
+
+
+@app.post("/mesh/messages/quiet-hours")
+async def message_quiet_hours_form(
+    enabled: str = Form(""), start: str = Form(""), end: str = Form("")
+) -> RedirectResponse:
+    """Quiet hours on this device, from the Settings page."""
+    from . import services
+
+    spec = f"{start}-{end}" if enabled == "on" else "off"
+    result = await run_in_threadpool(services.mesh_quiet_hours, spec)
+    if result.get("error"):
+        said = result["message"]
+        actions.failed(said)
+    elif result["enabled"]:
+        said = f"Quiet hours {result['start']}–{result['end']} on this device."
+    else:
+        said = "Quiet hours off on this device."
+    return RedirectResponse(f"/settings?said={quote(said)}#tab-team", status_code=303)
+
+
+def _messages_settings(session: Any) -> dict[str, Any]:
+    """The Messages group on the Team tab: quiet hours, mutes, handle, retention."""
+    from . import mesh_messages
+    from . import session as cache
+
+    held = cache.load()
+    roster = cache.current_roster(held)
+    labels = cache.teammate_labels()
+    me = None
+    if roster is not None and held is not None:
+        me = next(
+            (m for ws in roster.workspaces.values() for m in ws if m.user_id == held.user_id),
+            None,
+        )
+    return {
+        "quiet": mesh_messages.quiet_hours(),
+        "muted": [
+            {
+                "label": labels(user),
+                "handle": labels(user).split(" ", 1)[0].lstrip("@"),
+                "until": mesh_messages.stamp(until) if until else None,
+            }
+            for user, until in sorted(mesh_messages.muted(session).items())
+        ],
+        "handle": me.handle if me else "",
+        "retention_days": roster.message_retention_days if roster else None,
+    }
 
 
 @app.get("/integrations", response_class=HTMLResponse)

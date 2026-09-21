@@ -1466,6 +1466,10 @@ onPage(function () {
         let msg;
         try { msg = JSON.parse(event.data); } catch (e) { return; }
         const touched = [].concat(msg.added || [], msg.changed || [], msg.removed || []);
+        // The sender's name only, never the body: a toast is on screen for
+        // anyone looking. The server leaves it out during quiet hours and
+        // for a muted sender.
+        if (msg.message_from) showNotification(msg.message_from, 'info');
         if (touched.length) refresh(touched);
     }
 

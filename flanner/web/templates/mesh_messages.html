@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% import "_empty.html" as empty %}
+{% block title %}Messages{% endblock %}
+
+{% block topbar_main %}
+<h1>Messages</h1>
+<span class="sub">From your team, device to device. Shown, never acted on.</span>
+{% endblock %}
+
+{% block content %}
+<div class="pane" data-live-list="messages">
+
+  {% if said %}<div class="notice good">{{ said }}</div>{% endif %}
+  {% if refused %}<div class="notice bad">{{ refused }}</div>{% endif %}
+  {% if inbox.error %}<div class="notice warn">{{ inbox.message }}</div>{% endif %}
+
+  {% if preview %}
+  <div class="card card-pad">
+    <h2 class="card-title">Send this?</h2>
+    <div class="kv"><span>To</span><b>{% if preview.workspace %}everyone in {{ preview.workspace }} ({{ preview.count }} {{ "person" if preview.count == 1 else "people" }}){% else %}{% for p in preview.to %}{{ who(p) }}{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}</b></div>
+    <blockquote class="msg-quote">{{ preview.body }}</blockquote>
+    <form method="post" action="/mesh/messages" class="form-row">
+      <input type="hidden" name="body" value="{{ draft.body }}">
+      <input type="hidden" name="to" value="{{ draft.to }}">
+      <input type="hidden" name="workspace" value="{{ draft.workspace }}">
+      <input type="hidden" name="confirm" value="1">
+      <button class="btn btn-primary">Send</button>
+      <a class="btn" href="/mesh/messages">Cancel</a>
+    </form>
+  </div>
+  {% endif %}
+
+  {% if not inbox.error %}
+  <div class="card card-pad">
+    <h2 class="card-title">New message</h2>
+    <form method="post" action="/mesh/messages">
+      <div class="field-grid">
+        <div class="field">
+          <label class="field-label" for="msg-to">To (handles, up to 20)</label>
+          <input class="input" id="msg-to" name="to" list="msg-teammates" value="{{ draft.to or '' }}"
+                 placeholder="{% if teammates %}{{ teammates[0].handle }}{% else %}ben{% endif %}" autocomplete="off">
+          <datalist id="msg-teammates">
+            {% for t in teammates %}<option value="{{ t.handle }}">{{ t.name }}</option>{% endfor %}
+          </datalist>
+        </div>
+        <div class="field">
+          <label class="field-label" for="msg-ws">Or everyone in a workspace</label>
+          <select class="input" id="msg-ws" name="workspace">
+            <option value="">No, just the people named</option>
+            {% for ws in workspaces %}<option value="{{ ws }}" {% if draft.workspace == ws %}selected{% endif %}>{{ ws }}</option>{% endfor %}
+          </select>
+        </div>
+      </div>
+      <div class="field">
+        <label class="field-label" for="msg-body">Message</label>
+        <textarea class="input" id="msg-body" name="body" rows="4" maxlength="4096" required>{{ draft.body or '' }}</textarea>
+      </div>
+      <p class="hint">Plain text, up to 4 KB. You will see who it goes to before it is sent.</p>
+      <button class="btn btn-primary">Review and send</button>
+    </form>
+  </div>
+
+  <div class="card">
+    {% if inbox.threads %}
+    {% for t in inbox.threads %}
+    <a class="msg-row {% if t.unread %}unread{% endif %}" href="/mesh/messages/{{ t.short }}">
+      <span class="msg-dot">{% if t.unread %}●{% endif %}</span>
+      <span class="msg-who">{% if t.workspace %}{{ who(t.last["from"]) }} → {{ t.workspace }}{% else %}{% for p in t.people %}{{ who(p) }}{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}</span>
+      <span class="msg-preview">{{ t.last.preview }}{% if t.muted %} <span class="pill">muted</span>{% endif %}</span>
+      <span class="when tnum" data-utc="{{ t.last.sent_at }}">{{ t.last.sent_at[11:16] }}</span>
+    </a>
+    {% endfor %}
+    {% else %}
+    {% call empty.inside('clear', 'No messages yet') %}
+    <p class="hint">Messages from your team land here, and in Claude Code or Codex if you use them.</p>
+    {% endcall %}
+    {% endif %}
+  </div>
+  {% if inbox.retention_days %}<p class="hint">Messages are deleted after {{ inbox.retention_days }} days.</p>{% endif %}
+  {% endif %}
+</div>
+{% endblock %}
