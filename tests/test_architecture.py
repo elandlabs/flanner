@@ -139,6 +139,8 @@ ALLOWED = {
     "peer": {
         "mesh_messages",
         "notify",
+        # Where the web UI listens, so a notification can open the thread.
+        "ipc",
         "observe",
         "entitlements",
         "identity",
@@ -204,6 +206,9 @@ ALLOWED = {
         "skills_learn",
         "mesh_messages",
         "mesh_delivery",
+        # The cached session, a local file: who is signed in, for the names
+        # messages are shown under.
+        "session",
     },
     "claude_integration": {"agent_paths"},
     # One answer to "is flanner set up here?", shown by `status` and by the

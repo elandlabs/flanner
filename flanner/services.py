@@ -1475,6 +1475,20 @@ def mesh_quiet_hours(set: str = "") -> dict[str, Any]:  # noqa: A002 - the plan'
     )
 
 
+def mesh_channel_batch() -> list[tuple[str, dict[str, str]]]:
+    """Messages for the Claude Code channel to push now; empty when off."""
+    from . import mesh_delivery, mesh_messages
+    from . import session as cache
+    from .mesh_messages import MessageError
+
+    try:
+        mesh_delivery.context(sending=False)
+    except MessageError:
+        return []
+    ensure_database()
+    return mesh_messages.for_channel(get_session(), label=cache.teammate_labels())
+
+
 REGISTRY: dict[str, Callable[..., Any]] = {
     "create_project": create_project,
     "initialize_project": initialize_project,

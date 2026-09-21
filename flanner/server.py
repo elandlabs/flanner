@@ -2291,17 +2291,10 @@ CHANNEL_START_SECONDS = 3.0
 
 def _channel_batch() -> list[tuple[str, dict[str, str]]]:
     """New messages to push, or nothing. Never raises: the server must live."""
-    from . import mesh_messages
-    from . import session as cache
-    from .entitlements import MESH_MESSAGES
+    from .services import mesh_channel_batch
 
     try:
-        held = cache.load()
-        claims = held.status().claims if held is not None else None
-        if claims is None or not claims.has_feature(MESH_MESSAGES):
-            return []
-        ensure_database()
-        return mesh_messages.for_channel(get_session(), label=cache.teammate_labels())
+        return mesh_channel_batch()
     except Exception:  # noqa: BLE001 - a failed look is retried on the next
         import logging
 

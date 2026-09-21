@@ -522,9 +522,28 @@ def _serve_message(
 
         label = roster.label_for(caller.user_id)
         threading.Thread(
-            target=notify.desktop, args=("flanner", f"{label} sent a message"), daemon=True
+            target=notify.desktop,
+            args=("flanner", f"{label} sent a message", _thread_link(envelope, blob)),
+            daemon=True,
         ).start()
     return {"result": outcome}
+
+
+def _thread_link(envelope: dict[str, Any], payload: str) -> str:
+    """The thread in this device's web UI, if it is running, for a click."""
+    import json
+
+    from . import ipc, mesh_messages
+
+    info = ipc.read_daemon_info()
+    if info is None:
+        return ""
+    try:
+        thread = str(json.loads(payload).get("thread_id") or envelope["artifact_id"])
+    except (ValueError, KeyError, TypeError):
+        return ""
+    short = mesh_messages.short_ids([thread])[thread]
+    return f"http://127.0.0.1:{info['port']}/mesh/messages/{short}"
 
 
 def _current(current: Any) -> bool:
