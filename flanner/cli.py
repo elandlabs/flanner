@@ -2384,6 +2384,13 @@ def _messages_row() -> Text | None:
     quiet = mesh_messages.quiet_hours()
     if quiet["active"]:
         parts.append(f"quiet until {quiet['end']}")
+    parts.append(
+        {
+            "channel": "agents: Claude Code channel, Codex between tool calls",
+            "tool": "agents: between tool calls and at your next prompt",
+            "prompt": "agents: at your next prompt",
+        }[mesh_messages.settings()["interrupt"]]
+    )
     row = tui.dot("ok", label="receiving")
     row.append("  " + f" {tui.MIDDOT} ".join(parts), style="muted")
     return row
@@ -6850,7 +6857,7 @@ def login(code: str, endpoint: str | None, label: str | None) -> None:
     _print_entitlement(current)
     _what_next(current)
     _offer_autostart()
-    _wire_messaging_agents()
+    _suggest_messaging_setup()
 
 
 @cli.command()
@@ -8520,6 +8527,26 @@ def mesh_quiet_hours(spec: str, as_json: bool) -> None:
 
 
 # --- messages inside agent sessions (the mesh messaging plan, section 10) --------
+
+
+def _suggest_messaging_setup() -> None:
+    """After login, say how to see messages inside agents; change nothing.
+
+    Logging in is about this device, not about the person's agents, so it
+    does not write into Claude Code's or Codex's configuration. `flanner
+    init`, the setup step, does.
+    """
+    from . import session as cache
+    from .entitlements import MESH_MESSAGES
+
+    held = cache.load()
+    claims = held.status().claims if held is not None else None
+    if claims is not None and claims.has_feature(MESH_MESSAGES):
+        console.print(
+            f"  To see teammates' messages inside Claude Code and Codex, run "
+            f"{tui.command('flanner init')}.",
+            style="muted",
+        )
 
 
 def _wire_messaging_agents() -> None:

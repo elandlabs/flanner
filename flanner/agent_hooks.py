@@ -629,7 +629,23 @@ def upsert_global_nudge() -> bool:
 # checkout. One command serves both agents; it reads the event name from
 # the payload each agent sends on stdin.
 
-MESH_HOOK_COMMAND = "flanner mesh hook"
+#: Recognises an installed entry, whatever interpreter it names.
+MESH_HOOK_MARK = "flanner mesh hook"
+
+
+def mesh_hook_command(agent: str) -> str:
+    """The hook command, naming the interpreter that installed it.
+
+    Not `flanner` from PATH: a different, older flanner found there answers
+    an unknown command with a usage error, and Claude Code reads that exit
+    code as a blocking error on every tool call. The interpreter that ran
+    the installer is the one known to have the command.
+    """
+    import sys
+
+    return f'"{sys.executable}" -m {MESH_HOOK_MARK} --agent {agent}'
+
+
 #: The events the hook answers. After a tool call it looks at most once a
 #: minute; at a prompt it always looks, which is the floor that always works.
 MESH_HOOK_EVENTS = ("UserPromptSubmit", "PostToolUse")
@@ -657,22 +673,39 @@ MESSAGES_BLOCK = (
 
 
 def _add_hook_events(path: Path, agent: str) -> bool:
-    """Merge the messaging hook into an agent's hooks table. True if changed."""
-    command = f"{MESH_HOOK_COMMAND} --agent {agent}"
+    """Merge the messaging hook into an agent's hooks table. True if changed.
+
+    An entry from an earlier install, naming another interpreter, is
+    replaced rather than kept beside the new one.
+    """
+    command = mesh_hook_command(agent)
     config = _existing_object(path)
     hooks = config.setdefault("hooks", {})
     changed = False
     for event in MESH_HOOK_EVENTS:
         entries = hooks.setdefault(event, [])
-        present = any(
-            h.get("type") == "command" and h.get("command") == command
+        commands = [
+            str(h.get("command", ""))
             for entry in entries
             if isinstance(entry, dict)
             for h in entry.get("hooks", [])
-        )
-        if not present:
-            entries.append({"hooks": [{"type": "command", "command": command, "timeout": 10}]})
-            changed = True
+            if h.get("type") == "command"
+        ]
+        if command in commands:
+            continue
+        kept = [
+            entry
+            for entry in entries
+            if not (
+                isinstance(entry, dict)
+                and any(
+                    MESH_HOOK_MARK in str(h.get("command", "")) for h in entry.get("hooks", [])
+                )
+            )
+        ]
+        kept.append({"hooks": [{"type": "command", "command": command, "timeout": 10}]})
+        hooks[event] = kept
+        changed = True
     if changed:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
@@ -716,7 +749,7 @@ def codex_hooks_restricted() -> bool:
 
 def codex_hook_entry() -> str:
     """The hooks.json an administrator adds to the managed hooks, as text."""
-    command = f"{MESH_HOOK_COMMAND} --agent codex"
+    command = mesh_hook_command("codex")
     events = {
         event: [{"hooks": [{"type": "command", "command": command, "timeout": 10}]}]
         for event in MESH_HOOK_EVENTS

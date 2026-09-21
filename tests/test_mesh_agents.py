@@ -209,7 +209,8 @@ def test_claude_gets_both_hooks_once_and_keeps_its_own(agents):
     assert settings["theme"] == "dark"
     for event in ("UserPromptSubmit", "PostToolUse"):
         (entry,) = settings["hooks"][event]
-        assert entry["hooks"][0]["command"] == "flanner mesh hook --agent claude"
+        assert entry["hooks"][0]["command"] == agent_hooks.mesh_hook_command("claude")
+        assert entry["hooks"][0]["command"].startswith('"')  # an interpreter, not PATH
 
 
 def test_a_settings_file_that_will_not_parse_is_left_alone(agents):
@@ -361,3 +362,29 @@ def test_the_server_declares_the_channel_and_pushes_a_new_message(signed_in, tmp
     finally:
         server.kill()
         server.wait(timeout=10)
+
+
+def test_an_earlier_install_naming_another_interpreter_is_replaced(agents):
+    claude, _, _ = agents
+    claude.mkdir()
+    stale = {"type": "command", "command": "flanner mesh hook --agent claude"}
+    other = {"type": "command", "command": "somebody-elses-hook"}
+    (claude / "settings.json").write_text(
+        json.dumps({"hooks": {"PostToolUse": [{"hooks": [stale]}, {"hooks": [other]}]}})
+    )
+
+    agent_hooks.ensure_claude_messaging_hooks()
+
+    entries = json.loads((claude / "settings.json").read_text())["hooks"]["PostToolUse"]
+    commands = [h["command"] for e in entries for h in e["hooks"]]
+    assert commands == ["somebody-elses-hook", agent_hooks.mesh_hook_command("claude")]
+
+
+def test_login_does_not_touch_the_agents(signed_in, tmp_path, monkeypatch):  # noqa: F811
+    """Setting agents up is `flanner init`'s job, never a side effect of login."""
+    from flanner import cli as cli_module
+
+    claude = tmp_path / "claude-untouched"
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(claude))
+    cli_module._suggest_messaging_setup()
+    assert not claude.exists()
