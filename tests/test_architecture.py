@@ -113,6 +113,9 @@ ALLOWED = {
     # resolve authorization through it, and an import boundary is a better
     # guarantee than a promise that nobody will call out.
     "session": {"identity", "entitlements"},
+    # Starting the receiver at login, and whether anything is receiving.
+    # Per-user registrations only; reads the home from identity.
+    "autostart": {"identity"},
     # Messages between members: what one is and what this device holds.
     # No network; delivery is `mesh_delivery`, so `peer` can call in here
     # when a message arrives without the two importing each other.
@@ -393,6 +396,8 @@ ALLOWED = {
         "ipc",
         "reconcile",
         "mesh_delivery",
+        "autostart",
+        "mesh_messages",
         "services",
         "review",
         "session",

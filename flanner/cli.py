@@ -844,6 +844,7 @@ def init(
 
     _offer_update_check()
     _offer_crash_reports()
+    _offer_autostart()
     _first_thing_to_try(adopted=bool(project_root), project_root=project_root)
 
 
@@ -2329,6 +2330,50 @@ def stop() -> None:
     _stop_pid(get_pid_file(), "Server")
 
 
+def _messages_row() -> Text | None:
+    """Unread, queued, retention, quiet hours, and whether anything receives.
+
+    Only on a device whose plan includes messaging. Not receiving is a
+    warning with the fix, because it is the one state in which a teammate's
+    message reaches nobody (the mesh messaging plan, section 10.5).
+    """
+    from sqlalchemy import func
+
+    from . import autostart, mesh_messages
+    from . import session as cache
+    from .database import MeshDeliveryModel
+    from .entitlements import MESH_MESSAGES
+
+    held = cache.load()
+    claims = held.status().claims if held is not None else None
+    if claims is None or not claims.has_feature(MESH_MESSAGES):
+        return None
+    if not autostart.receiving():
+        row = tui.dot("bad", label="not receiving")
+        row.append(
+            ": nothing is running to accept them. Run flanner peer autostart on.",
+            style="muted",
+        )
+        return row
+    session = get_session()
+    queued = (
+        session.query(func.count(func.distinct(MeshDeliveryModel.message_id)))
+        .filter(MeshDeliveryModel.state == mesh_messages.QUEUED)
+        .scalar()
+        or 0
+    )
+    roster = cache.current_roster(held)
+    parts = [f"{mesh_messages.unread_count(session)} unread", f"{queued} queued"]
+    if roster is not None:
+        parts.append(f"kept {roster.message_retention_days} days")
+    quiet = mesh_messages.quiet_hours()
+    if quiet["active"]:
+        parts.append(f"quiet until {quiet['end']}")
+    row = tui.dot("ok", label="receiving")
+    row.append("  " + f" {tui.MIDDOT} ".join(parts), style="muted")
+    return row
+
+
 def _server_row(pid_file: Path) -> Text:
     """Whether the background MCP server is up.
 
@@ -2516,6 +2561,9 @@ def status() -> None:
     rows.append(("Desktop config", Text(str(claude_status["config_path"]), style="muted")))
     if (get_mcp_dir() / "data.db").exists():
         rows.extend(_setup_rows(setup_check.check(get_session())))
+        messages = _messages_row()
+        if messages is not None:
+            rows.append(("Messages", messages))
 
     console.print()
     console.print(tui.fields(rows))
@@ -6786,6 +6834,7 @@ def login(code: str, endpoint: str | None, label: str | None) -> None:
     tui.ok(f"Enrolled as {current.user_id} ({current.device_id})")
     _print_entitlement(current)
     _what_next(current)
+    _offer_autostart()
 
 
 @cli.command()
@@ -7465,11 +7514,14 @@ def _message_upkeep_in_background() -> None:
     """
     import threading
 
-    from . import mesh_delivery
+    from . import autostart, mesh_delivery
 
     def run() -> None:
         last_expiry = 0.0
         while True:
+            # First, so `flanner status` can tell this device is receiving.
+            with contextlib.suppress(OSError):
+                autostart.beat()
             try:
                 with get_session() as session:
                     mesh_delivery.retry_due(session)
@@ -7668,6 +7720,70 @@ def peer_start(host: str, port: int | None, http: bool) -> None:
     console.print(f"  pid {child.pid}, logging to {tui.code(str(log_path))}", style="muted")
     console.print(f"  Stop it with {tui.command('flanner peer stop')}", style="muted")
     console.print()
+
+
+@peer.command("autostart")
+@click.argument("choice", required=False, type=click.Choice(["on", "off"]))
+def peer_autostart(choice: str | None) -> None:
+    """Start receiving messages when you log in, or stop doing so"""
+    from . import autostart
+
+    if choice == "on":
+        where = autostart.enable()
+        tui.ok("This device will start receiving messages when you log in")
+        console.print(f"  Registered at {tui.code(where)}", style="muted")
+        console.print(f"  Undo with {tui.command('flanner peer autostart off')}", style="muted")
+        return
+    if choice == "off":
+        if autostart.disable():
+            tui.ok("Removed. This device no longer starts receiving at login.")
+        else:
+            console.print("Nothing was registered for this device.", style="dim")
+        autostart.decline()
+        return
+    state = "on" if autostart.enabled() else "off"
+    now = "receiving now" if autostart.receiving() else "not receiving now"
+    console.print(f"  Start at login   {state}")
+    console.print(f"  Messages         {now}")
+    if state == "off":
+        console.print(
+            f"  Turn it on with {tui.command('flanner peer autostart on')}", style="muted"
+        )
+
+
+def _offer_autostart() -> None:
+    """Offer, once, to start receiving at login on a device that can message.
+
+    Asked only at a terminal, only when messaging is allowed, and never
+    again after a no: a question somebody has answered is not worth asking
+    twice (the mesh messaging plan, section 10.5).
+    """
+    from . import autostart
+    from . import session as cache
+    from .entitlements import MESH_MESSAGES
+
+    held = cache.load()
+    claims = held.status().claims if held is not None else None
+    if claims is None or not claims.has_feature(MESH_MESSAGES):
+        return
+    if autostart.enabled() or autostart.declined() or not sys.stdin.isatty():
+        return
+    console.print()
+    console.print(
+        "Teammates can message you. Messages arrive only while this device is receiving.",
+        style="muted",
+    )
+    if click.confirm("  Start receiving messages when you log in?", default=True):
+        where = autostart.enable()
+        tui.ok("This device will start receiving messages when you log in")
+        console.print(f"  Registered at {tui.code(where)}", style="muted")
+    else:
+        autostart.decline()
+        console.print(
+            f"  Not asked again. Turn it on any time with "
+            f"{tui.command('flanner peer autostart on')}",
+            style="muted",
+        )
 
 
 @peer.command("stop")
@@ -8193,9 +8309,8 @@ def _print_delivery(delivery: list[dict[str, Any]]) -> None:
             tui.bad(f"Not delivered to {who}: {item.get('message', '')}")
         else:
             console.print(
-                f"{tui.QUEUED} Queued for {who} {tui.MIDDOT} their device is offline; "
-                "it goes out when they are "
-                "next reachable",
+                f"{tui.QUEUED} Queued for {who}: their device is not receiving right now. "
+                "It goes out when it is.",
                 style="warn",
             )
 

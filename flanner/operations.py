@@ -667,6 +667,17 @@ OPERATIONS: tuple[Operation, ...] = (
     ),
     _op(
         "mesh",
+        "Start receiving messages when you log in",
+        "admin",
+        cli=("peer autostart",),
+        why="Registers a program to run at login on this machine. That is the owner's call.",
+        why_web=(
+            "It registers a program with this machine's login items, which is done where the "
+            "person can see the command and undo it."
+        ),
+    ),
+    _op(
+        "mesh",
         "Invite people and manage members and devices",
         "admin",
         cli=("invite", "members", "devices add", "devices list", "devices revoke"),

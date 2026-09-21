@@ -2926,7 +2926,10 @@ def _delivery_sentence(delivery: list[dict[str, Any]]) -> str:
         elif item["state"] == "failed":
             parts.append(f"Not delivered to {who}: {item.get('message', '')}")
         else:
-            parts.append(f"Queued for {who}; it goes out when their device is reachable")
+            parts.append(
+                f"Queued for {who}: their device is not receiving right now. "
+                "It goes out when it is."
+            )
     return " · ".join(parts) or "Sent."
 
 
