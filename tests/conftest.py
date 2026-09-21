@@ -100,6 +100,10 @@ def _isolated_agent_configs(tmp_path, monkeypatch):
     """
     import flanner.claude_integration as ci
 
+    # Both override the home directory, so a developer who sets either would
+    # otherwise have tests write hooks into their real agent configuration.
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    monkeypatch.delenv("CODEX_HOME", raising=False)
     monkeypatch.setattr(ci, "claude_code_user_config_path", lambda: tmp_path / "claude.json")
     monkeypatch.setattr(ci, "codex_config_path", lambda: tmp_path / "codex.toml")
 
