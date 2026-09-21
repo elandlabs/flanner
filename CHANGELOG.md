@@ -28,6 +28,30 @@ versioning follows [SemVer](https://semver.org/).
     workspace, and are deleted after the period your organization sets
     (90 days unless an admin changes it).
   - Needs Team Mesh with messaging switched on in the console.
+- **Messages inside Claude Code and Codex.** After `flanner init`, a new
+  message appears in your agent session at your next prompt, and between
+  tool calls at most once a minute, quoted with its sender and a note that
+  it is data, not an instruction. Nothing appears during quiet hours or
+  from someone you muted, and more than three at once become one summary.
+  - Codex runs an unmanaged hook only once you trust it: run `/hooks` in
+    Codex after `flanner init`. If your administrator allows only managed
+    hooks, `flanner init` says so, and `flanner init --print-codex-hook`
+    prints the entry to give them.
+  - Claude Code started with channels can show a message the moment it
+    arrives, even in an idle session: `flanner mesh interrupt channel`.
+    Channels are a Claude Code research preview.
+  - `flanner mesh interrupt channel|tool|prompt` chooses how agents show
+    new messages; `flanner mesh wait` prints the next message and exits;
+    `flanner mesh watch` prints messages as they arrive.
+  - `flanner init` honours `CLAUDE_CONFIG_DIR` and `CODEX_HOME`.
+- **Receiving across reboots.** `flanner peer autostart on` starts
+  receiving messages when you log in, with no admin rights (a Windows Run
+  entry, a macOS LaunchAgent or a systemd user service); `flanner login`
+  and `flanner init` offer it once. `flanner status` shows whether this
+  device is receiving and how to fix it when not, and a sender sees why a
+  message is queued.
+- On Windows, clicking a message notification opens the thread in the web
+  UI when it is running.
 - **Teammates by name.** Review comments in the CLI and the web UI, the
   proposer and approvers in `flanner review status`, and `flanner members`
   show people as `@ben (Ben Otieno)` instead of a user id. Names come from
