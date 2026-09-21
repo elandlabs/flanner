@@ -223,3 +223,33 @@ def test_the_sidebar_counts_unread_messages(client, signed_in):
     session.commit()
     page = client.get("/mesh/messages")
     assert "Messages" in page.text and '<span class="n tnum">1</span>' in page.text
+
+
+def test_a_thread_mutes_and_unmutes_its_sender(client, signed_in):
+    session = get_session()
+    session.add(
+        MeshMessageModel(
+            message_id="sha256:cd34",
+            thread_id="sha256:cd34",
+            workspace_id="ws_core",
+            author_user_id="bob",
+            author_device_id="dev_b",
+            recipients='["you"]',
+            body="hi",
+            sent_at=datetime(2026, 9, 21),
+            envelope="{}",
+            payload="{}",
+        )
+    )
+    session.commit()
+    page = client.get("/mesh/messages/cd34")
+    assert page.text.count('action="/mesh/messages/mute"') == 1
+    assert 'value="/mesh/messages/cd34"' in page.text
+
+    done = client.post(
+        "/mesh/messages/mute",
+        data={"handle": "bob", "until": "8h", "back": "/mesh/messages/cd34"},
+    )
+    assert done.status_code == 303
+    assert done.headers["location"].startswith("/mesh/messages/cd34?said=Muted")
+    assert "Unmute" in client.get("/mesh/messages/cd34").text

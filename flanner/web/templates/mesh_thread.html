@@ -28,6 +28,27 @@
       {% endif %}
     </div>
     {% endfor %}
+    {# One mute control per teammate who wrote here; a message's muted flag is current. #}
+    {% set seen = namespace(ids=[]) %}
+    {% for m in t.messages | reverse if m.delivery is not defined and m["from"].handle and m["from"].user_id not in seen.ids %}
+    {% set seen.ids = seen.ids + [m["from"].user_id] %}
+    <form method="post" action="/mesh/messages/mute" class="form-row">
+      <input type="hidden" name="handle" value="{{ m['from'].handle }}">
+      <input type="hidden" name="back" value="/mesh/messages/{{ t.short }}">
+      {% if m.muted %}
+      <input type="hidden" name="off" value="1">
+      <button class="btn btn-sm">Unmute {{ who(m["from"]) }}</button>
+      {% else %}
+      <label class="sr-only" for="mute-for-{{ loop.index }}">For</label>
+      <select class="input input-sm" id="mute-for-{{ loop.index }}" name="until">
+        <option value="8h">8 hours</option>
+        <option value="1d">1 day</option>
+        <option value="">Until I unmute</option>
+      </select>
+      <button class="btn btn-sm">Mute {{ who(m["from"]) }}</button>
+      {% endif %}
+    </form>
+    {% endfor %}
   </div>
 
   {% if preview %}
