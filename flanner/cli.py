@@ -7777,9 +7777,9 @@ def peer_autostart(choice: str | None) -> None:
 def _offer_autostart() -> None:
     """Offer, once, to start receiving at login on a device that can message.
 
-    Asked only at a terminal, only when messaging is allowed, and never
-    again after a no: a question somebody has answered is not worth asking
-    twice (the mesh messaging plan, section 10.5).
+    Asked only when messaging is allowed, never in CI or with --quiet, and
+    never again after a no: a question somebody has answered is not worth
+    asking twice (the mesh messaging plan, section 10.5).
     """
     from . import autostart
     from . import session as cache
@@ -7789,14 +7789,16 @@ def _offer_autostart() -> None:
     claims = held.status().claims if held is not None else None
     if claims is None or not claims.has_feature(MESH_MESSAGES):
         return
-    if autostart.enabled() or autostart.declined() or not sys.stdin.isatty():
+    if autostart.enabled() or autostart.declined() or tui.QUIET or os.environ.get("CI"):
         return
     console.print()
     console.print(
         "Teammates can message you. Messages arrive only while this device is receiving.",
         style="muted",
     )
-    if click.confirm("  Start receiving messages when you log in?", default=True):
+    # Registering a program to run at login is consent, so nobody being
+    # there (an empty pipe, a script) is a no, never a yes.
+    if _ask_yes_no("  Start receiving messages when you log in?", default=True, unattended=False):
         where = autostart.enable()
         tui.ok("This device will start receiving messages when you log in")
         console.print(f"  Registered at {tui.code(where)}", style="muted")
