@@ -1752,16 +1752,23 @@ def _catalog_snapshot(session: Any) -> dict[str, str]:
 
 
 def _messages_signature(session: Any) -> str:
-    """What changed among messages: a count and the newest arrival."""
+    """What changed among messages: a count, the newest arrival, the newest delivery.
+
+    One query, because the snapshot runs once a second for the life of the
+    process.
+    """
     from .database import MeshDeliveryModel, MeshMessageModel
 
+    delivered = session.query(func.max(MeshDeliveryModel.delivered_at)).scalar_subquery()
     try:
-        newest = session.query(func.max(MeshMessageModel.received_at)).scalar()
-        count = session.query(func.count(MeshMessageModel.message_id)).scalar()
-        delivered = session.query(func.max(MeshDeliveryModel.delivered_at)).scalar()
+        count, newest, latest = session.query(
+            func.count(MeshMessageModel.message_id),
+            func.max(MeshMessageModel.received_at),
+            delivered,
+        ).one()
     except Exception:  # noqa: BLE001 - live updates must not fail on a missing table
         return "none"
-    return f"{count}|{newest}|{delivered}"
+    return f"{count}|{newest}|{latest}"
 
 
 def _arrival_toast(session: Any) -> str:

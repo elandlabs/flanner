@@ -290,9 +290,9 @@ def test_the_stream_ends_itself_rather_than_polling_forever(store, short_stream)
     assert body.startswith("event: ready"), body[:60]
 
 
-def test_the_snapshot_is_two_queries_however_many_plans_there_are(store):
+def test_the_snapshot_is_three_queries_however_many_plans_there_are(store):
     """It runs once a second for the life of the process, so it must not be
-    one query per plan."""
+    one query per plan. Two for plans, one for messages."""
     client, session, project = store
     from flanner.plan_ops import create_plan
 
@@ -314,4 +314,4 @@ def test_the_snapshot_is_two_queries_however_many_plans_there_are(store):
     finally:
         sa_event.remove(engine, "before_cursor_execute", record)
 
-    assert len(seen) == 2, f"{len(seen)} queries for 6 plans: {seen}"
+    assert len(seen) == 3, f"{len(seen)} queries for 6 plans: {seen}"
