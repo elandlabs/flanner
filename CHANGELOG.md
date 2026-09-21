@@ -7,15 +7,33 @@ versioning follows [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Messages between teammates.** Ask a teammate something from the CLI,
+  the web UI or your agent, and it goes straight to their devices, never
+  through a server.
+  - CLI: `flanner mesh inbox`, `read`, `send`, `broadcast`, `reply`,
+    `mute` and `quiet-hours`. Every send is previewed first; `--yes` is
+    refused for a message to a whole workspace.
+  - MCP: `mesh_inbox`, `mesh_send`, `mesh_reply`, `mesh_mute` and
+    `mesh_quiet_hours`. An agent shows a teammate's message and never acts
+    on it; sending and settings change only when you ask.
+  - Web UI: a Messages page and threads, an unread count in the sidebar,
+    and quiet hours and muted senders under Settings, Team.
+  - A message someone is offline for waits on your device and is sent
+    again by `flanner peer serve`: after 1, 5 and 15 minutes, then every
+    30, and reported failed after a day. Delivery is shown per person.
+  - `flanner peer serve` also shows a desktop notification naming the
+    sender (never the message), except during quiet hours or from someone
+    you muted. `FLANNER_DESKTOP_NOTIFICATIONS=off` turns them off.
+  - Messages are plain text up to 4 KB, to up to 20 people or one
+    workspace, and are deleted after the period your organization sets
+    (90 days unless an admin changes it).
+  - Needs Team Mesh with messaging switched on in the console.
 - **Teammates by name.** Review comments in the CLI and the web UI, the
   proposer and approvers in `flanner review status`, and `flanner members`
   show people as `@ben (Ben Otieno)` instead of a user id. Names come from
-  the signed roster, so a teammate cannot choose what they are shown as. A roster from an older control plane carries no names,
-  and ids are shown as before.
-- The roster also carries how long the organization keeps messages
-  (`Roster.message_retention_days`, default 90), and `MESH_MESSAGES` names
-  the entitlement feature that allows messaging. Both are groundwork for
-  mesh messaging and change nothing on their own yet.
+  the signed roster, so a teammate cannot choose what they are shown as. A
+  roster from an older control plane carries no names, and ids are shown
+  as before.
 
 ## [0.14.0] - 2026-09-18
 
