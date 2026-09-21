@@ -95,6 +95,41 @@ NOT_CONFIGURED: Final = "not_configured"
 #: A dependency we need is not answering. Worth retrying; the others are not.
 UPSTREAM_UNAVAILABLE: Final = "upstream_unavailable"
 
+# --- messages between members (the mesh messaging plan) ----------------------
+
+#: The organization has switched messaging off.
+MESSAGING_OFF: Final = "messaging_off"
+
+#: A handle or user id that is not on the team roster.
+MEMBER_UNKNOWN: Final = "member_unknown"
+
+#: A message arrived at a device whose person it does not address.
+NOT_A_RECIPIENT: Final = "not_a_recipient"
+
+#: More named recipients than one message may have.
+TOO_MANY_RECIPIENTS: Final = "too_many_recipients"
+
+#: A message body over the size limit.
+BODY_TOO_LARGE: Final = "body_too_large"
+
+#: A message body holding control characters or escape sequences.
+BODY_INVALID: Final = "body_invalid"
+
+#: More plan references than one message may carry.
+TOO_MANY_REFS: Final = "too_many_refs"
+
+#: Too many messages already waiting to be delivered from this device.
+OUTBOX_FULL: Final = "outbox_full"
+
+#: Sending with a team roster that is in its grace period or older.
+ROSTER_STALE: Final = "roster_stale"
+
+#: A message older than the organization's retention period.
+MESSAGE_EXPIRED: Final = "message_expired"
+
+#: A short id that matches more than one thread.
+AMBIGUOUS_ID: Final = "ambiguous_id"
+
 #: Never sent. What a client uses for a code it does not recognise, so that
 #: "an old client met a new server" is a case with a name rather than a
 #: KeyError.
@@ -120,6 +155,17 @@ KNOWN: Final = frozenset(
         NOT_FOUND,
         NOT_CONFIGURED,
         UPSTREAM_UNAVAILABLE,
+        MESSAGING_OFF,
+        MEMBER_UNKNOWN,
+        NOT_A_RECIPIENT,
+        TOO_MANY_RECIPIENTS,
+        BODY_TOO_LARGE,
+        BODY_INVALID,
+        TOO_MANY_REFS,
+        OUTBOX_FULL,
+        ROSTER_STALE,
+        MESSAGE_EXPIRED,
+        AMBIGUOUS_ID,
     }
 )
 

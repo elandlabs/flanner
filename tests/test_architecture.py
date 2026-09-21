@@ -110,6 +110,13 @@ ALLOWED = {
     # resolve authorization through it, and an import boundary is a better
     # guarantee than a promise that nobody will call out.
     "session": {"identity", "entitlements"},
+    # Messages between members: what one is and what this device holds.
+    # No network; delivery is `mesh_delivery`, so `peer` can call in here
+    # when a message arrives without the two importing each other.
+    "mesh_messages": FOUNDATION | {"artifacts", "database", "entitlements", "identity", "push"},
+    # Sending messages: dials recipients' devices through `peer`.
+    "mesh_delivery": FOUNDATION
+    | {"mesh_messages", "peer", "peer_iroh", "session", "database", "entitlements", "identity"},
     # The only module below the composition roots that may reach the network.
     "account": {"identity", "device_auth", "entitlements", "refusals", "session"},
     "authz": {"workflow", "session", "entitlements", "database", "plan_ops"},
@@ -121,6 +128,7 @@ ALLOWED = {
     # local read over rows already in this database; the reachability test
     # below still proves peer cannot get to `account` through it.
     "peer": {
+        "mesh_messages",
         "observe",
         "entitlements",
         "identity",

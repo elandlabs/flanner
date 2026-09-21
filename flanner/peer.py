@@ -119,6 +119,8 @@ class PeerIdentity:
     #: from the same verified claims, so the two cannot disagree about what
     #: one entitlement said.
     may_sync_skills: bool = False
+    #: And whether its organization allows messages between members.
+    may_message: bool = False
 
 
 def authorize(
@@ -193,6 +195,7 @@ def authorize(
         role=role,
         may_sync_memory=verdict.claims.has_feature(entitlements.MEM_SYNC),
         may_sync_skills=verdict.claims.has_feature(entitlements.SKILL_SYNC),
+        may_message=verdict.claims.has_feature(entitlements.MESH_MESSAGES),
     )
 
 
@@ -205,6 +208,10 @@ FETCH = "fetch"
 #: small request instead of a re-upload.
 OFFER = "offer"
 PUSH = "push"
+#: One message for this device's person (the mesh messaging plan). Not in
+#: WRITES: turning pushes off is about artifacts a device did not ask for,
+#: and messages have their own organization switch.
+MESSAGE = "message"
 
 #: Operations that write. Held apart from the read ones because the
 #: entitlement rule differs and that difference must be impossible to miss.
@@ -253,7 +260,7 @@ def _requested(operation: str, body: dict[str, Any]) -> tuple[list[str], list[di
             raise PeerError(f"at most {sync.MAX_FETCH_BATCH} artifacts per request", status=413)
         return wanted, items
 
-    if operation == MANIFEST:
+    if operation in (MANIFEST, MESSAGE):
         return wanted, items
 
     if operation not in WRITES:
@@ -439,6 +446,9 @@ def _serve_request(
         if operation == MANIFEST:
             return dict(sync.build_manifest(session, workspace_id, hidden=hidden).to_dict())
 
+        if operation == MESSAGE:
+            return _serve_message(session, caller, workspace_id, body, current)
+
         if operation in WRITES:
             return _serve_write(
                 operation,
@@ -459,6 +469,51 @@ def _serve_request(
             memory=caller.may_sync_memory,
             skills=caller.may_sync_skills,
         )
+
+
+def _serve_message(
+    session: Any,
+    caller: PeerIdentity,
+    workspace_id: str,
+    body: dict[str, Any],
+    current: Any,
+) -> dict[str, Any]:
+    """Keep one message for this device's person, and say so.
+
+    The answer is the sender's acknowledgement: it is only given once the
+    message is verified and stored (plan section 12).
+    """
+    from . import mesh_messages
+
+    own = current.status().claims
+    if not caller.may_message or own is None or not own.has_feature(entitlements.MESH_MESSAGES):
+        raise PeerError("Messaging is off for this organization.", code=refusals.MESSAGING_OFF)
+    # Receiving works while the roster is in grace; only sending needs a
+    # current one (plan section 5.8).
+    roster = entitlements.verify_roster(current.roster, current.keyring)
+    if roster is None:
+        raise PeerError("this device has no team roster", status=503)
+    blob = body.get("payload")
+    envelope = body.get("envelope")
+    if not isinstance(blob, str) or not isinstance(envelope, dict):
+        raise PeerError(
+            "a message needs an envelope and a payload", status=400, code=refusals.MALFORMED
+        )
+    try:
+        outcome = mesh_messages.receive(
+            session,
+            envelope=envelope,
+            payload=blob.encode("utf-8"),
+            caller=mesh_messages.Caller(caller.device_id, caller.user_id, caller.role),
+            workspace_id=workspace_id,
+            me=own.user_id,
+            roster=roster,
+            public_key=current.resolve_device_key(caller.device_id),
+        )
+    except mesh_messages.MessageError as e:
+        status = 429 if e.code == refusals.THROTTLED else 403
+        raise PeerError(e.message, status=status, code=e.code) from None
+    return {"result": outcome}
 
 
 def _current(current: Any) -> bool:
@@ -589,6 +644,11 @@ def create_peer_app(sessions: Any, held: Any, refresh_keys: Any = None) -> Any:
     def receive(payload: dict[str, Any]) -> dict[str, Any]:
         """Take in artifacts a peer sent, each verified against its author."""
         return _serve(PUSH, payload)
+
+    @app.post("/peer/message")
+    def message(payload: dict[str, Any]) -> dict[str, Any]:
+        """Keep one message for this device's person, and acknowledge it."""
+        return _serve(MESSAGE, payload)
 
     return app
 

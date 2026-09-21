@@ -412,6 +412,71 @@ class ActionModel(Base):
         return f"<Action({self.operation} via {self.surface}, {self.state})>"
 
 
+class MeshMessageModel(Base):
+    """One message between team members, sent from or received on this device.
+
+    Its own table, not `artifacts`: everything in `artifacts` is offered in
+    every workspace manifest, so a message stored there would reach every
+    teammate's device rather than the people it names. The signed envelope
+    and payload are kept so the message can be re-sent and re-verified.
+    """
+
+    __tablename__ = "mesh_messages"
+
+    #: The artifact id, `sha256:<hex>`.
+    message_id: Mapped[str] = mapped_column(String, primary_key=True)
+    #: The first message's id; a first message is its own thread.
+    thread_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(String, nullable=False)
+    author_user_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    author_device_id: Mapped[str] = mapped_column(String, nullable=False)
+    #: JSON: a list of user ids, or {"workspace": id}.
+    recipients: Mapped[str] = mapped_column(Text, nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    #: JSON list of {"kind", "id", "version"}.
+    refs: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    sent_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    received_at: Mapped[datetime | None] = mapped_column(DateTime, default=_utcnow)
+    outgoing: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    envelope: Mapped[str] = mapped_column(Text, nullable=False)
+    payload: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class MeshDeliveryModel(Base):
+    """Whether one sent message has reached one recipient device.
+
+    Doubles as the outbox: a `queued` row with a `next_attempt_at` is a
+    message still waiting for that device.
+    """
+
+    __tablename__ = "mesh_deliveries"
+    __table_args__ = (UniqueConstraint("message_id", "device_id", name="uq_delivery"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    message_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    user_id: Mapped[str] = mapped_column(String, nullable=False)
+    device_id: Mapped[str] = mapped_column(String, nullable=False)
+    #: queued, delivered or failed.
+    state: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    queued_at: Mapped[datetime | None] = mapped_column(DateTime, default=_utcnow)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    code: Mapped[str] = mapped_column(String, nullable=False, default="")
+    detail: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+
+class MeshMuteModel(Base):
+    """A sender whose messages are stored but never interrupt, on this device."""
+
+    __tablename__ = "mesh_mutes"
+
+    user_id: Mapped[str] = mapped_column(String, primary_key=True)
+    #: None mutes until unmuted.
+    until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
 class MemoryAttachmentModel(Base):
     """One file attached to a memory.
 

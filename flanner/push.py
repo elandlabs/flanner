@@ -65,6 +65,10 @@ REQUIRED_ROLE: dict[str, frozenset[str]] = {
     # arrives sits as a transfer until somebody on that machine installs
     # it, so sending one cannot change what a colleague's agent loads.
     artifacts.SKILL_PACKAGE: workflow.MAY_COMMENT,
+    # A message asks what a comment does: someone who may say something in
+    # a review may say it to a teammate. It never travels through `accept`
+    # (below); the peer `message` operation checks this row itself.
+    artifacts.MESH_MESSAGE: workflow.MAY_COMMENT,
 }
 
 #: Artifact types that only travel when the entitlement includes memory
@@ -207,6 +211,11 @@ def accept(
             continue
 
         artifact_type = str(envelope.get("artifact_type") or "")
+        if artifact_type == artifacts.MESH_MESSAGE:
+            # Stored here it would be offered in every manifest and reach
+            # every teammate. Messages go only through the `message` op.
+            report.rejected.append((artifact_id, "messages are sent with the message operation"))
+            continue
         if artifact_type in MEMORY_TYPES and not memory_sync:
             # An organization switched this off, or nobody is paying for it.
             # Refused per artifact so a batch carrying both plans and memory

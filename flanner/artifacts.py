@@ -78,6 +78,11 @@ MEMORY_TOMBSTONE = "mem.tombstone"
 #: transfer until somebody on the receiving machine says to install it,
 #: which is the same rule an approval follows locally.
 SKILL_PACKAGE = "skill.package"
+#: A message from one team member to others (the mesh messaging plan).
+#: Delivered to the devices it names with the peer `message` operation and
+#: stored in its own table, never through manifest sync, so it reaches only
+#: the people it is for.
+MESH_MESSAGE = "mesh.message"
 
 ARTIFACT_TYPES = frozenset(
     {
@@ -96,6 +101,7 @@ ARTIFACT_TYPES = frozenset(
         MEMORY_RECORD,
         MEMORY_TOMBSTONE,
         SKILL_PACKAGE,
+        MESH_MESSAGE,
     }
 )
 

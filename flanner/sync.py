@@ -254,6 +254,12 @@ def ingest_artifact(
     except ValueError as e:
         return artifacts.Verdict(False, str(e))
 
+    if artifact.artifact_type == artifacts.MESH_MESSAGE:
+        # Never into `artifacts`, whose every row is offered in manifests:
+        # a message stored here would reach every teammate. A peer that
+        # lists one in its manifest is refused it rather than trusted.
+        return artifacts.Verdict(False, "messages arrive only through the message operation")
+
     if payload is not None and len(payload) > MAX_PAYLOAD_BYTES:
         return artifacts.Verdict(False, f"payload exceeds {MAX_PAYLOAD_BYTES} bytes")
 
