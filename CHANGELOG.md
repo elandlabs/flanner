@@ -25,8 +25,8 @@ versioning follows [SemVer](https://semver.org/).
     sender (never the message), except during quiet hours or from someone
     you muted. `FLANNER_DESKTOP_NOTIFICATIONS=off` turns them off.
   - Messages are plain text up to 4 KB, to up to 20 people or one
-    workspace, and are deleted after the period your organization sets
-    (90 days unless an admin changes it).
+    workspace, and are deleted after the period your organization's admin
+    sets in the console: 30, 90 (the default), 180 or 365 days.
   - Needs Team Mesh with messaging switched on in the console.
 - **Messages inside Claude Code and Codex.** After `flanner init`, a new
   message appears in your agent session at your next prompt, and between
@@ -38,8 +38,10 @@ versioning follows [SemVer](https://semver.org/).
     hooks, `flanner init` says so, and `flanner init --print-codex-hook`
     prints the entry to give them.
   - Claude Code started with channels can show a message the moment it
-    arrives, even in an idle session: `flanner mesh interrupt channel`.
-    Channels are a Claude Code research preview.
+    arrives, even in an idle session: `flanner mesh interrupt channel`,
+    then `claude --dangerously-load-development-channels server:flanner`.
+    Claude Code's `--channels` accepts only plugins, so the development
+    flag is the current way. Channels are a Claude Code research preview.
   - `flanner mesh interrupt channel|tool|prompt` chooses how agents show
     new messages; `flanner mesh wait` prints the next message and exits;
     `flanner mesh watch` prints messages as they arrive.
