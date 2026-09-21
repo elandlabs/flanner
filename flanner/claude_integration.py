@@ -409,7 +409,9 @@ def registration_instructions() -> str:
 
 def claude_code_user_config_path() -> Path:
     """Where `claude mcp add -s user` records servers."""
-    return Path.home() / ".claude.json"
+    from .agent_paths import claude_user_config
+
+    return claude_user_config()
 
 
 def claude_code_registration(start: Path, server_name: str = "flanner") -> str:
@@ -444,7 +446,9 @@ def claude_code_registration(start: Path, server_name: str = "flanner") -> str:
 
 
 def codex_config_path() -> Path:
-    return Path.home() / ".codex" / "config.toml"
+    from .agent_paths import codex_home
+
+    return codex_home() / "config.toml"
 
 
 CODEX_SNIPPET = """[mcp_servers.flanner]

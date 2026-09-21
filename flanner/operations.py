@@ -667,6 +667,26 @@ OPERATIONS: tuple[Operation, ...] = (
     ),
     _op(
         "mesh",
+        "Show new messages inside an agent session",
+        "read",
+        cli=("mesh hook", "mesh wait", "mesh watch"),
+        why=(
+            "The agent runs these itself, through its hooks or in the background, and "
+            "receives what they print; they are how a message reaches an agent, not a tool "
+            "for it to call."
+        ),
+        why_web="The web UI updates itself as messages arrive, so it has no need to wait.",
+    ),
+    _op(
+        "mesh",
+        "Choose how agents show new messages",
+        "write",
+        cli=("mesh interrupt",),
+        why="How this person wants to be interrupted is theirs to decide, not an agent's.",
+        why_web="A per-device preference, set where the agent runs.",
+    ),
+    _op(
+        "mesh",
         "Start receiving messages when you log in",
         "admin",
         cli=("peer autostart",),

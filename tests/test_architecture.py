@@ -43,6 +43,9 @@ FOUNDATION = {
     # tree with no database and no project.
     "skills_adapters",
     "linear_utils",
+    # Where Claude Code and Codex keep their user configuration, honouring
+    # CLAUDE_CONFIG_DIR and CODEX_HOME. Standard library only.
+    "agent_paths",
     # A desktop notification through the tool each platform ships.
     # Standard library only, so the peer path may reach for it.
     "notify",
@@ -202,7 +205,7 @@ ALLOWED = {
         "mesh_messages",
         "mesh_delivery",
     },
-    "claude_integration": set(),
+    "claude_integration": {"agent_paths"},
     # One answer to "is flanner set up here?", shown by `status` and by the
     # agent's context tool. Local reads only.
     "setup_check": FOUNDATION

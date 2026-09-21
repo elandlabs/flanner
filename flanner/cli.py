@@ -533,7 +533,9 @@ def _register_agents_globally(agents: tuple[str, ...] = AGENTS) -> None:
     if CLAUDE_DESKTOP not in agents and CLAUDE_CODE not in agents:
         return
     changed = upsert_global_nudge()
-    where = Path.home() / ".claude" / "CLAUDE.md"
+    from .agent_paths import claude_config_dir
+
+    where = claude_config_dir() / "CLAUDE.md"
     tui.ok(f"Global nudge {'added to' if changed else 'already in'} {where}")
 
 
@@ -790,6 +792,11 @@ def _adopt_repository(project_root: str, plan_dir: str, force_new_project: bool)
 @click.option(
     "--force-new-project", is_flag=True, help="Force create new project even if one exists"
 )
+@click.option(
+    "--print-codex-hook",
+    is_flag=True,
+    help="Print the Codex hook entry for an administrator to add, and change nothing",
+)
 def init(
     project_root: str | None,
     plan_dir: str,
@@ -798,6 +805,7 @@ def init(
     sync: bool,
     watch_skills: bool | None,
     force_new_project: bool,
+    print_codex_hook: bool,
 ) -> None:
     """Initialize Flanner
 
@@ -812,6 +820,12 @@ def init(
     the plan files already in the repository, which is what you want when
     adopting one somebody else set up.
     """
+    if print_codex_hook:
+        from .agent_hooks import codex_hook_entry
+
+        click.echo(codex_hook_entry())
+        return
+
     mcp_dir = get_mcp_dir()
 
     # Initialize storage
@@ -828,6 +842,7 @@ def init(
     # the adoption nudge. The per-repository half is _setup_agent_integration
     # below, which writes .mcp.json and the guard-write hook.
     _register_agents_globally(_agents_to_register(setup_agents, skip_claude))
+    _wire_messaging_agents()
 
     if project_root:
         project_root = os.path.abspath(project_root)
@@ -6835,6 +6850,7 @@ def login(code: str, endpoint: str | None, label: str | None) -> None:
     _print_entitlement(current)
     _what_next(current)
     _offer_autostart()
+    _wire_messaging_agents()
 
 
 @cli.command()
@@ -8501,6 +8517,173 @@ def mesh_quiet_hours(spec: str, as_json: bool) -> None:
     else:
         state = "on now" if result["active"] else "not now"
         console.print(f"  Quiet hours   {window} ({result['timezone']}), {state}")
+
+
+# --- messages inside agent sessions (the mesh messaging plan, section 10) --------
+
+
+def _wire_messaging_agents() -> None:
+    """Give Claude Code and Codex the messaging hook and instructions.
+
+    Only on a device whose plan includes messaging: the hook runs at every
+    prompt, and an agent should not read about tools it cannot use. When
+    messaging is not included, the instructions are taken out again.
+    """
+    from . import agent_hooks
+    from . import session as cache
+    from .entitlements import MESH_MESSAGES
+    from .exceptions import ConfigError
+
+    held = cache.load()
+    claims = held.status().claims if held is not None else None
+    enabled = claims is not None and claims.has_feature(MESH_MESSAGES)
+    agent_hooks.set_messaging_instructions(enabled)
+    if not enabled:
+        return
+    try:
+        if agent_hooks.ensure_claude_messaging_hooks():
+            tui.ok("Claude Code: new messages from teammates will appear in your sessions")
+    except ConfigError as e:
+        tui.warn(f"Claude Code: messages hook not added. {e}")
+    try:
+        codex = agent_hooks.ensure_codex_messaging_hooks()
+    except ConfigError as e:
+        tui.warn(f"Codex: messages hook not added. {e}")
+        return
+    if codex == "installed":
+        tui.ok("Codex: new messages will appear at your next prompt or tool call")
+        console.print(
+            "  Open Codex and run /hooks once to trust the new hook; Codex skips a hook "
+            "until you do.",
+            style="muted",
+        )
+    elif codex == "restricted":
+        tui.warn(
+            "Codex: your administrator only allows managed hooks, so new messages won't "
+            "appear inside Codex on their own."
+        )
+        console.print(
+            "  You'll still see them in flanner mesh inbox, the web UI and desktop "
+            "notifications, and Codex can read them if you ask. To add the hook, give "
+            f"your administrator: {tui.command('flanner init --print-codex-hook')}",
+            style="muted",
+        )
+
+
+@mesh.command("hook", hidden=True)
+def mesh_hook() -> None:
+    """Called by Claude Code and Codex: add new messages to the session's context"""
+    # Never fails and never blocks the agent: a hook that errors or hangs
+    # costs the person their prompt, and a message can always wait.
+    try:
+        payload = json.loads(sys.stdin.read() or "{}")
+        event = str(payload.get("hook_event_name") or "UserPromptSubmit")
+        agent_session = str(payload.get("session_id") or "unknown")
+        from . import mesh_messages
+        from . import session as cache
+        from .entitlements import MESH_MESSAGES
+
+        held = cache.load()
+        claims = held.status().claims if held is not None else None
+        if claims is None or not claims.has_feature(MESH_MESSAGES):
+            return
+        if not (get_mcp_dir() / "data.db").exists():
+            return
+        init_database(str(get_mcp_dir() / "data.db"))
+        text = mesh_messages.for_agent(
+            get_session(),
+            agent_session=agent_session,
+            event=event,
+            label=cache.teammate_labels(),
+        )
+    except Exception:  # noqa: BLE001 - see above
+        return
+    if text:
+        click.echo(
+            json.dumps({"hookSpecificOutput": {"hookEventName": event, "additionalContext": text}})
+        )
+
+
+def _new_messages_since(session: Any, since: Any) -> list[Any]:
+    from . import mesh_messages
+    from .database import MeshMessageModel
+
+    silenced = mesh_messages.muted(session)
+    return [
+        row
+        for row in session.query(MeshMessageModel)
+        .filter(
+            MeshMessageModel.outgoing.is_(False),
+            MeshMessageModel.read_at.is_(None),
+            MeshMessageModel.received_at > since,
+        )
+        .order_by(MeshMessageModel.received_at)
+        if row.author_user_id not in silenced
+    ]
+
+
+@mesh.command("wait")
+@click.option("--timeout", "timeout_s", default=900, show_default=True, help="Seconds to wait")
+def mesh_wait(timeout_s: int) -> None:
+    """Wait for the next message, print it, and exit (for agents)"""
+    from datetime import datetime, timezone
+
+    from . import mesh_messages
+    from . import session as cache
+
+    session = _require_session()
+    since = datetime.now(timezone.utc).replace(tzinfo=None)
+    label = cache.teammate_labels()
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        session.expire_all()
+        fresh = _new_messages_since(session, since)
+        if fresh and not mesh_messages.quiet_hours()["active"]:
+            blocks = "\n\n".join(mesh_messages.quoted(row, label) for row in fresh)
+            click.echo(f"{blocks}\n\n{mesh_messages.RULE}")
+            return
+        time.sleep(2)
+
+
+@mesh.command("watch")
+def mesh_watch() -> None:
+    """Print messages as they arrive, until you press Ctrl+C"""
+    from datetime import datetime, timezone
+
+    from . import mesh_messages
+    from . import session as cache
+
+    session = _require_session()
+    since = datetime.now(timezone.utc).replace(tzinfo=None)
+    label = cache.teammate_labels()
+    console.print("Watching for messages. Ctrl+C to stop.", style="dim")
+    try:
+        while True:
+            session.expire_all()
+            for row in _new_messages_since(session, since):
+                since = max(since, row.received_at)
+                console.print(tui.printable(mesh_messages.quoted(row, label)))
+                console.print()
+            time.sleep(2)
+    except KeyboardInterrupt:
+        return
+
+
+@mesh.command("interrupt")
+@click.argument("choice", required=False, type=click.Choice(["tool", "prompt"]))
+def mesh_interrupt(choice: str | None) -> None:
+    """How agents show new messages: after tool calls, or at your next prompt"""
+    from . import mesh_messages
+
+    if choice:
+        mesh_messages.set_interrupt(choice)
+    current = mesh_messages.settings()["interrupt"]
+    said = (
+        "between tool calls, at most once a minute, and at your next prompt"
+        if current == "tool"
+        else "at your next prompt only"
+    )
+    (tui.ok if choice else console.print)(f"Agents show new messages {said}")
 
 
 # --- history, diff and why ------------------------------------------------------
