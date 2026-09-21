@@ -9305,7 +9305,41 @@ EXAMPLES: dict[str, tuple[str, ...]] = {
     ),
     "devices list": ("flanner devices list",),
     "devices revoke": ("flanner devices revoke dev_7ab74afd93b09861",),
+    "peer autostart": (
+        "flanner peer autostart           is this device receiving, and at login?",
+        "flanner peer autostart on",
+        "flanner peer autostart off",
+    ),
     "mesh status": ("flanner mesh status",),
+    "mesh inbox": (
+        "flanner mesh inbox",
+        "flanner mesh inbox --all         read threads too",
+    ),
+    "mesh read": ("flanner mesh read 7f3a",),
+    "mesh send": (
+        'flanner mesh send ben "can you look at the migration plan?"',
+        'flanner mesh send ben chen "deploying billing at 15:00"',
+    ),
+    "mesh broadcast": (
+        'flanner mesh broadcast "heads up, deploying billing in ten minutes"',
+        'flanner mesh broadcast --workspace ws_f24dca1f15b391e1 "..."',
+    ),
+    "mesh reply": ('flanner mesh reply 7f3a "next release, I\'ll add a note to the plan"',),
+    "mesh mute": (
+        "flanner mesh mute chen --for 8h",
+        "flanner mesh mute chen --off",
+    ),
+    "mesh quiet-hours": (
+        "flanner mesh quiet-hours         show them",
+        "flanner mesh quiet-hours 22:00-07:00",
+        "flanner mesh quiet-hours off",
+    ),
+    "mesh wait": ("flanner mesh wait --timeout 600",),
+    "mesh watch": ("flanner mesh watch",),
+    "mesh interrupt": (
+        "flanner mesh interrupt           show the current choice",
+        "flanner mesh interrupt prompt",
+    ),
 }
 
 
