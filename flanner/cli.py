@@ -7455,6 +7455,34 @@ def _catch_up_in_background(dial: Any) -> None:
     threading.Thread(target=run, daemon=True).start()
 
 
+def _message_upkeep_in_background() -> None:
+    """Retry queued messages and apply retention while serving.
+
+    `peer serve` is the process a messaging device keeps running, so the
+    outbox lives here: every 30 seconds whatever is due is sent again, and
+    once a day messages past the organization's retention period are
+    deleted (the mesh messaging plan, sections 5.6 and 12).
+    """
+    import threading
+
+    from . import mesh_delivery
+
+    def run() -> None:
+        last_expiry = 0.0
+        while True:
+            try:
+                with get_session() as session:
+                    mesh_delivery.retry_due(session)
+                    if time.monotonic() - last_expiry > 24 * 3600:
+                        mesh_delivery.expire_old(session)
+                        last_expiry = time.monotonic()
+            except Exception:  # noqa: BLE001 - upkeep must outlive one bad pass
+                logging.getLogger(__name__).warning("message upkeep failed", exc_info=True)
+            time.sleep(30)
+
+    threading.Thread(target=run, daemon=True).start()
+
+
 @peer.command("serve")
 @click.option("--host", default="127.0.0.1", help="Address to listen on (--http only)")
 @click.option("--port", default=None, type=int, help="Port to listen on (--http only)")
@@ -7508,6 +7536,7 @@ def peer_serve(host: str, port: int | None, http: bool) -> None:
         _catch_up_in_background(
             lambda device_id, workspace_id: peer_iroh.peer_for(device_id, workspace_id, cache.load)
         )
+        _message_upkeep_in_background()
         try:
             endpoint.serve(get_session, cache.load, _keyring_refresher())
         except KeyboardInterrupt:
@@ -7526,6 +7555,7 @@ def peer_serve(host: str, port: int | None, http: bool) -> None:
     # port on every interface without being asked.
     if beyond_loopback(host):
         tui.warn(f"Reachable from other machines on {host}. Anyone can reach the port.")
+    _message_upkeep_in_background()
     # Over HTTP a peer is named by address, and this device knows device ids
     # rather than addresses, so there is nobody to dial. Catching up here is
     # a manual `flanner peer pull <address>`.

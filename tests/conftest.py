@@ -10,6 +10,12 @@ from flanner.git_integration import find_git_root
 
 
 @pytest.fixture(autouse=True)
+def _no_desktop_notifications(monkeypatch):
+    """A test run must never put a notification on somebody's screen."""
+    monkeypatch.setenv("FLANNER_DESKTOP_NOTIFICATIONS", "off")
+
+
+@pytest.fixture(autouse=True)
 def _isolated_flanner_home(tmp_path, monkeypatch):
     """Point FLANNER_HOME, and the home directory itself, at a temp dir.
 

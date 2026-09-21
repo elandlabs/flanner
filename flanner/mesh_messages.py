@@ -344,6 +344,17 @@ def _rate_check(session: Session, *, sender: str, workspace: bool, now: datetime
             )
 
 
+def interrupts(session: Session, sender: str, *, now: datetime | None = None) -> bool:
+    """Whether a message from `sender` may interrupt now (sections 7.1, 7.2).
+
+    Never during quiet hours and never from a muted sender. The message is
+    stored and listed either way; only the interruption waits.
+    """
+    if quiet_hours()["active"]:
+        return False
+    return sender not in muted(session, now=now)
+
+
 def check_may_send(role: str | None) -> None:
     """Whether a role in the workspace may send messages there (section 5.2)."""
     if role is None or not push.may_send(artifacts.MESH_MESSAGE, role):

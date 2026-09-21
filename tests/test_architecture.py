@@ -43,6 +43,9 @@ FOUNDATION = {
     # tree with no database and no project.
     "skills_adapters",
     "linear_utils",
+    # A desktop notification through the tool each platform ships.
+    # Standard library only, so the peer path may reach for it.
+    "notify",
 }
 ALLOWED = {
     **{m: set() for m in FOUNDATION},
@@ -129,6 +132,7 @@ ALLOWED = {
     # below still proves peer cannot get to `account` through it.
     "peer": {
         "mesh_messages",
+        "notify",
         "observe",
         "entitlements",
         "identity",
@@ -388,6 +392,7 @@ ALLOWED = {
         "freshness",
         "ipc",
         "reconcile",
+        "mesh_delivery",
         "services",
         "review",
         "session",

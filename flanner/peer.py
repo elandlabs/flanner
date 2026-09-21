@@ -513,6 +513,17 @@ def _serve_message(
     except mesh_messages.MessageError as e:
         status = 429 if e.code == refusals.THROTTLED else 403
         raise PeerError(e.message, status=status, code=e.code) from None
+    if outcome == "accepted" and mesh_messages.interrupts(session, caller.user_id):
+        # The sender's name only, never the body, and off the request path:
+        # the acknowledgement must not wait on the desktop.
+        import threading
+
+        from . import notify
+
+        label = roster.label_for(caller.user_id)
+        threading.Thread(
+            target=notify.desktop, args=("flanner", f"{label} sent a message"), daemon=True
+        ).start()
     return {"result": outcome}
 
 
