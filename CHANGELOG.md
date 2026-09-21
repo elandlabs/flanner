@@ -50,8 +50,10 @@ versioning follows [SemVer](https://semver.org/).
   and `flanner init` offer it once. `flanner status` shows whether this
   device is receiving and how to fix it when not, and a sender sees why a
   message is queued.
-- On Windows, clicking a message notification opens the thread in the web
-  UI when it is running.
+- Clicking a message notification opens the thread in the web UI when it
+  is running: on Windows; on macOS with `terminal-notifier` installed
+  (`brew install terminal-notifier`); on Linux with a `notify-send` from
+  2020 or later. Otherwise the notification shows without the click.
 - **Teammates by name.** Review comments in the CLI and the web UI, the
   proposer and approvers in `flanner review status`, and `flanner members`
   show people as `@ben (Ben Otieno)` instead of a user id. Names come from

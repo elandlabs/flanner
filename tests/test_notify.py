@@ -70,3 +70,74 @@ def test_the_link_travels_in_the_environment_too(monkeypatch):
     monkeypatch.setattr(subprocess, "run", run)
     notify.desktop("flanner", "hi", "http://127.0.0.1:8080/mesh/messages/abcd")
     assert seen["env"]["FLANNER_NOTE_URL"].endswith("/abcd")
+
+
+def _record(monkeypatch, platform, found, stdout="", fail=()):
+    """Run desktop() as if on `platform`, with `found` tools, recording commands."""
+    ran = []
+
+    def run(command, env, **kwargs):
+        ran.append(command)
+        code = 1 if any(flag in command for flag in fail) else 0
+        return subprocess.CompletedProcess(command, code, stdout=stdout)
+
+    monkeypatch.setenv(notify.ENV, "on")
+    monkeypatch.setattr(notify.sys, "platform", platform)
+    monkeypatch.setattr(notify.shutil, "which", lambda name, path=None: found.get(name))
+    monkeypatch.setattr(subprocess, "run", run)
+    opened = []
+    import webbrowser
+
+    monkeypatch.setattr(webbrowser, "open", opened.append)
+    return ran, opened
+
+
+LINK = "http://127.0.0.1:8080/mesh/messages/abcd"
+
+
+def test_macos_opens_the_thread_through_terminal_notifier(monkeypatch):
+    ran, _ = _record(monkeypatch, "darwin", {"terminal-notifier": "/opt/homebrew/bin/t-n"})
+    assert notify.desktop("flanner", "-@ben sent a message", LINK)
+    assert ran == [
+        [
+            "/opt/homebrew/bin/t-n",
+            "-title",
+            "flanner",
+            "-message",
+            " -@ben sent a message",
+            "-open",
+            LINK,
+        ]
+    ]
+
+
+def test_macos_without_terminal_notifier_still_notifies(monkeypatch):
+    ran, _ = _record(monkeypatch, "darwin", {})
+    assert notify.desktop("flanner", "@ben sent a message", LINK)
+    assert ran[0][0] == "osascript"
+
+
+def test_linux_opens_the_thread_on_a_click(monkeypatch):
+    ran, opened = _record(
+        monkeypatch, "linux", {"notify-send": "/usr/bin/notify-send"}, stdout="default\n"
+    )
+    assert notify.desktop("flanner", "@ben sent a message", LINK)
+    assert "--action=default=Open" in ran[0]
+    assert opened == [LINK]
+
+
+def test_linux_dismissed_opens_nothing(monkeypatch):
+    _, opened = _record(monkeypatch, "linux", {"notify-send": "/usr/bin/notify-send"})
+    assert notify.desktop("flanner", "@ben sent a message", LINK)
+    assert opened == []
+
+
+def test_an_older_notify_send_falls_back_to_plain(monkeypatch):
+    ran, _ = _record(
+        monkeypatch,
+        "linux",
+        {"notify-send": "/usr/bin/notify-send"},
+        fail=("--action=default=Open",),
+    )
+    assert notify.desktop("flanner", "@ben sent a message", LINK)
+    assert ran[1] == ["notify-send", "--", "flanner", "@ben sent a message"]
