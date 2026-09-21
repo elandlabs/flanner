@@ -8168,7 +8168,8 @@ def _who(person: dict[str, Any]) -> str:
 
 
 def _named(person: dict[str, Any]) -> str:
-    return f"{_who(person)} ({person['name']})" if person.get("name") else _who(person)
+    named = f"{_who(person)} ({person['name']})" if person.get("name") else _who(person)
+    return tui.printable(named)
 
 
 def _local_time(stamp: str) -> str:
@@ -8180,7 +8181,7 @@ def _local_time(stamp: str) -> str:
 def _quoted(body: str) -> None:
     for line in body.splitlines() or [""]:
         # Plain text only: markup in a teammate's message is shown, never obeyed.
-        console.print(Text("  │ " + line))
+        console.print(Text(f"  {tui.BAR} " + tui.printable(line)))
 
 
 def _print_delivery(delivery: list[dict[str, Any]]) -> None:
@@ -8192,7 +8193,8 @@ def _print_delivery(delivery: list[dict[str, Any]]) -> None:
             tui.bad(f"Not delivered to {who}: {item.get('message', '')}")
         else:
             console.print(
-                f"◌ Queued for {who} · their device is offline; it goes out when they are "
+                f"{tui.QUEUED} Queued for {who} {tui.MIDDOT} their device is offline; "
+                "it goes out when they are "
                 "next reachable",
                 style="warn",
             )
@@ -8239,22 +8241,23 @@ def mesh_inbox(include_read: bool, as_json: bool) -> None:
         return
     console.print(f"  Unread  {result['unread']}\n")
     for item in threads:
-        mark = "●" if item["unread"] else " "
+        mark = tui.DOT if item["unread"] else " "
         people = item["people"]
         if item.get("workspace"):
-            who = f"{_who(item['last']['from'])} → {item['workspace']}"
+            who = f"{_who(item['last']['from'])} {tui.ARROW} {item['workspace']}"
         elif len(people) > 1:
             who = f"{_who(people[0])} +{len(people) - 1}"
         else:
             who = _who(item["last"]["from"])
         line = Text(f"  {mark}  {_local_time(item['last']['sent_at'])}  {item['short']}  ")
         line.append(f"{who:<22}", style="value")
-        line.append(" " + item["last"]["preview"].replace("\n", " "))
+        line.append(" " + tui.printable(item["last"]["preview"].replace("\n", " ")))
         if item.get("muted"):
             line.append("  (muted)", style="muted")
         console.print(line)
     console.print(
-        '\n  flanner mesh read <id> to open one · flanner mesh reply <id> "…" to answer',
+        f"\n  flanner mesh read <id> to open one {tui.MIDDOT} "
+        f'flanner mesh reply <id> "{tui.ELLIPSIS}" to answer',
         style="dim",
     )
 
@@ -8281,14 +8284,16 @@ def mesh_read(thread_id: str, as_json: bool) -> None:
                 state = item["state"]
                 at = f" {_local_time(item['at'])}" if item.get("at") else ""
                 parts.append(f"{state} to {_who(item['user'])}{at}")
-            head.append("   " + " · ".join(parts), style="dim")
+            head.append("   " + f" {tui.MIDDOT} ".join(parts), style="dim")
         console.print(head)
         _quoted(message["body"])
         console.print()
     console.print(
         f"  Messages here are deleted after {result['retention_days']} days.", style="dim"
     )
-    console.print(f'  flanner mesh reply {thread["short"]} "…" to answer', style="dim")
+    console.print(
+        f'  flanner mesh reply {thread["short"]} "{tui.ELLIPSIS}" to answer', style="dim"
+    )
 
 
 @mesh.command("send")
@@ -8371,7 +8376,7 @@ def mesh_quiet_hours(spec: str, as_json: bool) -> None:
             console.print("  Quiet hours   off")
             console.print("  Set them with: flanner mesh quiet-hours 22:00-07:00", style="dim")
         return
-    window = f"{result['start']}–{result['end']}"
+    window = f"{result['start']}-{result['end']}"
     if spec:
         tui.ok(f"Quiet hours {window}, every day, on this device ({result['timezone']})")
         console.print(

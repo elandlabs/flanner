@@ -87,6 +87,23 @@ BANG = "!"
 MIDDOT = _glyph("·", "-")
 DASH = _glyph("—", "--")
 ARROW = _glyph("→", "->")
+BAR = _glyph("│", "|")
+QUEUED = _glyph("◌", "o")
+ELLIPSIS = _glyph("…", "...")
+
+
+def printable(text: str) -> str:
+    """Text this console can print, with anything it cannot shown as `?`.
+
+    For text flanner did not write, such as a teammate's message: an emoji
+    on a cp1252 console would otherwise crash the command that shows it.
+    """
+    encoding = getattr(console.file, "encoding", None) or "utf-8"
+    try:
+        return text.encode(encoding, "replace").decode(encoding)
+    except LookupError:
+        return text
+
 
 #: Freshness in the order it degrades, so summaries always read the same way.
 FRESHNESS_ORDER = ("fresh", "aging", "suspect", "stale")
