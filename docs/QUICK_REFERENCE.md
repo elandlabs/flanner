@@ -101,6 +101,60 @@ the full authority of whoever started the server and nothing authenticates a
 caller, so this is a local convenience rather than a service to expose.
 Output goes to `~/.flanner/server.log`.
 
+## Messages Between Teammates
+
+Needs a Team Mesh plan with messaging switched on. Messages go device to
+device; no server holds them. A **handle** is a teammate's short name, like
+`ben`. It comes from their email and cannot be changed.
+
+```bash
+# Read
+flanner mesh inbox                    # unread threads
+flanner mesh inbox --all              # read ones too (--json for scripts)
+flanner mesh read 7f3a                # one thread, with delivery for what you sent
+
+# Send (always shows who it goes to and asks first)
+flanner mesh send ben "can you look at the migration plan?"
+flanner mesh send ben chen "deploying billing at 15:00"
+flanner mesh send ben "..." --yes     # skip the question, for scripts
+flanner mesh reply 7f3a "next release"
+flanner mesh broadcast "heads up, deploying in ten minutes"   # this repo's workspace
+flanner mesh broadcast --workspace WORKSPACE_ID "..."         # always asks; no --yes
+
+# Stay undisturbed (this device only)
+flanner mesh mute chen                # until you unmute
+flanner mesh mute chen --for 8h       # or 30m, 1d
+flanner mesh mute chen --off
+flanner mesh quiet-hours              # show them
+flanner mesh quiet-hours 22:00-07:00  # every day, local time
+flanner mesh quiet-hours off
+
+# How agents show new messages
+flanner mesh interrupt                # show the current choice
+flanner mesh interrupt tool           # between tool calls and at your next prompt (default)
+flanner mesh interrupt prompt         # at your next prompt only
+flanner mesh interrupt channel        # the moment they arrive, in Claude Code started with the channel
+
+# Follow along
+flanner mesh watch                    # print messages as they arrive; Ctrl+C stops
+flanner mesh wait --timeout 600       # print the next message and exit (for agents)
+
+# Receive even after a reboot
+flanner peer autostart                # is this device receiving, and at login?
+flanner peer autostart on
+flanner peer autostart off
+```
+
+A muted sender's messages still arrive and are listed; they never
+interrupt. Quiet hours work the same way for everybody. The sender is told
+neither. Messages are plain text, up to 4 KB, to up to 20 people. Your
+organization's admin sets how long they are kept: 30, 90 (the default),
+180 or 365 days. `flanner status` shows unread and queued messages, and
+warns when nothing on this device is receiving.
+
+Desktop notifications name the sender, never the message. They are on by
+default; `FLANNER_DESKTOP_NOTIFICATIONS=off` turns them off.
+
 ## Common Workflows
 
 ### First Time Setup

@@ -31,6 +31,7 @@ Flanner is local-first, and stays that way when a team uses it. Plans sync direc
 - **Agent integration**: `flanner init` wires CLAUDE.md, AGENTS.md, and a guard hook so agents save plans through flanner instead of scattering raw markdown.
 - **Memory**: the durable context around a plan — a constraint, a rejected library, a fact about the environment — kept as Markdown files a later session can search. Explicit by default, refuses anything that looks like a credential, and shared with a teammate only when somebody asks for it.
 - **Skills**: what your agents actually load. Skill packages arrive from a project, your home directory and every installed plugin at once, and when two share a name one wins silently. `flanner skills scan` reads them all and `flanner skills doctor` says which copy is in effect and what is wrong with the rest. A read: nothing in a package is executed.
+- **Messages** (Team Mesh): teammates can message each other inside their agents, device to device. `flanner mesh send` previews before it sends, and an agent shows a teammate's message but never acts on it.
 - **Issue tracker links**: tie a plan to its Linear (or JIRA) issue; with a `LINEAR_API_KEY`, flanner verifies the issue and shows its live state, in the CLI and the dashboard.
 - **Reading view**: a browser dashboard to read, edit, and walk the history of plans (light and dark, fully offline).
 - **Per-project config**: customize the plan directory per repository.

@@ -250,6 +250,126 @@ flanner register --type cloud \
 - 💾 Persistent storage
 - 🔄 Real-time synchronization
 
+## 💬 Messages From Teammates
+
+On a Team Mesh plan with messaging switched on, teammates can send each
+other short messages, device to device. Those messages reach Claude Code
+and Codex too.
+
+**Your agent shows a teammate's message and never acts on it.** It quotes
+the message, names the sender, and says it was only shown. That holds even
+when a message asks it to run something, change a setting, mute someone or
+send a reply. Only you can ask for those.
+
+### Setting it up
+
+```bash
+flanner init                 # adds the messages hook and agent instructions
+flanner peer autostart on    # receive messages from the moment you log in
+```
+
+`flanner init` writes the hook into Claude Code's `settings.json` and a
+short *Messages* block into `CLAUDE.md`, both in your user folder
+(`~/.claude`, or `CLAUDE_CONFIG_DIR`). For Codex it writes `hooks.json` and
+`AGENTS.md` under `~/.codex` (or `CODEX_HOME`). It does this only when your
+plan includes messaging, and takes the block out again when it does not.
+`flanner login` changes none of this; it only tells you to run
+`flanner init`.
+
+A message only arrives while something on your device is receiving.
+`flanner peer autostart on` starts that at login. `flanner status` warns
+when nothing is receiving.
+
+### MCP tools
+
+| Tool | What it does |
+|------|--------------|
+| `mesh_inbox(thread="", all=False)` | Unread threads, or one whole thread by id. Opening a thread marks it read. |
+| `mesh_send(body, to=[...] or workspace="...", confirm=False)` | Message teammates by handle, or everyone in a workspace. |
+| `mesh_reply(thread, body, confirm=False)` | Answer everyone on a thread. |
+| `mesh_mute(handle, until="", off=False)` | Mute a teammate on this device: `until` like `8h`, `1d` or an ISO time; empty means until unmuted; `off=True` unmutes. |
+| `mesh_quiet_hours(set="")` | Empty reports quiet hours; `"22:00-07:00"` sets them; `"off"` clears them. |
+| `mesh_status()` | Who this device is signed in as, its workspaces and peers. Read-only and offline. |
+
+A **handle** is a teammate's short name, like `ben`. It comes from their
+email and cannot be changed.
+
+**Sending always previews first.** `mesh_send` and `mesh_reply` with
+`confirm=False` send nothing; they return who the message would go to. The
+agent shows you that, and sends with `confirm=True` only after you say
+yes. It then reports delivery per person: delivered, queued (their device
+is not receiving right now) or failed, with the reason.
+
+`mesh_mute` and `mesh_quiet_hours` need no preview: they change only a
+setting on your own device. The agent uses them only when you ask.
+
+### How a new message shows up
+
+A **hook** is a command Claude Code or Codex runs at set moments. flanner's
+hook adds new messages to the session:
+
+- **At your next prompt.** Always.
+- **Between tool calls,** at most once a minute. This is the default.
+- **Never during quiet hours or from a muted sender.** Those messages
+  still arrive and are listed; they appear once quiet hours end.
+- **More than three at once** become one line naming the senders.
+
+`flanner mesh interrupt` picks when:
+
+```bash
+flanner mesh interrupt tool      # between tool calls and at your next prompt (default)
+flanner mesh interrupt prompt    # at your next prompt only
+flanner mesh interrupt channel   # the moment they arrive, in Claude Code (see below)
+```
+
+### Claude Code: the channel
+
+A **channel** lets an MCP server push a message into a Claude Code session,
+even an idle one. Channels are a Claude Code research preview.
+
+```bash
+flanner mesh interrupt channel
+claude --dangerously-load-development-channels server:flanner
+```
+
+The development flag is the current way. Claude Code's `--channels` flag
+accepts only plugins, and flanner is not a plugin yet; one is planned. An
+organization on a Claude Team or Enterprise plan can switch channels off
+for everyone.
+
+With `channel` set, the hook skips anything the channel already delivered,
+so nothing shows twice.
+
+**Without the channel,** messages still reach you. They appear at your
+next prompt and between tool calls. An idle session shows nothing until you
+type, but the desktop notification still tells you who wrote.
+
+### Codex
+
+The same hook serves Codex, at your next prompt and between tool calls.
+Codex has no channel, so `channel` means "between tool calls" there. An
+idle Codex session shows nothing until you type.
+
+- **Trust the hook once.** Codex skips a new hook until you open Codex and
+  run `/hooks` to trust it. Do this after `flanner init`.
+- **If your administrator allows only managed hooks,** `flanner init` says
+  so and installs no hook. Run `flanner init --print-codex-hook` and give
+  your administrator what it prints. You still see messages in `flanner
+  mesh inbox`, the web UI and desktop notifications, and Codex can read
+  them if you ask.
+
+### Desktop notifications
+
+Whatever agent you use, `flanner peer serve` shows a desktop notification
+naming the sender, never the message. It stays quiet during quiet hours and
+for a muted sender. They are on by default;
+`FLANNER_DESKTOP_NOTIFICATIONS=off` turns them off.
+
+Clicking one opens the thread in the web UI, when `flanner web` is
+running. That works on Windows, on macOS with `terminal-notifier`
+installed, and on Linux with `notify-send` from libnotify 0.7.9 or later.
+Elsewhere the notification shows without the click.
+
 ## 🐛 Troubleshooting
 
 ### Issue: "Could not find Claude Code configuration path"

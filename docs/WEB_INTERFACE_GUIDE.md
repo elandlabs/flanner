@@ -111,6 +111,50 @@ Open your browser to: **http://localhost:8080**
 - **Content Hash**: SHA256 fingerprint
 - **Quick View**: Jump to any version
 
+### Messages (`/mesh/messages`)
+Messages between teammates on a Team Mesh plan. They go device to device;
+no server holds them. The page is under *Team* in the sidebar, with the
+unread count beside it.
+- **Thread list**: One row per thread, unread first (marked `●`), with the
+  people or workspace, the latest line and the time. A muted sender's
+  thread is marked *muted*.
+- **New message**: Type one or more handles (a **handle** is a teammate's
+  short name, like `ben`; the field suggests them), or pick *Everyone in a
+  workspace*. Up to 20 people. Plain text, up to 4 KB.
+- **Review and send**: Nothing is sent straight away. You see who it goes
+  to and the text, then press *Send* or *Cancel*.
+- **Delivery**: After sending, a notice says *Delivered to* or *Queued
+  for* each person. Queued means their device is not receiving right now;
+  it goes out when it is.
+- **Arrivals**: The page updates itself. A toast names the sender, never
+  the message, so nothing private shows on a shared screen.
+- **Not set up**: Signed out, on a plan without messaging, messaging
+  switched off by your organization, or an out-of-date team list: the page
+  says which, and what to run.
+
+### A Thread (`/mesh/messages/{thread}`)
+- **Conversation**: Every message, oldest first, each as a quoted block
+  with the sender and time. Your own show *you* and their delivery per
+  person.
+- **Reply**: The box at the bottom answers everyone on the thread. It
+  previews first, like a new message.
+- **Retention**: A line says how long messages are kept. Your
+  organization's admin sets it in the console: 30, 90 (the default), 180
+  or 365 days.
+- **Marking read**: Opening a thread marks it read.
+
+### Settings → Team → Messages (`/settings`)
+- **Your handle**: Shown read-only. It comes from your email and cannot be
+  changed; your display name can.
+- **Kept for**: How long your organization keeps messages.
+- **Quiet hours**: Tick *Quiet hours*, pick a start and end, and *Save*.
+  Messages still arrive and are listed, but agents and notifications stay
+  quiet until the end time. They apply to this device only, every day, in
+  its local time.
+- **Muted senders**: Each muted teammate, with *Unmute*. Mute someone with
+  `flanner mesh mute`. A muted sender's messages still arrive; they never
+  interrupt, and they are not told.
+
 ## 🎨 Design Features
 
 ### Modern UI
@@ -187,6 +231,12 @@ web/
 2. Click "History"
 3. See timeline of all versions
 4. Click any version to view it
+
+### Messaging a Teammate
+1. Click *Messages* in the sidebar
+2. Type their handle, or pick a workspace, and write the message
+3. Click "Review and send", check who it goes to, then "Send"
+4. The thread opens with *Delivered to* or *Queued for* each person
 
 ## 🧪 Testing
 
