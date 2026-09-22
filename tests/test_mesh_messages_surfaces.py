@@ -367,3 +367,29 @@ def test_a_chat_mutes_and_unmutes_its_sender(client, signed_in):
     after = client.get("/mesh/messages/c/dm-bob").text
     assert "Unmute @bob" in after
     assert after.count('<span class="pill pill-quiet">muted</span>') == 3, "row, head and message"
+
+
+def test_the_empty_pane_does_not_call_muted_unread_nothing(client, signed_in):
+    """The rail badge counts a muted sender's unread, so the pane says so too."""
+    session = get_session()
+    session.add(
+        MeshMessageModel(
+            message_id="sha256:ee55",
+            thread_id="sha256:ee55",
+            workspace_id="ws_core",
+            author_user_id="bob",
+            author_device_id="dev_b",
+            recipients='["you"]',
+            body="still here?",
+            sent_at=datetime(2026, 9, 22),
+            envelope="{}",
+            payload="{}",
+        )
+    )
+    session.commit()
+    services.mesh_mute("bob")
+
+    page = client.get("/mesh/messages").text
+    assert "except from muted senders" in page
+    assert "1 unread from someone you muted" in page
+    assert "Unread 1" not in page, "a muted chat never enters the Unread section"

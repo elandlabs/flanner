@@ -99,6 +99,11 @@
       {% call empty.state('clear', chats.unread ~ ' unread in ' ~ chats.unread_chats ~ (' chat' if chats.unread_chats == 1 else ' chats')) %}
       <p class="hint">Press j then Enter, or pick a chat.</p>
       {% endcall %}
+      {% elif chats.muted_unread %}
+      {# The rail badge counts these, so the pane must not call them nothing. #}
+      {% call empty.state('clear', 'Nothing unread, except from muted senders') %}
+      <p class="hint">{{ chats.muted_unread }} unread from someone you muted. It stays in their chat, and never interrupts.</p>
+      {% endcall %}
       {% else %}
       {% call empty.state('clear', 'Nothing unread') %}
       <p class="hint">Messages from your team land here, and in Claude Code or Codex if you use them.</p>
