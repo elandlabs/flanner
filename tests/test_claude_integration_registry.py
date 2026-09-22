@@ -184,3 +184,39 @@ def test_registration_instructions_are_returned_not_printed():
     text = ci.registration_instructions()
     assert "Restart Claude Code" in text
     assert "flanner" in text
+
+
+def _install_launcher():
+    """What the desktop app puts in FLANNER_HOME (a temp dir, per conftest)."""
+    import os
+    from pathlib import Path
+
+    name = "flanner-mcp.exe" if sys.platform == "win32" else "flanner-mcp"
+    launcher = Path(os.environ["FLANNER_HOME"]) / "bin" / name
+    launcher.parent.mkdir(parents=True, exist_ok=True)
+    launcher.write_text("", encoding="utf-8")
+    return launcher
+
+
+def test_without_the_desktop_app_the_interpreter_is_named():
+    assert ci.mcp_launcher() is None
+    assert ci.get_local_server_config()["command"] == sys.executable
+
+
+def test_the_desktop_launcher_is_named_so_updates_do_not_break_it():
+    launcher = _install_launcher()
+    assert ci.get_local_server_config() == {"command": str(launcher), "args": [], "env": {}}
+
+
+def test_init_moves_an_existing_entry_onto_the_launcher(config_path):
+    """A pip flanner registered first; installing the app then re-running init
+    must switch Claude Desktop to the launcher rather than keep the old path."""
+    ci.register_mcp_server()
+    assert ci.get_server_config_from_claude()["command"] == sys.executable
+
+    launcher = _install_launcher()
+    ok, message = ci.auto_register_on_init()
+
+    assert ok is True
+    assert "updated" in message
+    assert ci.get_server_config_from_claude()["command"] == str(launcher)
