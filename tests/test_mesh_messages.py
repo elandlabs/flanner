@@ -8,6 +8,7 @@ server, so what is tested is what ships, short of iroh.
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 from datetime import datetime, timedelta, timezone
 
@@ -619,3 +620,321 @@ def test_the_message_type_has_a_push_rule():
     assert push.may_send(artifacts.MESH_MESSAGE, EDITOR)
     assert not push.may_send(artifacts.MESH_MESSAGE, READER)
     assert json.loads(canonical_bytes({"a": 1})) == {"a": 1}
+
+
+# --- chats: threads grouped by who they are with --------------------------------
+#
+# Rows go straight into alice's catalog, the way `receive` and
+# `record_outgoing` would leave them, so these test the grouping and nothing
+# about transport.
+
+
+def person(user_id):
+    return {"user_id": user_id, "handle": user_id, "name": user_id.title()}
+
+
+AUDIENCES = {"teammates": ["bob", "carol"], "workspaces": {WORKSPACE: ["bob", "carol"]}}
+NOW = datetime(2026, 9, 22, 12, 0)
+
+
+def held(session, mid, *, author, to, body="hi", thread=None, at=NOW, outgoing=False, read=False):
+    session.add(
+        MeshMessageModel(
+            message_id=f"sha256:{mid}",
+            thread_id=f"sha256:{thread or mid}",
+            workspace_id=WORKSPACE,
+            author_user_id=author,
+            author_device_id="d",
+            recipients=json.dumps(to),
+            body=body,
+            sent_at=at,
+            outgoing=outgoing,
+            read_at=at if outgoing or read else None,
+            envelope="{}",
+            payload="{}",
+        )
+    )
+    session.commit()
+
+
+def chats_of(alice):
+    return mesh_messages.chats(alice.session, me="alice", person=person, now=NOW, **AUDIENCES)
+
+
+def chat_of(alice, key, **kw):
+    return mesh_messages.chat(
+        alice.session,
+        key,
+        me="alice",
+        person=person,
+        retention_days=90,
+        now=NOW,
+        **AUDIENCES,
+        **kw,
+    )
+
+
+def section(view, name):
+    return next(s["chats"] for s in view["sections"] if s["id"] == name)
+
+
+@pytest.fixture
+def utc_clock(monkeypatch):
+    """Day labels and times in UTC, so the test does not depend on the machine's zone."""
+    monkeypatch.setattr(mesh_messages, "_local", lambda m: m.replace(tzinfo=timezone.utc))
+
+
+def test_two_threads_with_the_same_two_people_are_one_chat(team):
+    alice, _ = team
+    held(alice.session, "aaaa1111", author="bob", to=["alice"], body="first")
+    held(alice.session, "bbbb2222", author="alice", to=["bob"], body="second", outgoing=True)
+
+    (bob,) = [c for c in section(chats_of(alice), "unread") if c["key"] == "dm-bob"]
+    assert bob["title"] == "@bob" and bob["unread"] == 1
+    assert [m["body"] for m in chat_of(alice, "dm-bob")["messages"]] == ["first", "second"]
+
+
+def test_a_broadcast_and_a_group_of_the_same_members_are_two_chats(team):
+    alice, _ = team
+    held(alice.session, "aaaa1111", author="alice", to={"workspace": WORKSPACE}, outgoing=True)
+    held(alice.session, "bbbb2222", author="alice", to=["bob", "carol"], outgoing=True)
+
+    view = chats_of(alice)
+    digest = hashlib.sha256(b"bob,carol").hexdigest()[:12]
+    assert [c["key"] for c in section(view, "workspaces")] == [f"ws-{WORKSPACE}"]
+    assert [c["key"] for c in section(view, "groups")] == [f"grp-{digest}"]
+    assert section(view, "groups")[0]["title"] == "@bob, @carol"
+
+
+def test_a_reply_keys_to_the_chat_of_its_root(team):
+    alice, _ = team
+    held(alice.session, "aaaa1111", author="bob", to=["alice"], body="root one", at=NOW)
+    held(
+        alice.session,
+        "bbbb2222",
+        author="bob",
+        to=["alice"],
+        body="root two",
+        at=NOW + timedelta(hours=1),
+    )
+    held(
+        alice.session,
+        "cccc3333",
+        author="alice",
+        to=["bob"],
+        body="answering one",
+        thread="aaaa1111",
+        at=NOW + timedelta(hours=2),
+        outgoing=True,
+    )
+
+    assert mesh_messages.chat_key_for(alice.session, "sha256:aaaa1111", "alice") == "dm-bob"
+    one, two, reply = chat_of(alice, "dm-bob")["messages"]
+    assert (one["is_root"], two["is_root"], reply["is_root"]) == (True, True, False)
+    assert one["reply_to"] is None and two["reply_to"] is None
+    assert reply["reply_to"] == {"short": "aaaa", "preview": "root one"}
+
+
+def test_keys_carry_no_colon_however_the_ids_look():
+    assert mesh_messages.chat_key(["ben@x.com"], None, me="me") == ("dm-ben@x.com", "dm")
+    assert mesh_messages.chat_key([], "core", me="me") == ("ws-core", "ws")
+    key, kind = mesh_messages.chat_key(["a@x.com", "b@y.org"], None, me="me")
+    assert kind == "grp" and len(key) == len("grp-") + 12
+    assert ":" not in key
+    # A message to nobody but me keys as a chat with me rather than failing.
+    assert mesh_messages.chat_key([], None, me="me") == ("dm-me", "dm")
+
+
+def test_roster_teammates_and_workspaces_are_chats_before_anyone_writes(team):
+    alice, _ = team
+    view = chats_of(alice)
+
+    assert section(view, "unread") == [] and section(view, "groups") == []
+    assert [c["title"] for c in section(view, "workspaces")] == [WORKSPACE]
+    assert [(c["title"], c["last"]) for c in section(view, "people")] == [
+        ("@bob", None),
+        ("@carol", None),
+    ]
+    empty = chat_of(alice, "dm-carol")
+    assert empty["messages"] == [] and empty["reply_to"] is None
+    assert empty["title"] == "@carol"
+    assert chat_of(alice, f"ws-{WORKSPACE}")["people"][0]["user_id"] == "bob"
+
+
+def test_sections_keep_their_order_and_a_chat_sits_in_one(team):
+    alice, _ = team
+    roster = {"teammates": ["bob", "carol", "dave"], "workspaces": {"zeta": [], "alpha": []}}
+    held(alice.session, "aaaa1111", author="carol", to=["alice"], at=NOW - timedelta(hours=3))
+    held(alice.session, "bbbb2222", author="bob", to=["alice"], at=NOW - timedelta(hours=1))
+    held(
+        alice.session,
+        "cccc3333",
+        author="dave",
+        to=["alice"],
+        read=True,
+        at=NOW - timedelta(days=2),
+    )
+    held(
+        alice.session,
+        "dddd4444",
+        author="alice",
+        to=["bob", "carol"],
+        outgoing=True,
+        at=NOW - timedelta(days=1),
+    )
+    held(alice.session, "eeee5555", author="alice", to=["carol", "dave"], outgoing=True, at=NOW)
+
+    view = mesh_messages.chats(alice.session, me="alice", person=person, now=NOW, **roster)
+
+    assert [s["id"] for s in view["sections"]] == ["unread", "workspaces", "people", "groups"]
+    assert [c["title"] for c in section(view, "unread")] == ["@bob", "@carol"]
+    assert [c["title"] for c in section(view, "workspaces")] == ["alpha", "zeta"]
+    assert [c["title"] for c in section(view, "people")] == ["@dave"]
+    assert [c["title"] for c in section(view, "groups")] == ["@carol, @dave", "@bob, @carol"]
+    assert view["unread"] == 2 and view["unread_chats"] == 2
+
+
+def test_people_with_messages_come_first_then_the_rest_by_handle(team):
+    alice, _ = team
+    roster = {"teammates": ["zed", "bob", "carol"], "workspaces": {}}
+    held(
+        alice.session,
+        "aaaa1111",
+        author="alice",
+        to=["zed"],
+        outgoing=True,
+        at=NOW - timedelta(days=1),
+    )
+    held(alice.session, "bbbb2222", author="alice", to=["carol"], outgoing=True, at=NOW)
+
+    view = mesh_messages.chats(alice.session, me="alice", person=person, now=NOW, **roster)
+    assert [c["title"] for c in section(view, "people")] == ["@carol", "@zed", "@bob"]
+
+
+def test_a_muted_chat_stays_out_of_unread_and_is_counted_apart(team):
+    alice, _ = team
+    mesh_messages.mute(alice.session, "bob")
+    held(alice.session, "aaaa1111", author="bob", to=["alice"])
+    held(alice.session, "bbbb2222", author="carol", to=["alice"])
+
+    view = chats_of(alice)
+    assert [c["title"] for c in section(view, "unread")] == ["@carol"]
+    (bob,) = [c for c in section(view, "people") if c["title"] == "@bob"]
+    assert bob["muted"] is True and bob["unread"] == 1
+    assert (view["unread"], view["muted_unread"]) == (1, 1)
+    assert chat_of(alice, "dm-bob")["people"][0]["muted"] is True
+
+
+def test_a_failed_delivery_flags_the_chat(team):
+    alice, _ = team
+    held(alice.session, "aaaa1111", author="alice", to=["bob"], outgoing=True)
+    alice.session.add(
+        MeshDeliveryModel(
+            message_id="sha256:aaaa1111",
+            user_id="bob",
+            device_id="d",
+            state="failed",
+            code=refusals.PEER_OUTDATED,
+            detail="too old",
+        )
+    )
+    alice.session.commit()
+
+    (bob,) = [c for c in section(chats_of(alice), "people") if c["title"] == "@bob"]
+    assert bob["failed"] is True
+    (mine,) = chat_of(alice, "dm-bob")["messages"]
+    assert (mine["delivered"], mine["queued"], len(mine["failed"])) == (0, 0, 1)
+    assert mine["failed"][0]["message"] == "too old"
+
+
+def test_a_chat_is_one_time_line_with_day_labels(team, utc_clock):
+    alice, _ = team
+    held(
+        alice.session, "aaaa1111", author="bob", to=["alice"], at=NOW - timedelta(days=1, hours=2)
+    )
+    held(
+        alice.session,
+        "bbbb2222",
+        author="alice",
+        to=["bob"],
+        outgoing=True,
+        at=NOW - timedelta(days=1),
+    )
+    held(alice.session, "cccc3333", author="bob", to=["alice"], at=NOW - timedelta(hours=1))
+
+    messages = chat_of(alice, "dm-bob")["messages"]
+    assert [m["day"] for m in messages] == ["Yesterday", None, "Today"]
+    assert [m["when"] for m in messages] == ["10:00", "12:00", "11:00"]
+    assert [m["mine"] for m in messages] == [False, True, False]
+
+
+def test_list_times_shorten_with_age(utc_clock):
+    assert mesh_messages.when(NOW - timedelta(hours=1), now=NOW) == "11:00"
+    assert mesh_messages.when(NOW - timedelta(days=3), now=NOW) == "Sat"
+    assert mesh_messages.when(NOW - timedelta(days=10), now=NOW) == "12 Sep"
+    assert mesh_messages.day_label(NOW - timedelta(days=10), now=NOW) == "Sat 12 Sep"
+
+
+def test_opening_a_chat_marks_it_read_and_marking_clears_only_incoming(team):
+    alice, _ = team
+    held(alice.session, "aaaa1111", author="bob", to=["alice"])
+    held(alice.session, "bbbb2222", author="bob", to=["alice"], at=NOW + timedelta(minutes=1))
+    held(alice.session, "cccc3333", author="carol", to=["alice"])
+
+    assert chat_of(alice, "dm-bob", mark_read=False)["unread"] == 2
+    assert mesh_messages.unread_count(alice.session) == 3
+
+    assert mesh_messages.mark_chat_read(alice.session, "dm-bob", me="alice") == 2
+    assert mesh_messages.unread_count(alice.session) == 1
+    assert mesh_messages.mark_chat_read(alice.session, "dm-bob", me="alice") == 0
+
+    assert chat_of(alice, "dm-carol")["unread"] == 0
+    assert mesh_messages.unread_count(alice.session) == 0
+
+
+def test_the_composer_joins_the_newest_thread_while_it_is_under_a_day_old(team):
+    alice, _ = team
+    held(
+        alice.session,
+        "aaaa1111",
+        author="bob",
+        to=["alice"],
+        body="old",
+        at=NOW - timedelta(days=2),
+    )
+    assert chat_of(alice, "dm-bob")["reply_to"] is None
+
+    held(
+        alice.session,
+        "bbbb2222",
+        author="bob",
+        to=["alice"],
+        body="fresh one",
+        at=NOW - timedelta(hours=1),
+    )
+    assert chat_of(alice, "dm-bob")["reply_to"] == {
+        "id": "sha256:bbbb2222",
+        "short": "bbbb",
+        "preview": "fresh one",
+    }
+    # A day later the same thread is left alone and a reply starts a new one.
+    later = mesh_messages.chat(
+        alice.session,
+        "dm-bob",
+        me="alice",
+        person=person,
+        retention_days=90,
+        now=NOW + timedelta(hours=23, minutes=1),
+        **AUDIENCES,
+    )
+    assert later["reply_to"] is None
+
+
+def test_a_chat_nobody_has_is_not_found(team):
+    alice, _ = team
+    with pytest.raises(MessageError) as refused:
+        chat_of(alice, "grp-000000000000")
+    assert refused.value.code == refusals.NOT_FOUND
+    with pytest.raises(MessageError):
+        mesh_messages.chat_key_for(alice.session, "sha256:nothing", "alice")
+    assert mesh_messages.mark_chat_read(alice.session, "dm-nobody", me="alice") == 0

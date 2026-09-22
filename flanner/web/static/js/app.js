@@ -735,6 +735,50 @@ document.addEventListener('keydown', function(e) {
     }
 });
 
+// The chat list on Messages. Only while focus is inside it: j/k or the
+// arrows move between chats, Enter is the link, e marks the focused chat
+// read. Nothing page-wide, so typing in the composer is never a command.
+once('chat-keys', function () {
+    document.addEventListener('keydown', function (e) {
+        const nav = e.target.closest && e.target.closest('nav[aria-label="Chats"]');
+        if (!nav || inTextField() || e.ctrlKey || e.metaKey || e.altKey) return;
+        const rows = Array.prototype.slice.call(nav.querySelectorAll('.chat-row:not([hidden])'));
+        if (!rows.length) return;
+        const at = rows.indexOf(document.activeElement);
+        if (e.key === 'j' || e.key === 'ArrowDown') {
+            e.preventDefault();
+            rows[Math.min(at + 1, rows.length - 1)].focus();
+        } else if (e.key === 'k' || e.key === 'ArrowUp') {
+            e.preventDefault();
+            rows[Math.max(at - 1, 0)].focus();
+        } else if (e.key === 'e' && at >= 0 && rows[at].dataset.read) {
+            e.preventDefault();
+            // `manual`: the route answers with a redirect to the chat, and
+            // following it would render a page nobody looks at.
+            fetch(rows[at].dataset.read, { method: 'POST', credentials: 'same-origin', redirect: 'manual' })
+                .then(function () { if (window.flannerVisit) window.flannerVisit(location.href, false); })
+                .catch(function () {});
+        }
+    });
+});
+
+// Filter the chat list as you type. Rows whose name or preview lack the
+// text hide, and a section with no rows left hides with its label.
+onPage(function () {
+    const box = document.getElementById('chat-filter');
+    if (!box) return;
+    const nav = box.closest('nav');
+    box.addEventListener('input', function () {
+        const q = box.value.trim().toLowerCase();
+        nav.querySelectorAll('.chat-row').forEach(function (row) {
+            row.hidden = q !== '' && row.textContent.toLowerCase().indexOf(q) === -1;
+        });
+        nav.querySelectorAll('.chat-sect').forEach(function (sect) {
+            sect.hidden = !sect.querySelector('.chat-row:not([hidden])');
+        });
+    });
+});
+
 console.log('🚀 MCP Plan File Manager loaded successfully!');
 
 // The shortcuts dialog is reachable from the sidebar and the footer as well
@@ -867,6 +911,15 @@ onPage(function () {
     // Live updates re-render the current page through this same path. A
     // second "swap the page in place" would be a second set of bugs.
     window.flannerVisit = visit;
+
+    // A swap scrolls to the top, which is right for a new page and wrong
+    // for an address with an anchor on it: a thread's old URL redirects to
+    // its chat with the thread's root named in the hash.
+    document.addEventListener('flanner:page', function () {
+        if (!location.hash) return;
+        const target = document.getElementById(location.hash.slice(1));
+        if (target) target.scrollIntoView();
+    });
 
     document.addEventListener('click', function (e) {
         const a = e.target.closest('a[href]');
@@ -1410,22 +1463,25 @@ onPage(function () {
     let source = null;
     let opened = false;
 
+    // A link, not an automatic swap. This page may be half-read, and the
+    // editor certainly must not have the document changed underneath
+    // somebody typing into it.
+    function banner(host, html) {
+        let notice = host.querySelector('[data-live-banner]');
+        if (!notice) {
+            notice = document.createElement('div');
+            notice.setAttribute('data-live-banner', '');
+            notice.className = 'notice info';
+            host.prepend(notice);
+        }
+        notice.innerHTML = html;
+    }
+
     function planBanner(planId, version) {
         const host = document.querySelector('[data-live-plan="' + planId + '"]');
         if (!host) return;
-        let banner = host.querySelector('[data-live-banner]');
-        if (!banner) {
-            banner = document.createElement('div');
-            banner.setAttribute('data-live-banner', '');
-            banner.className = 'notice info';
-            host.prepend(banner);
-        }
-        // A link, not an automatic swap. This page may be half-read, and the
-        // editor certainly must not have the document changed underneath
-        // somebody typing into it.
-        banner.innerHTML =
-            'Version ' + version + ' of this plan arrived. ' +
-            '<a href="' + location.pathname + '">Open it</a>.';
+        banner(host, 'Version ' + version + ' of this plan arrived. ' +
+            '<a href="' + location.pathname + '">Open it</a>.');
     }
 
     // `touched` is the list of plans that moved, or null for "something may
@@ -1460,6 +1516,17 @@ onPage(function () {
         if (!list || !window.flannerVisit) return;
         const only = list.getAttribute('data-live-list');
         if (only && touched && touched.indexOf(only) === -1) return;
+        // Except a reply half-written: the Messages page carries its
+        // composer inside the live region, and a swap would wipe it. Say
+        // something arrived and let the person choose when to look.
+        const typing = Array.prototype.some.call(list.querySelectorAll('textarea'), function (t) {
+            return t.value.trim() !== '';
+        });
+        if (typing) {
+            banner(list.querySelector('[data-live-banner-host]') || list,
+                'New messages · <a href="' + location.pathname + location.search + '">Show</a>');
+            return;
+        }
         window.flannerVisit(location.href, false);
     }
 

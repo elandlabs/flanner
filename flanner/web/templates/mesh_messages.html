@@ -1,82 +1,206 @@
 {% extends "base.html" %}
 {% import "_empty.html" as empty %}
-{% block title %}Messages{% endblock %}
+{% import "_icon.html" as ico %}
+{% block title %}{% if chat %}{{ chat.title }} · Messages{% else %}Messages{% endif %}{% endblock %}
+
+{#
+  Messages, as chats. A 280px list of who the conversations are with, in
+  four sections, beside a pane showing one of them with every thread merged
+  into one time line. One template for both states: below 900px the
+  stylesheet shows the list alone at /mesh/messages and the pane alone at a
+  chat's address, so a phone gets two pages and the server renders one.
+
+  A teammate's words stay a quoted block (.msg-quote): visibly not the app
+  speaking, the same shape the agent hooks show them in. Yours are plain.
+#}
+
+{% block topbar_back %}
+{% if chat %}<a class="btn back" href="/mesh/messages" aria-label="Back to messages" title="Back to messages"><span aria-hidden="true">←</span></a>{% endif %}
+{% endblock %}
 
 {% block topbar_main %}
 <h1>Messages</h1>
-<span class="sub">From your team, device to device. Shown, never acted on.</span>
+<span class="sub">Shown to your agents, never acted on.</span>
+{% endblock %}
+
+{% block help_extra %}
+<div><dt><kbd>j</kbd><kbd>k</kbd></dt><dd>Move between chats, in the chat list</dd></div>
+<div><dt><kbd>e</kbd></dt><dd>Mark the focused chat read</dd></div>
 {% endblock %}
 
 {% block content %}
-<div class="pane" data-live-list="messages">
-
-  {% if said %}<div class="notice good">{{ said }}</div>{% endif %}
+{% if chats.error %}
+<div class="pane">
   {% if refused %}<div class="notice bad">{{ refused }}</div>{% endif %}
-  {% if inbox.error %}<div class="notice warn">{{ inbox.message }}</div>{% endif %}
-
-  {% if preview %}
-  <div class="card card-pad">
-    <h2 class="card-title">Send this?</h2>
-    <div class="kv"><span>To</span><b>{% if preview.workspace %}everyone in {{ preview.workspace }} ({{ preview.count }} {{ "person" if preview.count == 1 else "people" }}){% else %}{% for p in preview.to %}{{ who(p) }}{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}</b></div>
-    <blockquote class="msg-quote">{{ preview.body }}</blockquote>
-    <form method="post" action="/mesh/messages" class="form-row">
-      <input type="hidden" name="body" value="{{ draft.body }}">
-      <input type="hidden" name="to" value="{{ draft.to }}">
-      <input type="hidden" name="workspace" value="{{ draft.workspace }}">
-      <input type="hidden" name="confirm" value="1">
-      <button class="btn btn-primary">Send</button>
-      <a class="btn" href="/mesh/messages">Cancel</a>
-    </form>
-  </div>
-  {% endif %}
-
-  {% if not inbox.error %}
-  <div class="card card-pad">
-    <h2 class="card-title">New message</h2>
-    <form method="post" action="/mesh/messages">
-      <div class="field-grid">
-        <div class="field">
-          <label class="field-label" for="msg-to">To (handles, up to 20)</label>
-          <input class="input" id="msg-to" name="to" list="msg-teammates" value="{{ draft.to or '' }}"
-                 placeholder="{% if teammates %}{{ teammates[0].handle }}{% else %}ben{% endif %}" autocomplete="off">
-          <datalist id="msg-teammates">
-            {% for t in teammates %}<option value="{{ t.handle }}">{{ t.name }}</option>{% endfor %}
-          </datalist>
-        </div>
-        <div class="field">
-          <label class="field-label" for="msg-ws">Or everyone in a workspace</label>
-          <select class="input" id="msg-ws" name="workspace">
-            <option value="">No, just the people named</option>
-            {% for ws in workspaces %}<option value="{{ ws }}" {% if draft.workspace == ws %}selected{% endif %}>{{ ws }}</option>{% endfor %}
-          </select>
-        </div>
-      </div>
-      <div class="field">
-        <label class="field-label" for="msg-body">Message</label>
-        <textarea class="input" id="msg-body" name="body" rows="4" maxlength="4096" required>{{ draft.body or '' }}</textarea>
-      </div>
-      <p class="hint">Plain text, up to 4 KB. You will see who it goes to before it is sent.</p>
-      <button class="btn btn-primary">Review and send</button>
-    </form>
-  </div>
-
-  <div class="card">
-    {% if inbox.threads %}
-    {% for t in inbox.threads %}
-    <a class="msg-row {% if t.unread %}unread{% endif %}" href="/mesh/messages/{{ t.short }}">
-      <span class="msg-dot">{% if t.unread %}●{% endif %}</span>
-      <span class="msg-who">{% if t.workspace %}{{ who(t.last["from"]) }} → {{ t.workspace }}{% else %}{% for p in t.people %}{{ who(p) }}{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}</span>
-      <span class="msg-preview">{{ t.last.preview }}{% if t.muted %} <span class="pill">muted</span>{% endif %}</span>
-      <span class="when tnum" data-utc="{{ t.last.sent_at }}">{{ t.last.sent_at[11:16] }}</span>
-    </a>
-    {% endfor %}
-    {% else %}
-    {% call empty.inside('clear', 'No messages yet') %}
-    <p class="hint">Messages from your team land here, and in Claude Code or Codex if you use them.</p>
-    {% endcall %}
-    {% endif %}
-  </div>
-  {% if inbox.retention_days %}<p class="hint">Messages are deleted after {{ inbox.retention_days }} days.</p>{% endif %}
-  {% endif %}
+  {% call empty.state('team', 'Messages are not set up on this device') %}
+  <p class="hint">{{ chats.message }}</p>
+  <p><a class="btn" href="/mesh">How this device joins a team</a></p>
+  {% endcall %}
 </div>
+{% else %}
+<div class="inbox-layout{% if chat %} has-chat{% endif %}" data-live-list="messages">
+
+  <nav class="inbox-list" aria-label="Chats">
+    {% if chat %}<a class="skip-link" href="#reply-body">Skip to the composer</a>{% endif %}
+    <div class="chat-filter">
+      <label class="field-label" for="chat-filter">Filter chats</label>
+      <input class="input" type="search" id="chat-filter" autocomplete="off">
+    </div>
+    {% if chats.quiet.active %}
+    <div class="notice info chat-quiet">Quiet until {{ chats.quiet.end }} · <a href="/settings#tab-team">Settings</a></div>
+    {% endif %}
+
+    {% for s in chats.sections if s.chats %}
+    <div class="chat-sect">
+      <h2 class="rail-group">{{ s.label }}{% if s.id == 'unread' %} {{ chats.unread }}{% if chats.muted_unread %} · {{ chats.muted_unread }} muted{% endif %}{% endif %}</h2>
+      {% for c in s.chats %}
+      {% set here = chat and chat.key == c.key %}
+      <a class="chat-row{% if c.unread %} unread{% endif %}{% if c.muted %} muted{% endif %}{% if here %} active{% endif %}"
+         href="{{ chat_url(c.key) }}"{% if here %} aria-current="page"{% endif %}
+         {% if c.unread %}data-read="{{ chat_url(c.key) }}/read"{% endif %}>
+        <span class="kind" aria-hidden="true">{% if c.unread %}<span class="dot"></span>{% elif c.kind == 'ws' %}{{ ico.icon('workspaces', 14) }}{% elif c.kind == 'grp' %}{{ ico.icon('members', 14) }}{% endif %}</span>
+        <span class="name">{{ c.title }}</span>
+        <span class="when tnum">{% if c.last %}{{ c.last.when }}{% else %}–{% endif %}</span>
+        <span class="preview">{% if c.last %}<span class="txt">{% if c.last.mine %}you: {% elif c.kind != 'dm' %}{{ handle(c.last['from']) }}: {% endif %}{{ c.last.preview }}</span>{% if c.failed %}{{ ico.icon('alert', 14) }}<span class="sr-only"> not delivered</span>{% endif %}{% endif %}</span>
+        {% if c.unread %}<span class="n tnum">{{ c.unread }}<span class="sr-only"> unread</span></span>
+        {% elif c.muted %}<span class="pill pill-quiet">muted</span>{% endif %}
+      </a>
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </nav>
+
+  <section class="inbox-main" aria-label="{% if chat %}Conversation with {{ chat.title }}{% else %}Conversation{% endif %}">
+    <div class="pane" data-live-banner-host>
+      {% if said %}<div class="notice good">{{ said }}</div>{% endif %}
+      {% if refused %}<div class="notice bad">{{ refused }}</div>{% endif %}
+
+      {% if preview %}
+      <div class="card card-pad">
+        <h2 class="card-title">Send this?</h2>
+        <div class="kv"><span>To</span><b>{% if preview.workspace %}everyone in {{ preview.workspace }} ({{ preview.count }} {{ "person" if preview.count == 1 else "people" }}){% else %}{% for p in preview.to %}{{ who(p) }}{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}</b></div>
+        <blockquote class="msg-quote">{{ preview.body }}</blockquote>
+        <form method="post" action="{{ preview_action }}" class="form-row">
+          <input type="hidden" name="body" value="{{ draft.body }}">
+          {% if not preview.thread_id %}
+          <input type="hidden" name="to" value="{{ draft.to }}">
+          <input type="hidden" name="workspace" value="{{ draft.workspace }}">
+          <input type="hidden" name="chat" value="{{ chat.key if chat else '' }}">
+          {% endif %}
+          <input type="hidden" name="confirm" value="1">
+          <button class="btn btn-primary">Send</button>
+          <a class="btn" href="{{ chat_url(chat.key) if chat else '/mesh/messages' }}">Cancel</a>
+        </form>
+      </div>
+      {% endif %}
+
+      {% if not chat %}
+      {% if chats.unread %}
+      {% call empty.state('clear', chats.unread ~ ' unread in ' ~ chats.unread_chats ~ (' chat' if chats.unread_chats == 1 else ' chats')) %}
+      <p class="hint">Press j then Enter, or pick a chat.</p>
+      {% endcall %}
+      {% else %}
+      {% call empty.state('clear', 'Nothing unread') %}
+      <p class="hint">Messages from your team land here, and in Claude Code or Codex if you use them.</p>
+      {% endcall %}
+      {% endif %}
+
+      {% else %}
+      <div class="page-head chat-head">
+        <div>
+          <h2 class="page-title">{{ chat.title }}{% if chat.muted %} <span class="pill pill-quiet">muted</span>{% endif %}</h2>
+          <p class="page-sub">
+            {%- if chat.kind == 'ws' %}Everyone in {{ chat.workspace }} · {{ chat.people | length }} {{ 'teammate' if chat.people | length == 1 else 'teammates' }}
+            {%- elif chat.kind == 'dm' %}{{ chat.people[0].name or chat.people[0].user_id }} · {{ handle(chat.people[0]) }}
+            {%- else %}{% for p in chat.people %}{{ p.name or handle(p) }}{% if not loop.last %}, {% endif %}{% endfor %}{% endif -%}
+          </p>
+        </div>
+        {% if chat.unread %}
+        <form method="post" action="{{ chat_url(chat.key) }}/read">
+          <input type="hidden" name="back" value="{{ chat_url(chat.key) }}">
+          <button class="btn btn-sm">Mark read <kbd>e</kbd></button>
+        </form>
+        {% endif %}
+        {% set mutable = chat.people | selectattr('handle') | list %}
+        {% if mutable %}
+        {# Mute is per teammate on this device, through the same form the
+           Settings page uses; `back` brings you here afterwards. #}
+        <details class="chat-menu">
+          <summary class="btn btn-sm">Mute</summary>
+          <div class="chat-menu-body">
+            {% for p in mutable %}
+            <form method="post" action="/mesh/messages/mute" class="form-row">
+              <input type="hidden" name="handle" value="{{ p.handle }}">
+              <input type="hidden" name="back" value="{{ chat_url(chat.key) }}">
+              {% if p.muted %}
+              <input type="hidden" name="off" value="1">
+              <button class="btn btn-sm">Unmute @{{ p.handle }}</button>
+              {% else %}
+              <label class="sr-only" for="mute-for-{{ loop.index }}">For</label>
+              <select class="input input-sm" id="mute-for-{{ loop.index }}" name="until">
+                <option value="8h">8 hours</option>
+                <option value="1d">1 day</option>
+                <option value="">Until I unmute</option>
+              </select>
+              <button class="btn btn-sm">Mute @{{ p.handle }}</button>
+              {% endif %}
+            </form>
+            {% endfor %}
+          </div>
+        </details>
+        {% endif %}
+      </div>
+
+      <div class="card">
+        {% for m in chat.messages %}
+        {% if m.day %}<div class="msg-day">{{ m.day }}</div>{% endif %}
+        {% if m.incomplete %}<p class="msg-day">Earlier messages in this thread are not on this device.</p>{% endif %}
+        <div class="msg-line{% if m.mine %} mine{% endif %}"{% if m.is_root %} id="t-{{ m.short }}"{% endif %}>
+          <span class="when tnum">{{ m.when }}</span>
+          <div class="msg-main">
+            <div class="msg-head">{% if m.mine %}you{% else %}{{ handle(m['from']) }}{% endif %}{% if m.muted %} <span class="pill pill-quiet">muted</span>{% endif %}</div>
+            {% if m.reply_to %}<a class="msg-mark" href="#t-{{ m.reply_to.short }}">{{ ico.icon('reply', 14) }} re <b>“{{ m.reply_to.preview }}”</b></a>{% endif %}
+            {% if m.mine %}<p class="msg-body">{{ m.body }}</p>{% else %}<blockquote class="msg-quote">{{ m.body }}</blockquote>{% endif %}
+            {% if m.refs %}<div class="msg-refs">{% for r in m.refs %}<a class="vtag vtag-current" href="/plans/{{ r.id }}">plan · {{ r.id[:8] }}{% if r.version %} · v{{ r.version }}{% endif %}</a>{% endfor %}</div>{% endif %}
+          </div>
+          {% if m.mine %}
+          <div class="msg-state">
+            <span>{% if m.delivered %}delivered {{ m.delivered }}{% endif %}{% if m.delivered and m.queued %} · {% endif %}{% if m.queued %}queued {{ m.queued }}{% endif %}</span>
+            {% if m.failed %}<span class="pill pill-stale">{{ m.failed | length }} failed</span>{% endif %}
+          </div>
+          {% for d in m.failed %}<p class="msg-fail">Not delivered to {{ who(d.user) }}: {{ d.message }}</p>{% endfor %}
+          {% else %}<span></span>{% endif %}
+        </div>
+        {% else %}
+        {% call empty.inside('clear', 'No messages yet') %}
+        <p class="hint">Whatever you write below is previewed before it is sent.</p>
+        {% endcall %}
+        {% endfor %}
+      </div>
+
+      {# The composer joins the newest thread while it is under a day old,
+         through the reply route, which decides who receives it from the
+         thread; otherwise it starts a new thread addressed from the chat. #}
+      <form method="post" class="card card-pad composer" data-save
+            action="{% if chat.reply_to %}/mesh/messages/{{ chat.reply_to.short }}/reply{% else %}/mesh/messages{% endif %}">
+        {% if not chat.reply_to %}
+        {% if chat.workspace %}<input type="hidden" name="workspace" value="{{ chat.workspace }}">
+        {% else %}<input type="hidden" name="to" value="{% for p in chat.people %}{{ p.handle or p.user_id }}{% if not loop.last %} {% endif %}{% endfor %}">{% endif %}
+        <input type="hidden" name="chat" value="{{ chat.key }}">
+        {% endif %}
+        <div class="field">
+          <label class="field-label" for="reply-body">{% if chat.kind == 'ws' %}Reply to everyone in {{ chat.workspace }}{% else %}Message {{ chat.title }}{% endif %}</label>
+          <p class="composer-target">{% if chat.reply_to %}Continues the thread “{{ chat.reply_to.preview }}”{% else %}Starts a new thread{% endif %}</p>
+          <textarea class="input" id="reply-body" name="body" rows="3" maxlength="4096" required>{{ draft.body }}</textarea>
+        </div>
+        <div class="composer-foot">
+          <p class="hint">Plain text, up to 4 KB · deleted after {{ chat.retention_days }} days</p>
+          <button class="btn btn-primary">Review and send</button>
+        </div>
+      </form>
+      {% endif %}
+    </div>
+  </section>
+</div>
+{% endif %}
 {% endblock %}

@@ -2895,34 +2895,25 @@ async def mesh_pushes_form(accept: str = Form(...), back: str = Form("/mesh")) -
 # Posts are recorded by `record_direct_writes`, so none is recorded here.
 
 
-def _messaging_context() -> dict[str, Any]:
-    """Who can be messaged, from the signed roster, for the new-message form."""
-    from . import session as cache
-
-    held = cache.load()
-    roster = cache.current_roster(held)
-    if held is None or roster is None:
-        return {"teammates": [], "workspaces": [], "me": None}
-    people = {
-        (m.handle, m.name)
-        for members in roster.workspaces.values()
-        for m in members
-        if m.user_id != held.user_id and m.handle
-    }
-    return {
-        "teammates": [{"handle": h, "name": n} for h, n in sorted(people)],
-        "workspaces": sorted(roster.workspaces),
-        "me": held.user_id,
-    }
-
-
 def _who(person: dict[str, Any]) -> str:
     if person.get("name") and person.get("handle"):
         return f"{person['name']} (@{person['handle']})"
     return f"@{person['handle']}" if person.get("handle") else str(person.get("user_id", ""))
 
 
+def _at(person: dict[str, Any]) -> str:
+    """`@ben`, or the user id when the roster has no handle for them."""
+    return f"@{person['handle']}" if person.get("handle") else str(person.get("user_id", ""))
+
+
+def _chat_url(key: str) -> str:
+    """A chat's address. User ids carry `@` and `.`, so the key is quoted; `-` stays."""
+    return f"/mesh/messages/c/{quote(key, safe='-')}"
+
+
 templates.env.globals["who"] = _who
+templates.env.globals["handle"] = _at
+templates.env.globals["chat_url"] = _chat_url
 
 
 def _delivery_sentence(delivery: list[dict[str, Any]]) -> str:
@@ -2946,42 +2937,88 @@ def _handles(raw: str) -> list[str]:
     return [part for part in raw.replace(",", " ").split() if part]
 
 
-@app.get("/mesh/messages", response_class=HTMLResponse)
-async def messages_page(request: Request, said: str = "") -> HTMLResponse:
-    """Threads from teammates, unread first, and a form to start one."""
+async def _messages_view(
+    request: Request,
+    key: str | None = None,
+    *,
+    mark_read: bool = True,
+    status: int = 200,
+    **extra: Any,
+) -> HTMLResponse:
+    """The Messages page: the chat list, and one chat in the pane when `key` names one.
+
+    The same template with and without a chat; below 900px the stylesheet
+    shows only the list or only the chat, so a phone gets two pages from
+    one. A chat that does not exist keeps the list and says so, as a 404.
+    """
     from . import services
 
-    ensure_db()
     session = get_session()
-    inbox = await run_in_threadpool(services.mesh_inbox, "", True)
+    chats = await run_in_threadpool(services.mesh_chats)
+    chat = None
+    if key is not None and not chats.get("error"):
+        chat = await run_in_threadpool(lambda: services.mesh_chat(key, mark_read=mark_read))
+        if chat.get("error"):
+            extra["refused"] = extra.get("refused") or chat["message"]
+            status = 404 if chat.get("code") == "not_found" else status
+            chat = None
     return templates.TemplateResponse(
         request,
         "mesh_messages.html",
         {
             **_nav(session),
-            **_messaging_context(),
             "request": request,
-            "inbox": inbox,
-            "said": said,
-            "draft": {},
+            "chats": chats,
+            "chat": chat,
+            "said": "",
+            "refused": "",
+            "draft": {"body": "", "to": "", "workspace": ""},
+            "preview": None,
+            "preview_action": "/mesh/messages",
+            **extra,
         },
+        status_code=status,
     )
 
 
-@app.get("/mesh/messages/{thread_id}", response_class=HTMLResponse)
-async def message_thread_page(request: Request, thread_id: str, said: str = "") -> HTMLResponse:
-    """One conversation, oldest first. Opening it marks it read."""
+@app.get("/mesh/messages", response_class=HTMLResponse)
+async def messages_page(request: Request, said: str = "") -> HTMLResponse:
+    """Every chat, grouped by who it is with, and nothing open in the pane."""
+    ensure_db()
+    return await _messages_view(request, said=said)
+
+
+@app.get("/mesh/messages/c/{key}", response_class=HTMLResponse)
+async def message_chat_page(request: Request, key: str, said: str = "") -> HTMLResponse:
+    """One chat, every thread of it in one time line. Opening it marks it read."""
+    ensure_db()
+    return await _messages_view(request, key, said=said)
+
+
+@app.post("/mesh/messages/c/{key}/read")
+async def message_chat_read_form(key: str, back: str = Form("")) -> RedirectResponse:
+    """Mark a chat read without opening it. Local read-state, not an operation."""
     from . import services
 
     ensure_db()
-    session = get_session()
-    found = await run_in_threadpool(services.mesh_inbox, thread_id)
-    return templates.TemplateResponse(
-        request,
-        "mesh_thread.html",
-        {**_nav(session), "request": request, "found": found, "said": said, "draft": ""},
-        status_code=404 if found.get("code") == "not_found" else 200,
-    )
+    await run_in_threadpool(services.mesh_chat_read, key)
+    return RedirectResponse(_back_to(back, _chat_url(key)), status_code=303)
+
+
+@app.get("/mesh/messages/{thread_id}", response_class=HTMLResponse)
+async def message_thread_page(request: Request, thread_id: str) -> Response:
+    """A thread's old address: on to its chat, with the thread's root in view.
+
+    Desktop notifications and `flanner messages` still link here.
+    """
+    from . import services
+
+    ensure_db()
+    found = await run_in_threadpool(services.mesh_chat_key, thread_id)
+    if found.get("error"):
+        status = 404 if found.get("code") == "not_found" else 200
+        return await _messages_view(request, refused=found["message"], status=status)
+    return RedirectResponse(f"{_chat_url(found['key'])}#t-{found['short']}", status_code=303)
 
 
 @app.post("/mesh/messages", response_class=HTMLResponse)
@@ -2990,13 +3027,18 @@ async def messages_send_form(
     body: str = Form(""),
     to: str = Form(""),
     workspace: str = Form(""),
+    chat: str = Form(""),
     confirm: str = Form(""),
 ) -> Response:
-    """Review a new message, then send it on a plain yes."""
+    """Review a new message, then send it on a plain yes.
+
+    `chat` is the key of the chat the composer sat in, so the review renders
+    there. After the send the thread's own chat is looked up, since a
+    message has one whatever the form said.
+    """
     from . import services
 
     ensure_db()
-    session = get_session()
     args: dict[str, Any] = {"body": body}
     if workspace:
         args["workspace"] = workspace
@@ -3005,26 +3047,19 @@ async def messages_send_form(
     result = await run_in_threadpool(lambda: services.mesh_send(**args, confirm=confirm == "1"))
     if confirm == "1" and not result.get("error"):
         said = _delivery_sentence(result["delivery"])
-        return RedirectResponse(
-            f"/mesh/messages/{result['short']}?said={quote(said)}", status_code=303
-        )
+        found = await run_in_threadpool(services.mesh_chat_key, result["thread_id"])
+        where = _chat_url(found["key"]) if not found.get("error") else "/mesh/messages"
+        return RedirectResponse(f"{where}?said={quote(said)}", status_code=303)
     if result.get("error"):
         actions.failed(result["message"])
-    inbox = await run_in_threadpool(services.mesh_inbox, "", True)
-    return templates.TemplateResponse(
+    return await _messages_view(
         request,
-        "mesh_messages.html",
-        {
-            **_nav(session),
-            **_messaging_context(),
-            "request": request,
-            "inbox": inbox,
-            "said": "",
-            "draft": {"body": body, "to": to, "workspace": workspace},
-            "preview": None if result.get("error") else result,
-            "refused": result.get("message") if result.get("error") else "",
-        },
-        status_code=400 if result.get("error") else 200,
+        chat or None,
+        mark_read=False,
+        status=400 if result.get("error") else 200,
+        draft={"body": body, "to": to, "workspace": workspace},
+        preview=None if result.get("error") else result,
+        refused=result.get("message") if result.get("error") else "",
     )
 
 
@@ -3036,29 +3071,26 @@ async def message_reply_form(
     from . import services
 
     ensure_db()
-    session = get_session()
     result = await run_in_threadpool(
         lambda: services.mesh_reply(thread_id, body, confirm=confirm == "1")
     )
+    found = await run_in_threadpool(services.mesh_chat_key, thread_id)
+    if found.get("error"):
+        return await _messages_view(request, refused=found["message"], status=404)
     if confirm == "1" and not result.get("error"):
         said = _delivery_sentence(result["delivery"])
-        return RedirectResponse(f"/mesh/messages/{thread_id}?said={quote(said)}", status_code=303)
+        return RedirectResponse(f"{_chat_url(found['key'])}?said={quote(said)}", status_code=303)
     if result.get("error"):
         actions.failed(result["message"])
-    found = await run_in_threadpool(services.mesh_inbox, thread_id)
-    return templates.TemplateResponse(
+    return await _messages_view(
         request,
-        "mesh_thread.html",
-        {
-            **_nav(session),
-            "request": request,
-            "found": found,
-            "said": "",
-            "draft": body,
-            "preview": None if result.get("error") else result,
-            "refused": result.get("message") if result.get("error") else "",
-        },
-        status_code=400 if result.get("error") else 200,
+        found["key"],
+        mark_read=False,
+        status=400 if result.get("error") else 200,
+        draft={"body": body, "to": "", "workspace": ""},
+        preview=None if result.get("error") else result,
+        preview_action=f"/mesh/messages/{found['short']}/reply",
+        refused=result.get("message") if result.get("error") else "",
     )
 
 

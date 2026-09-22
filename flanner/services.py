@@ -1410,6 +1410,85 @@ def mesh_inbox(thread: str = "", all: bool = False, limit: int = 50) -> dict[str
     return _messaging(run)
 
 
+def _roster_audiences(roster: Any, me: str) -> dict[str, Any]:
+    """Who a chat can be with, from the signed roster: teammates and workspaces."""
+    members = {m.user_id for members in roster.workspaces.values() for m in members}
+    return {
+        "teammates": sorted(members - {me}),
+        "workspaces": {
+            name: sorted(m.user_id for m in members if m.user_id != me)
+            for name, members in roster.workspaces.items()
+        },
+    }
+
+
+def mesh_chats() -> dict[str, Any]:
+    """Every conversation, grouped by who it is with, in the Messages page's sections."""
+    from . import mesh_delivery, mesh_messages
+
+    def run(session: Any) -> dict[str, Any]:
+        _, roster, claims = mesh_delivery.context(sending=False)
+        mesh_messages.expire(session, roster.message_retention_days)
+        answer = mesh_messages.chats(
+            session,
+            me=claims.user_id,
+            person=mesh_delivery.person_view(roster),
+            **_roster_audiences(roster, claims.user_id),
+        )
+        return {
+            **answer,
+            "quiet": mesh_messages.quiet_hours(),
+            "retention_days": roster.message_retention_days,
+        }
+
+    return _messaging(run)
+
+
+def mesh_chat(key: str, mark_read: bool = True) -> dict[str, Any]:
+    """One conversation, every thread of it in one time line. Opening it marks it read."""
+    from . import mesh_delivery, mesh_messages
+
+    def run(session: Any) -> dict[str, Any]:
+        _, roster, claims = mesh_delivery.context(sending=False)
+        return mesh_messages.chat(
+            session,
+            key,
+            me=claims.user_id,
+            person=mesh_delivery.person_view(roster),
+            retention_days=roster.message_retention_days,
+            mark_read=mark_read,
+            **_roster_audiences(roster, claims.user_id),
+        )
+
+    return _messaging(run)
+
+
+def mesh_chat_read(key: str) -> dict[str, Any]:
+    """Mark every incoming message in a chat read, without opening it."""
+    from . import mesh_delivery, mesh_messages
+
+    def run(session: Any) -> dict[str, Any]:
+        _, _, claims = mesh_delivery.context(sending=False)
+        return {"marked": mesh_messages.mark_chat_read(session, key, me=claims.user_id)}
+
+    return _messaging(run)
+
+
+def mesh_chat_key(thread: str) -> dict[str, Any]:
+    """The chat a thread belongs to, and the thread's short id, for its old address."""
+    from . import mesh_delivery, mesh_messages
+
+    def run(session: Any) -> dict[str, Any]:
+        _, _, claims = mesh_delivery.context(sending=False)
+        thread_id = mesh_messages.find_thread(session, thread)
+        return {
+            "key": mesh_messages.chat_key_for(session, thread_id, claims.user_id),
+            "short": mesh_messages.short_ids([thread_id])[thread_id],
+        }
+
+    return _messaging(run)
+
+
 def mesh_send(
     body: str,
     to: list[str] | None = None,

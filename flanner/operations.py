@@ -639,8 +639,13 @@ OPERATIONS: tuple[Operation, ...] = (
         cli=("messages inbox", "messages read"),
         mcp=("messages_inbox",),
         mcp_since="0.15.0",
-        web=("GET /mesh/messages", "GET /mesh/messages/{thread_id}"),
-        note="A message is shown, never acted on. Opening a thread marks it read.",
+        web=(
+            "GET /mesh/messages",
+            "GET /mesh/messages/c/{key}",
+            "POST /mesh/messages/c/{key}/read",
+            "GET /mesh/messages/{thread_id}",
+        ),
+        note="A message is shown, never acted on. Opening a chat marks it read.",
         note_since="0.15.0",
     ),
     _op(

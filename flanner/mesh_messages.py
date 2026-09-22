@@ -17,6 +17,7 @@ a body; it stores, lists and expires them.
 from __future__ import annotations
 
 import difflib
+import hashlib
 import json
 import unicodedata
 from dataclasses import dataclass, field
@@ -808,6 +809,361 @@ def thread_people(session: Session, thread_id: str, me: str) -> tuple[list[str],
         raise MessageError(refusals.NOT_FOUND, "No such thread on this device.")
     people, workspace = _people(messages, me)
     return people, workspace, messages[0].workspace_id
+
+
+# --- chats: threads grouped by who they are with (the web UI) ------------------
+#
+# A chat is every thread with the same audience: one workspace's broadcasts,
+# one other person, or one group. The key comes from a thread's root, so a
+# reply lands in the chat its root did. No colon anywhere in a key: it
+# travels in a URL path and in a form's `back` field, and the web layer
+# refuses a `back` with a colon in it.
+
+#: A composer joins the chat's newest thread while it is this fresh;
+#: otherwise it starts a new one.
+REPLY_WINDOW = timedelta(hours=24)
+
+
+def chat_key(people: list[str], workspace: str | None, *, me: str) -> tuple[str, str]:
+    """`(key, kind)` for an audience: `ws-<workspace>`, `dm-<user>` or `grp-<hash>`.
+
+    A group's hash is the first 12 hex of the sha256 of its sorted user ids,
+    so two threads to the same two people are one chat. Two groups colliding
+    is not realistic at this scale; the key is matched whole, never by prefix.
+    """
+    if workspace is not None:
+        return f"ws-{workspace}", "ws"
+    if len(people) <= 1:
+        # A message to nobody but me is not expected; it keys as a chat with me.
+        return f"dm-{people[0] if people else me}", "dm"
+    digest = hashlib.sha256(",".join(people).encode("utf-8")).hexdigest()[:12]
+    return f"grp-{digest}", "grp"
+
+
+def _root(rows: list[MeshMessageModel]) -> MeshMessageModel:
+    """The thread's first message, or the earliest held when the root is missing."""
+    return next((r for r in rows if r.message_id == r.thread_id), rows[0])
+
+
+def _thread_key(rows: list[MeshMessageModel], me: str) -> tuple[str, str, list[str], str | None]:
+    people, workspace = _people([_root(rows)], me)
+    key, kind = chat_key(people, workspace, me=me)
+    return key, kind, people, workspace
+
+
+def _threads(session: Session) -> dict[str, list[MeshMessageModel]]:
+    """Every message on this device by thread, oldest first: the query `inbox()` runs."""
+    threads: dict[str, list[MeshMessageModel]] = {}
+    for row in session.query(MeshMessageModel).order_by(MeshMessageModel.sent_at):
+        threads.setdefault(row.thread_id, []).append(row)
+    return threads
+
+
+def _local(moment: datetime) -> datetime:
+    """A naive UTC moment in this machine's zone, the way `quiet_hours()` reads the clock."""
+    return moment.replace(tzinfo=timezone.utc).astimezone()
+
+
+def when(moment: datetime, *, now: datetime | None = None) -> str:
+    """`14:05` today, `Mon` within the week, else `15 Sep`, in this machine's zone."""
+    local, today = _local(moment), _local(now or now_utc())
+    days = (today.date() - local.date()).days
+    if days == 0:
+        return local.strftime("%H:%M")
+    if days < 7:
+        return local.strftime("%a")
+    return f"{local.day} {local:%b}"
+
+
+def day_label(moment: datetime, *, now: datetime | None = None) -> str:
+    """`Today`, `Yesterday`, else `Mon 15 Sep`, in this machine's zone."""
+    local, today = _local(moment), _local(now or now_utc())
+    days = (today.date() - local.date()).days
+    if days == 0:
+        return "Today"
+    if days == 1:
+        return "Yesterday"
+    return f"{local:%a} {local.day} {local:%b}"
+
+
+def _preview(body: str, length: int) -> str:
+    """The start of a body on one line, with an ellipsis only when it was cut."""
+    flat = " ".join(body.split())
+    return flat if len(flat) <= length else flat[:length].rstrip() + "…"
+
+
+def _handle(person: Any) -> str:
+    """`@ben` from a person view, or the user id when the roster has no handle."""
+    if isinstance(person, dict):
+        return f"@{person['handle']}" if person.get("handle") else str(person.get("user_id", ""))
+    return str(person)
+
+
+def _title(kind: str, people: list[Any], workspace: str | None) -> str:
+    """`core` for a workspace, `@chen` for a person, `@ben, @chen` for a group."""
+    if kind == "ws" and workspace:
+        return workspace
+    return ", ".join(_handle(p) for p in people)
+
+
+def chats(
+    session: Session,
+    *,
+    me: str,
+    person: Any,
+    teammates: list[str],
+    workspaces: dict[str, list[str]],
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Every conversation on this device, in the sections the Messages page lists.
+
+    Unread (not muted, newest first), Workspaces (alphabetical), People (with
+    messages first by recency, then the rest by handle), Groups (newest
+    first). `teammates` and `workspaces` come from the signed roster, so a
+    person or workspace appears with no messages and a first message can
+    start from the list; a group exists only while its messages do. A chat
+    sits in exactly one section: unread from a sender who is not muted puts
+    it under Unread, otherwise it is in its home section.
+    """
+    moment = now or now_utc()
+    silenced = muted(session, now=moment)
+    failed = {
+        message_id
+        for (message_id,) in session.query(MeshDeliveryModel.message_id)
+        .filter_by(state=FAILED)
+        .distinct()
+    }
+    found: dict[str, dict[str, Any]] = {}
+    for rows in _threads(session).values():
+        key, kind, people, workspace = _thread_key(rows, me)
+        chat = found.setdefault(
+            key, {"key": key, "kind": kind, "people": people, "workspace": workspace, "rows": []}
+        )
+        chat["rows"].extend(rows)
+    for user in teammates:
+        found.setdefault(
+            f"dm-{user}",
+            {"key": f"dm-{user}", "kind": "dm", "people": [user], "workspace": None, "rows": []},
+        )
+    for name, members in workspaces.items():
+        found.setdefault(
+            f"ws-{name}",
+            {"key": f"ws-{name}", "kind": "ws", "people": members, "workspace": name, "rows": []},
+        )
+
+    def summary(chat: dict[str, Any]) -> dict[str, Any]:
+        rows = sorted(chat.pop("rows"), key=lambda r: r.sent_at)
+        if chat["kind"] == "ws":
+            # Everyone in the workspace when the roster still lists it;
+            # otherwise whoever wrote there.
+            chat["people"] = list(
+                workspaces.get(chat["workspace"])
+                or sorted({r.author_user_id for r in rows} - {me})
+            )
+        senders = {r.author_user_id for r in rows if not r.outgoing}
+        if chat["kind"] == "dm":
+            is_muted = chat["people"][0] in silenced
+        else:
+            is_muted = bool(senders) and senders <= set(silenced)
+        last = rows[-1] if rows else None
+        last_mine = next((r for r in reversed(rows) if r.outgoing), None)
+        people = [person(user) for user in chat["people"]]
+        return {
+            **chat,
+            "title": _title(chat["kind"], people, chat["workspace"]),
+            "people": people,
+            "unread": sum(1 for r in rows if not r.outgoing and r.read_at is None),
+            "muted": is_muted,
+            "failed": last_mine is not None and last_mine.message_id in failed,
+            "last": None
+            if last is None
+            else {
+                "from": person(last.author_user_id),
+                "mine": last.outgoing,
+                "sent_at": _stamp(last.sent_at),
+                "when": when(last.sent_at, now=moment),
+                "preview": _preview(last.body, 80),
+            },
+        }
+
+    summaries = [summary(chat) for chat in found.values()]
+
+    def newest(chat: dict[str, Any]) -> str:
+        return str(chat["last"]["sent_at"]) if chat["last"] else ""
+
+    def by_title(chat: dict[str, Any]) -> str:
+        return str(chat["title"]).lower()
+
+    unread = sorted(
+        (c for c in summaries if c["unread"] and not c["muted"]), key=newest, reverse=True
+    )
+    home = [c for c in summaries if not (c["unread"] and not c["muted"])]
+    direct = [c for c in home if c["kind"] == "dm"]
+    return {
+        "unread": sum(c["unread"] for c in summaries if not c["muted"]),
+        "muted_unread": sum(c["unread"] for c in summaries if c["muted"]),
+        "unread_chats": len(unread),
+        "sections": [
+            {"id": "unread", "label": "Unread", "chats": unread},
+            {
+                "id": "workspaces",
+                "label": "Workspaces",
+                "chats": sorted((c for c in home if c["kind"] == "ws"), key=by_title),
+            },
+            {
+                "id": "people",
+                "label": "People",
+                "chats": sorted((c for c in direct if c["last"]), key=newest, reverse=True)
+                + sorted((c for c in direct if not c["last"]), key=by_title),
+            },
+            {
+                "id": "groups",
+                "label": "Groups",
+                "chats": sorted((c for c in home if c["kind"] == "grp"), key=newest, reverse=True),
+            },
+        ],
+    }
+
+
+def chat(
+    session: Session,
+    key: str,
+    *,
+    me: str,
+    person: Any,
+    retention_days: int,
+    teammates: list[str],
+    workspaces: dict[str, list[str]],
+    mark_read: bool = True,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """One conversation: every thread with this key merged into one time line.
+
+    Each message says which thread it is in, whether it is that thread's
+    root (the anchor the old thread URL lands on), and, when the row before
+    it was another thread, which root it answers. Opening the chat marks
+    every incoming message in it read, as opening a thread does. `reply_to`
+    is the thread the composer joins: the newest, while it is under
+    `REPLY_WINDOW` old; otherwise None, and a reply starts a new thread.
+    """
+    moment = now or now_utc()
+    silenced = muted(session, now=moment)
+    threads = [rows for rows in _threads(session).values() if _thread_key(rows, me)[0] == key]
+    if threads:
+        _, kind, people, workspace = _thread_key(threads[0], me)
+    elif key.startswith("dm-") and key[3:] in teammates:
+        kind, people, workspace = "dm", [key[3:]], None
+    elif key.startswith("ws-") and key[3:] in workspaces:
+        kind, people, workspace = "ws", [], key[3:]
+    else:
+        raise MessageError(refusals.NOT_FOUND, "No such chat on this device.")
+    rows = sorted((row for thread in threads for row in thread), key=lambda r: r.sent_at)
+    if kind == "ws":
+        people = list(
+            workspaces.get(workspace or "") or sorted({r.author_user_id for r in rows} - {me})
+        )
+    ids = short_ids([thread[0].thread_id for thread in threads])
+    roots = {thread[0].thread_id: _root(thread) for thread in threads}
+
+    items: list[dict[str, Any]] = []
+    previous: MeshMessageModel | None = None
+    for row in rows:
+        root = roots[row.thread_id]
+        item: dict[str, Any] = {
+            "id": row.message_id,
+            "thread": row.thread_id,
+            "short": ids[row.thread_id],
+            "is_root": row.message_id == row.thread_id,
+            # The first message held of a thread whose root never reached this device.
+            "incomplete": row is root and row.message_id != row.thread_id,
+            "from": person(row.author_user_id),
+            "mine": row.outgoing,
+            "sent_at": _stamp(row.sent_at),
+            "when": _local(row.sent_at).strftime("%H:%M"),
+            "day": day_label(row.sent_at, now=moment)
+            if previous is None or _local(previous.sent_at).date() != _local(row.sent_at).date()
+            else None,
+            "body": row.body,
+            "refs": json.loads(row.refs or "[]"),
+            "muted": row.author_user_id in silenced,
+            "reply_to": {"short": ids[row.thread_id], "preview": _preview(root.body, 40)}
+            if row is not root and previous is not None and previous.thread_id != row.thread_id
+            else None,
+        }
+        if row.outgoing:
+            delivery = [
+                {**d, "user": person(d["user_id"])}
+                for d in delivery_by_person(session, row.message_id)
+            ]
+            item["delivery"] = delivery
+            item["delivered"] = sum(1 for d in delivery if d["state"] == DELIVERED)
+            item["queued"] = sum(1 for d in delivery if d["state"] == QUEUED)
+            item["failed"] = [d for d in delivery if d["state"] == FAILED]
+        elif mark_read and row.read_at is None:
+            row.read_at = moment
+        items.append(item)
+        previous = row
+    session.commit()
+
+    newest = max(threads, key=lambda thread: thread[-1].sent_at, default=None)
+    reply_to = None
+    if newest is not None and moment - newest[-1].sent_at < REPLY_WINDOW:
+        thread_id = newest[0].thread_id
+        reply_to = {
+            "id": thread_id,
+            "short": ids[thread_id],
+            "preview": _preview(roots[thread_id].body, 40),
+        }
+    views = [person(user) for user in people]
+    return {
+        "key": key,
+        "kind": kind,
+        "title": _title(kind, views, workspace),
+        "workspace": workspace,
+        "people": [
+            {**view, "muted": user in silenced} for user, view in zip(people, views, strict=True)
+        ],
+        "muted": (people[0] in silenced)
+        if kind == "dm"
+        else bool(rows) and {r.author_user_id for r in rows if not r.outgoing} <= set(silenced),
+        "unread": sum(1 for r in rows if not r.outgoing and r.read_at is None),
+        "messages": items,
+        "reply_to": reply_to,
+        "retention_days": retention_days,
+    }
+
+
+def mark_chat_read(session: Session, key: str, *, me: str, now: datetime | None = None) -> int:
+    """Mark every incoming message in a chat read without opening it. Returns how many."""
+    ids = [
+        rows[0].thread_id for rows in _threads(session).values() if _thread_key(rows, me)[0] == key
+    ]
+    if not ids:
+        return 0
+    count = (
+        session.query(MeshMessageModel)
+        .filter(
+            MeshMessageModel.thread_id.in_(ids),
+            MeshMessageModel.outgoing.is_(False),
+            MeshMessageModel.read_at.is_(None),
+        )
+        .update({"read_at": now or now_utc()}, synchronize_session=False)
+    )
+    session.commit()
+    return int(count)
+
+
+def chat_key_for(session: Session, thread_id: str, me: str) -> str:
+    """The chat a thread belongs to, for the old thread address to redirect to."""
+    rows = (
+        session.query(MeshMessageModel)
+        .filter_by(thread_id=thread_id)
+        .order_by(MeshMessageModel.sent_at)
+        .all()
+    )
+    if not rows:
+        raise MessageError(refusals.NOT_FOUND, "No such thread on this device.")
+    return _thread_key(rows, me)[0]
 
 
 # --- inside an agent session (section 10) --------------------------------------

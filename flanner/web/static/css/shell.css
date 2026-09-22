@@ -1883,17 +1883,125 @@ code { overflow-wrap: anywhere; }
    row the box centres it and the nudge would double, so it is undone. */
 .rail-nav a .ico, .btn .ico, .check .ico { vertical-align: 0; }
 
-/* Messages (the mesh messaging plan, section 8.2). A teammate's message is
-   a quoted block, visibly not the app speaking; plain text, wrapped as sent. */
+/* Messages (the mesh messaging plan, section 8.2). A chat list beside a
+   pane, the mirror of the plan page's article and rail. A teammate's message
+   is a quoted block, visibly not the app speaking; plain text, wrapped as
+   sent. Yours is plain. Every colour is a token, so dark mode needs nothing. */
+.inbox-layout { flex: 1; display: flex; min-height: 0; align-items: stretch; }
+.inbox-list {
+  width: 280px; flex: none; box-sizing: border-box; padding: 12px;
+  display: flex; flex-direction: column; gap: 0;
+  background: var(--card); border-right: 1px solid var(--border);
+  position: sticky; top: var(--topbar-h); height: calc(100vh - var(--topbar-h));
+  overflow-y: auto;
+}
+.inbox-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.inbox-main > .pane { flex: 1; }
+.chat-filter { display: flex; flex-direction: column; gap: 6px; padding: 0 0 8px; }
+.chat-filter .input { width: 100%; box-sizing: border-box; }
+.chat-quiet { margin: 4px 0 0; padding-top: 8px; padding-bottom: 8px; font-size: var(--t-sm); }
+.chat-sect { display: flex; flex-direction: column; gap: 2px; }
+.chat-sect .rail-group { margin: 0; padding-left: 12px; }
+/* Two lines: name and time, then preview and count. The kind icon, or the
+   unread dot, sits in the first column across both. */
+.chat-row {
+  display: grid; grid-template-columns: 18px minmax(0, 1fr) auto;
+  grid-template-rows: auto auto; column-gap: 10px; row-gap: 2px; align-items: start;
+  min-height: 36px; box-sizing: border-box; padding: 8px 12px;
+  border-radius: var(--r-md); color: inherit;
+  transition: background-color var(--dur) var(--ease);
+}
+.chat-row:hover, .chat-row.active { background: var(--nav-active); }
+.chat-row > * { min-width: 0; }
+.chat-row .kind {
+  grid-row: 1 / 3; align-self: center; display: flex; align-items: center;
+  justify-content: center; width: 18px; height: 18px; color: var(--text-3);
+}
+.chat-row .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+.chat-row.muted .dot { background: var(--text-4); }
+.chat-row .name {
+  font-size: var(--t-md); font-weight: 500; color: var(--text-2);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.chat-row.unread .name { font-weight: 600; color: var(--text); }
+.chat-row .when { font-size: var(--t-sm); color: var(--text-3); white-space: nowrap; justify-self: end; padding-top: 1px; }
+.chat-row .preview { display: flex; align-items: center; gap: 6px; font-size: var(--t-sm); color: var(--text-3); }
+.chat-row .preview .txt { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chat-row .preview .ico { color: var(--stale-text); }
+.chat-row .n {
+  justify-self: end; min-width: 22px; padding: 1px 7px; border-radius: 10px; text-align: center;
+  font: 600 var(--t-xs)/1.45 var(--font-mono); color: var(--accent-ink); background: var(--accent-soft);
+}
+.chat-row.muted .n { color: var(--text-3); background: var(--chip); }
+.chat-row .pill { justify-self: end; font-size: var(--t-xs); padding: 2px 7px; }
+
+/* The pane head's Mute popover: a native <details>, drawn like .more-menu
+   but at every width, because .more only folds below 600px. */
+.chat-menu { position: relative; flex: none; }
+.chat-menu > summary { list-style: none; cursor: pointer; }
+.chat-menu > summary::-webkit-details-marker { display: none; }
+.chat-menu[open] > summary { border-color: var(--text-4); }
+.chat-menu-body {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 40;
+  display: flex; flex-direction: column; gap: 8px; min-width: 240px; padding: 12px;
+  background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: var(--shadow-pop); animation: drop-in var(--dur) var(--ease) both;
+}
+.chat-menu-body .form-row { margin: 0; flex-wrap: nowrap; }
+.chat-menu-body .input-sm { min-width: 0; flex: 1; }
+.chat-head form { margin: 0; }
+
+/* One message a row: time, then author and body, then delivery for yours. */
+.msg-line {
+  display: grid; grid-template-columns: 52px minmax(0, 1fr) 128px; gap: 0 16px;
+  padding: 8px 20px; border-bottom: 1px solid var(--divider);
+  font-size: var(--t-md); align-items: start;
+}
+.msg-line:last-child { border-bottom: 0; }
+.msg-line > * { min-width: 0; }
+.msg-line .when { font-size: var(--t-sm); line-height: 20px; color: var(--text-3); }
+.msg-head { display: flex; align-items: center; gap: 8px; line-height: 20px; font-weight: 600; color: var(--text); }
+.msg-line.mine .msg-head { color: var(--text-3); }
 .msg-quote { margin: 6px 0; padding: 6px 12px; border-left: 3px solid var(--accent);
   background: var(--accent-soft); border-radius: var(--r-sm); white-space: pre-wrap;
   overflow-wrap: anywhere; }
-.msg { margin-bottom: 14px; }
-.msg.mine .msg-quote { border-left-color: var(--border-firm); background: var(--card-sunken); }
-.msg-head { font-size: 13px; color: var(--text-muted, inherit); }
-.msg-row { display: grid; grid-template-columns: 16px minmax(120px, 220px) 1fr auto; gap: 10px;
-  padding: 10px 16px; border-bottom: 1px solid var(--divider); color: inherit; text-decoration: none; }
-.msg-row:last-child { border-bottom: 0; }
-.msg-row.unread .msg-who { font-weight: 600; }
-.msg-preview { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.msg-dot { color: var(--accent); }
+.msg-body { margin: 6px 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text); }
+.msg-mark { display: inline-flex; align-items: center; gap: 6px; font-size: var(--t-sm); color: var(--text-3); }
+.msg-mark b { font-weight: 400; color: var(--accent-ink); }
+.msg-refs { display: flex; flex-wrap: wrap; gap: 6px; }
+.msg-state {
+  display: flex; flex-direction: column; align-items: flex-end; gap: 4px;
+  font-size: var(--t-sm); line-height: 20px; color: var(--text-3); text-align: right;
+}
+.msg-fail { grid-column: 1 / -1; margin: 0 0 4px; font-size: var(--t-sm); color: var(--stale-text); }
+.msg-day { padding: 4px 20px; margin: 0; font-size: var(--t-sm); font-weight: 600; color: var(--text-4); border-bottom: 1px solid var(--divider); }
+
+.composer { position: sticky; bottom: 0; margin-top: auto; }
+.composer .field { margin: 0; }
+.composer-target { margin: 0 0 6px; font-size: var(--t-sm); color: var(--text-3); }
+.composer-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 8px; }
+.composer-foot .hint { margin: 0; }
+
+@media (max-width: 1100px) { .inbox-list { width: 240px; } }
+
+/* Two pages on a phone: the list at /mesh/messages, the chat at its own
+   address. Rows grow to a thumb; message rows become blocks with the time
+   and delivery on one line under the body. */
+@media (max-width: 900px) {
+  .inbox-layout { flex-direction: column; }
+  .inbox-list {
+    width: auto; position: static; height: auto; margin: 12px 16px 16px;
+    border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--shadow-card);
+  }
+  .inbox-layout:not(.has-chat) .inbox-main { display: none; }
+  .inbox-layout.has-chat .inbox-list { display: none; }
+  .chat-row { min-height: 44px; }
+  .chat-filter .input { height: 44px; font-size: var(--t-base); }
+  .msg-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 6px; padding: 8px 16px; }
+  .msg-line .msg-main { flex: 1 1 100%; }
+  .msg-line .when, .msg-line .msg-state { order: 1; flex-direction: row; text-align: left; }
+  .msg-line .msg-state:not(:empty)::before { content: "·"; margin-right: 6px; color: var(--text-4); }
+  .msg-fail { order: 2; flex: 1 1 100%; }
+  .composer { padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
+  .composer-foot .btn { width: 100%; justify-content: center; }
+}
