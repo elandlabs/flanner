@@ -45,6 +45,12 @@ cd your-project      # a git repo where plans should live
 flanner init         # sets up the database, MCP registration, and a project
 ```
 
+Rather not install Python? The **desktop app** for Windows, macOS and Linux
+is the same flanner with nothing to install first: the web UI in a window,
+the command line, and the MCP server Claude and Codex use, with background
+sync and updates. Download it from [flanner.io/download](https://flanner.io/download);
+[desktop/README.md](desktop/README.md) covers building and releasing it.
+
 `uv tool install` gives flanner an environment of its own and puts both
 `flanner` and `flanner-mcp` on your PATH. Both matter: your agent spawns
 `flanner-mcp` by name, so a project virtualenv can hide it from an agent
