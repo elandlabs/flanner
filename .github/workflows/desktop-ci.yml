@@ -82,7 +82,8 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev             librsvg2-dev patchelf webkit2gtk-driver xvfb
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+            librsvg2-dev patchelf webkit2gtk-driver xvfb
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: desktop/src-tauri
@@ -100,7 +101,19 @@ jobs:
         shell: bash
         run: |
           pip install playwright
-          FLANNER_DESKTOP_APP=desktop/src-tauri/target/debug/flanner-desktop.exe             FLANNER_RUNTIME=build/runtime pytest desktop/tests/e2e -v -p no:cacheprovider
+          FLANNER_DESKTOP_APP=desktop/src-tauri/target/debug/flanner-desktop.exe \
+            FLANNER_RUNTIME=build/runtime pytest desktop/tests/e2e -v -p no:cacheprovider
+      # A test build: the throwaway key from update_signing.py and an update
+      # address on this runner, so a tampered download can be refused and a
+      # signed one installed. Release builds never carry either.
+      - name: Test updates (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          pip install cryptography
+          (cd desktop/src-tauri && TAURI_CONFIG="$(python ../tests/e2e/update_signing.py)" cargo build)
+          FLANNER_DESKTOP_UPDATE_APP=desktop/src-tauri/target/debug/flanner-desktop.exe \
+            FLANNER_RUNTIME=build/runtime pytest desktop/tests/e2e/test_updates_windows.py -v -p no:cacheprovider
       - name: Test the app's window (Linux)
         if: runner.os == 'Linux'
         run: |
