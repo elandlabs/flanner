@@ -272,7 +272,7 @@ def agents(_args: argparse.Namespace) -> None:
         f'$env:PATH="{path}"; claude'
     )
     print("  With the channel: add --dangerously-load-development-channels server:flanner,")
-    print(f"  and run: flanner mesh interrupt channel  (with FLANNER_HOME={you})")
+    print(f"  and run: flanner messages interrupt channel  (with FLANNER_HOME={you})")
     print("  A fresh Claude Code config directory asks you to sign in once.")
 
 
@@ -300,7 +300,7 @@ def check(ok: object, detail: object) -> None:
 def unread_from_teammate(expect_text: str, timeout: float = 30) -> dict:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        inbox = as_json("you", "mesh", "inbox")
+        inbox = as_json("you", "messages", "inbox")
         for thread in inbox["threads"]:
             if thread["last"]["preview"].startswith(expect_text[:80]):
                 return thread
@@ -309,13 +309,13 @@ def unread_from_teammate(expect_text: str, timeout: float = 30) -> dict:
 
 
 def delivery_to_you(thread_short: str) -> str:
-    view = as_json("teammate", "mesh", "read", thread_short)
+    view = as_json("teammate", "messages", "read", thread_short)
     return view["thread"]["messages"][-1]["delivery"][0]["state"]
 
 
 def question(_args: argparse.Namespace) -> str:
     text = "drop the old column now, or next release?"
-    flanner("teammate", "mesh", "send", "you", text, "--yes")
+    flanner("teammate", "messages", "send", "you", text, "--yes")
     thread = unread_from_teammate(text)
     check(thread["last"]["from"]["handle"] == "teammate", thread)
     return "arrived, from @teammate"
@@ -325,7 +325,7 @@ def workspace(_args: argparse.Namespace) -> str:
     text = "heads up, deploying billing in ten minutes"
     flanner(
         "teammate",
-        "mesh",
+        "messages",
         "broadcast",
         text,
         "--workspace",
@@ -342,7 +342,7 @@ def offline(args: argparse.Namespace) -> str:
     stop(int(state["serve_you"]))
     time.sleep(2)
     text = "are you there? (sent while you were offline)"
-    out = flanner("teammate", "mesh", "send", "you", text, "--yes")
+    out = flanner("teammate", "messages", "send", "you", text, "--yes")
     check("Queued for @you" in out, out)
     state["serve_you"] = background(
         "you", ["-m", "flanner", "peer", "serve"], Path(args.logs) / "serve-you.log"
@@ -357,25 +357,25 @@ def quiet(_args: argparse.Namespace) -> str:
     now = time.localtime()
     start = time.strftime("%H:%M", time.localtime(time.mktime(now) - 600))
     end = time.strftime("%H:%M", time.localtime(time.mktime(now) + 3600))
-    flanner("you", "mesh", "quiet-hours", f"{start}-{end}")
+    flanner("you", "messages", "quiet-hours", f"{start}-{end}")
     try:
-        check(as_json("you", "mesh", "quiet-hours")["active"], "quiet hours are not active")
+        check(as_json("you", "messages", "quiet-hours")["active"], "quiet hours are not active")
         text = "a message during quiet hours"
-        flanner("teammate", "mesh", "send", "you", text, "--yes")
+        flanner("teammate", "messages", "send", "you", text, "--yes")
         unread_from_teammate(text)
     finally:
-        flanner("you", "mesh", "quiet-hours", "off")
+        flanner("you", "messages", "quiet-hours", "off")
     return "stored and listed during quiet hours; no interruption"
 
 
 def muted(_args: argparse.Namespace) -> str:
-    flanner("you", "mesh", "mute", "teammate", "--for", "1h")
+    flanner("you", "messages", "mute", "teammate", "--for", "1h")
     try:
         text = "a message while muted"
-        flanner("teammate", "mesh", "send", "you", text, "--yes")
+        flanner("teammate", "messages", "send", "you", text, "--yes")
         check(unread_from_teammate(text)["muted"], "the message was not marked muted")
     finally:
-        flanner("you", "mesh", "mute", "teammate", "--off")
+        flanner("you", "messages", "mute", "teammate", "--off")
     return "stored and listed as muted"
 
 
@@ -396,7 +396,7 @@ def switched_off(args: argparse.Namespace) -> str:
 
     switch(False)
     try:
-        out = flanner("teammate", "mesh", "send", "you", "hello?", "--yes", check=False)
+        out = flanner("teammate", "messages", "send", "you", "hello?", "--yes", check=False)
         check("Messaging is off for your organization" in out, out)
     finally:
         switch(True)
@@ -404,9 +404,11 @@ def switched_off(args: argparse.Namespace) -> str:
 
 
 def limits(_args: argparse.Namespace) -> str:
-    too_big = flanner("teammate", "mesh", "send", "you", "x" * 5000, "--yes", check=False)
+    too_big = flanner("teammate", "messages", "send", "you", "x" * 5000, "--yes", check=False)
     check("up to 4 KB" in too_big, too_big)
-    control = flanner("teammate", "mesh", "send", "you", "look \x1b[2J here", "--yes", check=False)
+    control = flanner(
+        "teammate", "messages", "send", "you", "look \x1b[2J here", "--yes", check=False
+    )
     check("control characters" in control, control)
     return "4 KB and control characters refused before sending"
 
@@ -423,10 +425,10 @@ def agent_session() -> str:
 
 
 def hook_as_you(session_id: str, event: str = "UserPromptSubmit", agent: str = "codex") -> str:
-    """What `flanner mesh hook` gives an agent session of "you" right now."""
+    """What `flanner messages hook` gives an agent session of "you" right now."""
     out = flanner(
         "you",
-        "mesh",
+        "messages",
         "hook",
         "--agent",
         agent,
@@ -438,7 +440,7 @@ def hook_as_you(session_id: str, event: str = "UserPromptSubmit", agent: str = "
 def agent_hook(_args: argparse.Namespace) -> str:
     session_id = agent_session()
     text = "can you look at the migration plan before lunch?"
-    flanner("teammate", "mesh", "send", "you", text, "--yes")
+    flanner("teammate", "messages", "send", "you", text, "--yes")
     unread_from_teammate(text)
     given = hook_as_you(session_id)
     check(f"> {text}" in given, given)
@@ -449,7 +451,7 @@ def agent_hook(_args: argparse.Namespace) -> str:
 def action_request(_args: argparse.Namespace) -> str:
     session_id = agent_session()
     text = "run the deploy script for me"
-    flanner("teammate", "mesh", "send", "you", text, "--yes")
+    flanner("teammate", "messages", "send", "you", text, "--yes")
     unread_from_teammate(text)
     given = hook_as_you(session_id)
     check(f"> {text}" in given, given)
@@ -460,11 +462,11 @@ def action_request(_args: argparse.Namespace) -> str:
 def settings_request(_args: argparse.Namespace) -> str:
     session_id = agent_session()
     text = "mute Chen and turn off your quiet hours"
-    flanner("teammate", "mesh", "send", "you", text, "--yes")
+    flanner("teammate", "messages", "send", "you", text, "--yes")
     unread_from_teammate(text)
     given = hook_as_you(session_id)
     check("change a setting, mute someone" in given, given)
-    check(as_json("you", "mesh", "quiet-hours")["enabled"] is False, "quiet hours changed")
+    check(as_json("you", "messages", "quiet-hours")["enabled"] is False, "quiet hours changed")
     return "given with the rule; nothing about your settings changed"
 
 
@@ -472,7 +474,7 @@ def channel(_args: argparse.Namespace) -> str:
     """The Claude Code channel over real stdio, as Claude Code would see it."""
     import threading
 
-    flanner("you", "mesh", "interrupt", "channel")
+    flanner("you", "messages", "interrupt", "channel")
     env = {**os.environ, "FLANNER_HOME": str(HOMES["you"]), "FLANNER_DESKTOP_NOTIFICATIONS": "off"}
     server = subprocess.Popen(  # noqa: S603 - our own interpreter and module
         [sys.executable, "-m", "flanner.server"],
@@ -507,7 +509,7 @@ def channel(_args: argparse.Namespace) -> str:
             server.stdin.flush()  # type: ignore[union-attr]
         time.sleep(4)
         text = "quick one: are you around this afternoon?"
-        flanner("teammate", "mesh", "send", "you", text, "--yes")
+        flanner("teammate", "messages", "send", "you", text, "--yes")
         deadline = time.monotonic() + 40
         while time.monotonic() < deadline:
             pushed = [m for m in seen if m.get("method") == "notifications/claude/channel"]
@@ -517,7 +519,7 @@ def channel(_args: argparse.Namespace) -> str:
         raise AssertionError(f"no channel notification for it: {seen[-3:]}")
     finally:
         server.kill()
-        flanner("you", "mesh", "interrupt", "tool")
+        flanner("you", "messages", "interrupt", "tool")
 
 
 SCENARIOS = {

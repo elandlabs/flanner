@@ -74,13 +74,13 @@ def run(*args, input=None):
 
 
 def test_an_empty_inbox_says_so(signed_in):
-    result = run("mesh", "inbox")
+    result = run("messages", "inbox")
     assert result.exit_code == 0, result.output
     assert "No unread messages" in result.output
 
 
 def test_send_previews_and_sends_nothing_on_no(signed_in):
-    result = run("mesh", "send", "bob", "drop the old column?", input="n\n")
+    result = run("messages", "send", "bob", "drop the old column?", input="n\n")
 
     assert result.exit_code == 0, result.output
     assert "@bob (Bob)" in result.output
@@ -96,7 +96,7 @@ def test_send_on_yes_queues_for_an_offline_teammate(signed_in, monkeypatch):
 
     monkeypatch.setattr(mesh_delivery, "dial_device", unreachable)
 
-    result = run("mesh", "send", "bob", "are you there?", "--yes")
+    result = run("messages", "send", "bob", "are you there?", "--yes")
 
     assert result.exit_code == 0, result.output
     assert "Queued for @bob" in result.output
@@ -104,28 +104,28 @@ def test_send_on_yes_queues_for_an_offline_teammate(signed_in, monkeypatch):
 
 
 def test_an_unknown_handle_is_refused(signed_in):
-    result = run("mesh", "send", "bobb", "hi", "--yes")
+    result = run("messages", "send", "bobb", "hi", "--yes")
     assert result.exit_code == 1
     assert "Did you mean @bob (Bob)?" in result.output
 
 
 def test_quiet_hours_round_trip_as_json(signed_in):
-    assert run("mesh", "quiet-hours", "22:00-07:00").exit_code == 0
+    assert run("messages", "quiet-hours", "22:00-07:00").exit_code == 0
 
-    shown = json.loads(run("mesh", "quiet-hours", "--json").output)
+    shown = json.loads(run("messages", "quiet-hours", "--json").output)
 
     assert (shown["enabled"], shown["start"], shown["end"]) == (True, "22:00", "07:00")
 
 
 def test_quiet_hours_that_make_no_sense_are_refused_with_an_example(signed_in):
-    result = run("mesh", "quiet-hours", "10pm")
+    result = run("messages", "quiet-hours", "10pm")
     assert result.exit_code == 1
     assert "22:00-07:00" in result.output
 
 
 def test_mute_for_a_while_then_unmute(signed_in):
-    assert "Muted @bob until" in run("mesh", "mute", "bob", "--for", "8h").output
-    assert "Unmuted @bob" in run("mesh", "mute", "bob", "--off").output
+    assert "Muted @bob until" in run("messages", "mute", "bob", "--for", "8h").output
+    assert "Unmuted @bob" in run("messages", "mute", "bob", "--off").output
 
 
 # --- the service layer the MCP tools call ----------------------------------------

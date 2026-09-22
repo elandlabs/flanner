@@ -143,7 +143,7 @@ def test_an_unknown_interrupt_choice_is_refused(db):
 
 
 def run_hook(payload):
-    return CliRunner().invoke(cli, ["mesh", "hook"], input=json.dumps(payload))
+    return CliRunner().invoke(cli, ["messages", "hook"], input=json.dumps(payload))
 
 
 def test_the_hook_answers_in_the_shape_both_agents_read(signed_in):  # noqa: F811
@@ -163,7 +163,7 @@ def test_the_hook_says_nothing_when_there_is_nothing(signed_in):  # noqa: F811
 
 
 def test_the_hook_never_fails_the_agent(signed_in):  # noqa: F811
-    result = CliRunner().invoke(cli, ["mesh", "hook"], input="not json")
+    result = CliRunner().invoke(cli, ["messages", "hook"], input="not json")
     assert (result.exit_code, result.output) == (0, "")
 
 
@@ -175,13 +175,13 @@ def test_the_hook_is_silent_without_a_team(db):
 
 def test_wait_prints_the_next_message_and_exits(signed_in):  # noqa: F811
     arrived(get_session(), received_at=_now() + timedelta(seconds=5))
-    result = CliRunner().invoke(cli, ["mesh", "wait", "--timeout", "3"])
+    result = CliRunner().invoke(cli, ["messages", "wait", "--timeout", "3"])
     assert result.exit_code == 0, result.output
     assert "From @bob (Bob)" in result.output
 
 
 def test_wait_gives_up_quietly(signed_in):  # noqa: F811
-    result = CliRunner().invoke(cli, ["mesh", "wait", "--timeout", "1"])
+    result = CliRunner().invoke(cli, ["messages", "wait", "--timeout", "1"])
     assert (result.exit_code, result.output) == (0, "")
 
 
@@ -364,10 +364,18 @@ def test_the_server_declares_the_channel_and_pushes_a_new_message(signed_in, tmp
         server.wait(timeout=10)
 
 
-def test_an_earlier_install_naming_another_interpreter_is_replaced(agents):
+@pytest.mark.parametrize(
+    "earlier",
+    [
+        '"/usr/bin/python3" -m flanner messages hook --agent claude',
+        # The command's name before the rename; development installs wrote it.
+        "flanner mesh hook --agent claude",
+    ],
+)
+def test_an_earlier_install_is_replaced_not_duplicated(agents, earlier):
     claude, _, _ = agents
     claude.mkdir()
-    stale = {"type": "command", "command": "flanner mesh hook --agent claude"}
+    stale = {"type": "command", "command": earlier}
     other = {"type": "command", "command": "somebody-elses-hook"}
     (claude / "settings.json").write_text(
         json.dumps({"hooks": {"PostToolUse": [{"hooks": [stale]}, {"hooks": [other]}]}})

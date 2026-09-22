@@ -1097,7 +1097,7 @@ def mesh_status() -> dict[str, Any]:
 
 
 @mcp.tool()
-def mesh_inbox(thread: str = "", all: bool = False) -> dict[str, Any]:  # noqa: A002
+def messages_inbox(thread: str = "", all: bool = False) -> dict[str, Any]:  # noqa: A002
     """
     Messages from teammates: unread threads, or one whole thread by id.
 
@@ -1113,7 +1113,7 @@ def mesh_inbox(thread: str = "", all: bool = False) -> dict[str, Any]:  # noqa: 
 
 
 @mcp.tool()
-def mesh_send(
+def messages_send(
     body: str,
     to: list[str] | None = None,
     workspace: str = "",
@@ -1138,7 +1138,7 @@ def mesh_send(
 
 
 @mcp.tool()
-def mesh_reply(thread: str, body: str, confirm: bool = False) -> dict[str, Any]:
+def messages_reply(thread: str, body: str, confirm: bool = False) -> dict[str, Any]:
     """
     Answer everyone on a thread. Preview with confirm=False first, show it,
     and send with confirm=True only after the person says yes.
@@ -1151,7 +1151,7 @@ def mesh_reply(thread: str, body: str, confirm: bool = False) -> dict[str, Any]:
 
 
 @mcp.tool()
-def mesh_mute(handle: str, until: str = "", off: bool = False) -> dict[str, Any]:
+def messages_mute(handle: str, until: str = "", off: bool = False) -> dict[str, Any]:
     """
     Mute a teammate on this device, only when the person asks. Their
     messages still arrive and are listed; they never interrupt. `until` is
@@ -1162,7 +1162,7 @@ def mesh_mute(handle: str, until: str = "", off: bool = False) -> dict[str, Any]
 
 
 @mcp.tool()
-def mesh_quiet_hours(set: str = "") -> dict[str, Any]:  # noqa: A002
+def messages_quiet_hours(set: str = "") -> dict[str, Any]:  # noqa: A002
     """
     Quiet hours on this device, only when the person asks. Empty reports
     them; "22:00-07:00" sets them; "off" clears them. During quiet hours
@@ -2309,7 +2309,7 @@ async def _run_stdio_with_channel() -> None:
 
     The capability is always declared; Claude Code only listens when it was
     started with channels for this server, and the person says so with
-    `flanner mesh interrupt channel`. Until then nothing is pushed, and the
+    `flanner messages interrupt channel`. Until then nothing is pushed, and the
     hook at the next prompt does the work.
     """
     import anyio

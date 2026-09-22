@@ -198,7 +198,7 @@ class Sectioned(click.Group):
         ),
         (
             "Syncing with other machines",
-            ("peer", "mesh"),
+            ("peer", "mesh", "messages"),
         ),
         (
             "Agent integration",
@@ -8179,7 +8179,7 @@ def peer_push(address: str, project: str | None) -> None:
 
 @cli.group()
 def mesh() -> None:
-    """Message teammates, and the private network your devices share"""
+    """The private network your devices share"""
 
 
 def _runtime(url: str = "") -> Any:
@@ -8292,6 +8292,11 @@ def mesh_leave() -> None:
 # UI do, so the answers match and `--json` prints them unchanged.
 
 
+@cli.group()
+def messages() -> None:
+    """Messages between teammates on Team Mesh"""
+
+
 def _message_call(op: str, args: dict[str, Any], *, record: bool) -> dict[str, Any]:
     """Run a messaging operation, or print why it was refused and stop."""
     from . import services
@@ -8366,7 +8371,7 @@ def _preview_then_send(op: str, args: dict[str, Any], *, yes: bool, as_json: boo
     _print_delivery(result["delivery"])
 
 
-@mesh.command("inbox")
+@messages.command("inbox")
 @click.option("--all", "include_read", is_flag=True, help="Include threads already read")
 @click.option("--json", "as_json", is_flag=True, help="Print the answer as JSON")
 def mesh_inbox(include_read: bool, as_json: bool) -> None:
@@ -8396,13 +8401,13 @@ def mesh_inbox(include_read: bool, as_json: bool) -> None:
             line.append("  (muted)", style="muted")
         console.print(line)
     console.print(
-        f"\n  flanner mesh read <id> to open one {tui.MIDDOT} "
-        f'flanner mesh reply <id> "{tui.ELLIPSIS}" to answer',
+        f"\n  flanner messages read <id> to open one {tui.MIDDOT} "
+        f'flanner messages reply <id> "{tui.ELLIPSIS}" to answer',
         style="dim",
     )
 
 
-@mesh.command("read")
+@messages.command("read")
 @click.argument("thread_id")
 @click.option("--json", "as_json", is_flag=True, help="Print the answer as JSON")
 def mesh_read(thread_id: str, as_json: bool) -> None:
@@ -8432,16 +8437,16 @@ def mesh_read(thread_id: str, as_json: bool) -> None:
         f"  Messages here are deleted after {result['retention_days']} days.", style="dim"
     )
     console.print(
-        f'  flanner mesh reply {thread["short"]} "{tui.ELLIPSIS}" to answer', style="dim"
+        f'  flanner messages reply {thread["short"]} "{tui.ELLIPSIS}" to answer', style="dim"
     )
 
 
-@mesh.command("send")
+@messages.command("send")
 @click.argument("words", nargs=-1, required=True)
 @click.option("--yes", is_flag=True, help="Send without asking (not for workspace messages)")
 @click.option("--json", "as_json", is_flag=True, help="Print the answer as JSON")
 def mesh_send(words: tuple[str, ...], yes: bool, as_json: bool) -> None:
-    """Message one or more teammates: flanner mesh send ben chen "text\""""
+    """Message one or more teammates: flanner messages send ben chen "text\""""
     if len(words) < 2:
         raise click.UsageError("name at least one teammate, then the message in quotes")
     _preview_then_send(
@@ -8449,7 +8454,7 @@ def mesh_send(words: tuple[str, ...], yes: bool, as_json: bool) -> None:
     )
 
 
-@mesh.command("broadcast")
+@messages.command("broadcast")
 @click.argument("body")
 @click.option(
     "--workspace", "workspace_id", default="", help="Which workspace (default: this repo's)"
@@ -8467,7 +8472,7 @@ def mesh_broadcast(body: str, workspace_id: str, as_json: bool) -> None:
     )
 
 
-@mesh.command("reply")
+@messages.command("reply")
 @click.argument("thread_id")
 @click.argument("body")
 @click.option("--yes", is_flag=True, help="Send without asking")
@@ -8477,7 +8482,7 @@ def mesh_reply(thread_id: str, body: str, yes: bool, as_json: bool) -> None:
     _preview_then_send("mesh_reply", {"thread": thread_id, "body": body}, yes=yes, as_json=as_json)
 
 
-@mesh.command("mute")
+@messages.command("mute")
 @click.argument("handle")
 @click.option(
     "--for", "until", default="", help="How long, like 8h or 1d (default: until unmuted)"
@@ -8500,7 +8505,7 @@ def mesh_mute(handle: str, until: str, off: bool) -> None:
             )
 
 
-@mesh.command("quiet-hours")
+@messages.command("quiet-hours")
 @click.argument("spec", required=False, default="")
 @click.option("--json", "as_json", is_flag=True, help="Print the answer as JSON")
 def mesh_quiet_hours(spec: str, as_json: bool) -> None:
@@ -8514,7 +8519,7 @@ def mesh_quiet_hours(spec: str, as_json: bool) -> None:
             tui.ok("Quiet hours off on this device")
         else:
             console.print("  Quiet hours   off")
-            console.print("  Set them with: flanner mesh quiet-hours 22:00-07:00", style="dim")
+            console.print("  Set them with: flanner messages quiet-hours 22:00-07:00", style="dim")
         return
     window = f"{result['start']}-{result['end']}"
     if spec:
@@ -8592,14 +8597,14 @@ def _wire_messaging_agents() -> None:
             "appear inside Codex on their own."
         )
         console.print(
-            "  You'll still see them in flanner mesh inbox, the web UI and desktop "
+            "  You'll still see them in flanner messages inbox, the web UI and desktop "
             "notifications, and Codex can read them if you ask. To add the hook, give "
             f"your administrator: {tui.command('flanner init --print-codex-hook')}",
             style="muted",
         )
 
 
-@mesh.command("hook", hidden=True)
+@messages.command("hook", hidden=True)
 @click.option("--agent", default="", help="claude or codex, set by the installer")
 def mesh_hook(agent: str) -> None:
     """Called by Claude Code and Codex: add new messages to the session's context"""
@@ -8653,7 +8658,7 @@ def _new_messages_since(session: Any, since: Any) -> list[Any]:
     ]
 
 
-@mesh.command("wait")
+@messages.command("wait")
 @click.option("--timeout", "timeout_s", default=900, show_default=True, help="Seconds to wait")
 def mesh_wait(timeout_s: int) -> None:
     """Wait for the next message, print it, and exit (for agents)"""
@@ -8676,7 +8681,7 @@ def mesh_wait(timeout_s: int) -> None:
         time.sleep(2)
 
 
-@mesh.command("watch")
+@messages.command("watch")
 def mesh_watch() -> None:
     """Print messages as they arrive, until you press Ctrl+C"""
     from datetime import datetime, timezone
@@ -8700,7 +8705,7 @@ def mesh_watch() -> None:
         return
 
 
-@mesh.command("interrupt")
+@messages.command("interrupt")
 @click.argument("choice", required=False, type=click.Choice(["channel", "tool", "prompt"]))
 def mesh_interrupt(choice: str | None) -> None:
     """How agents show new messages: channel, after tool calls, or at your next prompt"""
@@ -9311,34 +9316,36 @@ EXAMPLES: dict[str, tuple[str, ...]] = {
         "flanner peer autostart off",
     ),
     "mesh status": ("flanner mesh status",),
-    "mesh inbox": (
-        "flanner mesh inbox",
-        "flanner mesh inbox --all         read threads too",
+    "messages inbox": (
+        "flanner messages inbox",
+        "flanner messages inbox --all     read threads too",
     ),
-    "mesh read": ("flanner mesh read 7f3a",),
-    "mesh send": (
-        'flanner mesh send ben "can you look at the migration plan?"',
-        'flanner mesh send ben chen "deploying billing at 15:00"',
+    "messages read": ("flanner messages read 7f3a",),
+    "messages send": (
+        'flanner messages send ben "can you look at the migration plan?"',
+        'flanner messages send ben chen "deploying billing at 15:00"',
     ),
-    "mesh broadcast": (
-        'flanner mesh broadcast "heads up, deploying billing in ten minutes"',
-        'flanner mesh broadcast --workspace ws_f24dca1f15b391e1 "..."',
+    "messages broadcast": (
+        'flanner messages broadcast "heads up, deploying billing in ten minutes"',
+        'flanner messages broadcast --workspace ws_f24dca1f15b391e1 "..."',
     ),
-    "mesh reply": ('flanner mesh reply 7f3a "next release, I\'ll add a note to the plan"',),
-    "mesh mute": (
-        "flanner mesh mute chen --for 8h",
-        "flanner mesh mute chen --off",
+    "messages reply": (
+        'flanner messages reply 7f3a "next release, I\'ll add a note to the plan"',
     ),
-    "mesh quiet-hours": (
-        "flanner mesh quiet-hours         show them",
-        "flanner mesh quiet-hours 22:00-07:00",
-        "flanner mesh quiet-hours off",
+    "messages mute": (
+        "flanner messages mute chen --for 8h",
+        "flanner messages mute chen --off",
     ),
-    "mesh wait": ("flanner mesh wait --timeout 600",),
-    "mesh watch": ("flanner mesh watch",),
-    "mesh interrupt": (
-        "flanner mesh interrupt           show the current choice",
-        "flanner mesh interrupt prompt",
+    "messages quiet-hours": (
+        "flanner messages quiet-hours     show them",
+        "flanner messages quiet-hours 22:00-07:00",
+        "flanner messages quiet-hours off",
+    ),
+    "messages wait": ("flanner messages wait --timeout 600",),
+    "messages watch": ("flanner messages watch",),
+    "messages interrupt": (
+        "flanner messages interrupt       show the current choice",
+        "flanner messages interrupt prompt",
     ),
 }
 
