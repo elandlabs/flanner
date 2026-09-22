@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Flanner</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root {
+      --ground: #f6f7f9;
+      --ink: #1b2330;
+      --quiet: #5b6576;
+      --accent: #2c9a44;
+      --warn: #b3261e;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root { --ground: #0b0e14; --ink: #e6e9ef; --quiet: #9aa4b2; --accent: #3fb950; --warn: #ff7b72; }
+    }
+    html, body { height: 100%; margin: 0; }
+    body {
+      background: var(--ground);
+      color: var(--ink);
+      font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+      display: grid;
+      place-items: center;
+    }
+    main { max-width: 34rem; padding: 0 24px; text-align: center; }
+    .dot {
+      width: 14px; height: 14px; border-radius: 50%;
+      background: var(--accent); margin: 0 auto 20px;
+      animation: pulse 1.4s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+    }
+    @keyframes pulse { 50% { opacity: 0.35; transform: scale(0.8); } }
+    @media (prefers-reduced-motion: reduce) { .dot { animation: none; } }
+    h1 { font-size: 17px; font-weight: 600; margin: 0 0 6px; }
+    p { color: var(--quiet); margin: 0; }
+    .failed .dot { background: var(--warn); animation: none; }
+    pre {
+      text-align: left; white-space: pre-wrap; word-break: break-word;
+      color: var(--ink); background: color-mix(in srgb, var(--ink) 6%, transparent);
+      padding: 12px 14px; border-radius: 8px; margin-top: 16px; font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="dot" aria-hidden="true"></div>
+    <h1 id="title">Starting flanner</h1>
+    <p id="detail">The first start after an install or update takes a little longer.</p>
+  </main>
+  <script>
+    // Called by the app when flanner could not start.
+    window.showError = function (message) {
+      document.body.classList.add('failed');
+      document.getElementById('title').textContent = 'flanner did not start';
+      const detail = document.getElementById('detail');
+      detail.textContent = '';
+      const pre = document.createElement('pre');
+      pre.textContent = message;
+      detail.append(pre);
+    };
+  </script>
+</body>
+</html>
