@@ -162,6 +162,24 @@ def test_the_mesh_entry_is_not_mistaken_for_a_plan(store):
         UUID("mesh")
 
 
+def test_a_delivery_that_gives_up_is_a_change(store):
+    """Nothing arrives and no `delivered_at` moves when a queued message is
+    reported failed, so a signature of count, newest and latest delivery
+    left the page saying "queued" until something else happened."""
+    client, session, project = store
+    from flanner.database import MeshDeliveryModel
+
+    row = MeshDeliveryModel(message_id="m", user_id="bob", device_id="d", state="queued")
+    session.add(row)
+    session.commit()
+    before = _snapshot(session)
+
+    row.state = "failed"
+    session.commit()
+
+    assert _snapshot(session)["messages"] != before["messages"]
+
+
 def test_reading_the_catalog_twice_reports_nothing(store):
     """A poll that always looks changed would refresh the page every second."""
     client, session, project = store

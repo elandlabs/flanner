@@ -1752,23 +1752,32 @@ def _catalog_snapshot(session: Any) -> dict[str, str]:
 
 
 def _messages_signature(session: Any) -> str:
-    """What changed among messages: a count, the newest arrival, the newest delivery.
+    """What changed among messages: a count, the newest arrival, the newest
+    delivery, and how many deliveries have failed.
 
     One query, because the snapshot runs once a second for the life of the
-    process.
+    process. The failed count is there because a delivery that gives up
+    changes nothing else: no row arrives and no `delivered_at` moves, so
+    without it the page kept saying "queued" until something else happened.
     """
     from .database import MeshDeliveryModel, MeshMessageModel
 
     delivered = session.query(func.max(MeshDeliveryModel.delivered_at)).scalar_subquery()
+    failed = (
+        session.query(func.count(MeshDeliveryModel.id))
+        .filter(MeshDeliveryModel.state == "failed")
+        .scalar_subquery()
+    )
     try:
-        count, newest, latest = session.query(
+        count, newest, latest, given_up = session.query(
             func.count(MeshMessageModel.message_id),
             func.max(MeshMessageModel.received_at),
             delivered,
+            failed,
         ).one()
     except Exception:  # noqa: BLE001 - live updates must not fail on a missing table
         return "none"
-    return f"{count}|{newest}|{latest}"
+    return f"{count}|{newest}|{latest}|{given_up}"
 
 
 def _arrival_toast(session: Any) -> str:
