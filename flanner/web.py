@@ -2975,6 +2975,7 @@ async def _messages_view(
             "draft": {"body": "", "to": "", "workspace": ""},
             "preview": None,
             "preview_action": "/mesh/messages",
+            "compose": False,
             **extra,
         },
         status_code=status,
@@ -3003,6 +3004,17 @@ async def message_chat_read_form(key: str, back: str = Form("")) -> RedirectResp
     ensure_db()
     await run_in_threadpool(services.mesh_chat_read, key)
     return RedirectResponse(_back_to(back, _chat_url(key)), status_code=303)
+
+
+@app.get("/mesh/messages/compose", response_class=HTMLResponse)
+async def message_compose_page(request: Request) -> HTMLResponse:
+    """A message to people you name, or to a workspace: how a group chat starts.
+
+    Registered before the thread route, which would otherwise read
+    "compose" as a thread id.
+    """
+    ensure_db()
+    return await _messages_view(request, compose=True)
 
 
 @app.get("/mesh/messages/{thread_id}", response_class=HTMLResponse)
@@ -3060,6 +3072,8 @@ async def messages_send_form(
         draft={"body": body, "to": to, "workspace": workspace},
         preview=None if result.get("error") else result,
         refused=result.get("message") if result.get("error") else "",
+        # A refused new message goes back to its form with what was typed.
+        compose=not chat and bool(result.get("error")),
     )
 
 

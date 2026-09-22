@@ -44,7 +44,11 @@
     {% if chat %}<a class="skip-link" href="#reply-body">Skip to the composer</a>{% endif %}
     <div class="chat-filter">
       <label class="field-label" for="chat-filter">Filter chats</label>
-      <input class="input" type="search" id="chat-filter" autocomplete="off">
+      <div class="form-row">
+        <input class="input" type="search" id="chat-filter" autocomplete="off">
+        {# The one way to start a group chat here; a person or workspace chat starts from its row. #}
+        <a class="btn btn-sm" href="/mesh/messages/compose"{% if compose %} aria-current="page"{% endif %}>New message</a>
+      </div>
     </div>
     {% if chats.quiet.active %}
     <div class="notice info chat-quiet">Quiet until {{ chats.quiet.end }} · <a href="/settings#tab-team">Settings</a></div>
@@ -95,7 +99,37 @@
       {% endif %}
 
       {% if not chat %}
-      {% if chats.unread %}
+      {% if compose %}
+      {# Naming people directly is how a group chat starts; the list only shows groups that exist. #}
+      <div class="card card-pad">
+        <h2 class="card-title">New message</h2>
+        <form method="post" action="/mesh/messages" data-save>
+          <div class="field-grid">
+            <div class="field">
+              <label class="field-label" for="msg-to">To (handles, up to 20)</label>
+              <input class="input" id="msg-to" name="to" list="msg-teammates" value="{{ draft.to or '' }}"
+                     placeholder="ben, chen" autocomplete="off">
+              <datalist id="msg-teammates">
+                {% for s in chats.sections %}{% for c in s.chats if c.kind == 'dm' and c.people %}<option value="{{ c.people[0].handle }}">{{ c.people[0].name }}</option>{% endfor %}{% endfor %}
+              </datalist>
+            </div>
+            <div class="field">
+              <label class="field-label" for="msg-ws">Or everyone in a workspace</label>
+              <select class="input" id="msg-ws" name="workspace">
+                <option value="">No, just the people named</option>
+                {% for s in chats.sections %}{% for c in s.chats if c.kind == 'ws' %}<option value="{{ c.workspace }}" {% if draft.workspace == c.workspace %}selected{% endif %}>{{ c.workspace }}</option>{% endfor %}{% endfor %}
+              </select>
+            </div>
+          </div>
+          <div class="field">
+            <label class="field-label" for="msg-body">Message</label>
+            <textarea class="input" id="msg-body" name="body" rows="4" maxlength="4096" required>{{ draft.body or '' }}</textarea>
+          </div>
+          <p class="hint">Plain text, up to 4 KB. You will see who it goes to before it is sent.</p>
+          <button class="btn btn-primary">Review and send</button>
+        </form>
+      </div>
+      {% elif chats.unread %}
       {% call empty.state('clear', chats.unread ~ ' unread in ' ~ chats.unread_chats ~ (' chat' if chats.unread_chats == 1 else ' chats')) %}
       <p class="hint">Press j then Enter, or pick a chat.</p>
       {% endcall %}

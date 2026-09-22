@@ -23,7 +23,9 @@ versioning follows [SemVer](https://semver.org/).
     composer continues the newest thread while it is under a day old and
     starts a new one otherwise, and says which. Opening a chat marks it
     read; `e` in the list marks one read without opening it; `j`/`k` move
-    between chats. Mute from the chat's head. An unread count in the
+    between chats. *New message* writes to people you name or to a
+    workspace, which is how a group chat starts. Mute from the chat's
+    head. An unread count in the
     sidebar, and quiet hours and muted senders under Settings, Team. On a
     phone the list and a chat are two pages.
   - A message someone is offline for waits on your device and is sent

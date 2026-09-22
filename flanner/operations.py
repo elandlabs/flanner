@@ -655,7 +655,11 @@ OPERATIONS: tuple[Operation, ...] = (
         cli=("messages send", "messages broadcast", "messages reply"),
         mcp=("messages_send", "messages_reply"),
         mcp_since="0.15.0",
-        web=("POST /mesh/messages", "POST /mesh/messages/{thread_id}/reply"),
+        web=(
+            "GET /mesh/messages/compose",
+            "POST /mesh/messages",
+            "POST /mesh/messages/{thread_id}/reply",
+        ),
         note="Previewed first and sent only on a plain yes; a workspace message always asks.",
         note_since="0.15.0",
     ),

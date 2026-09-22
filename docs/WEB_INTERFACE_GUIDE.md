@@ -132,6 +132,10 @@ one workspace, or one group of people.
   your last message there was not delivered.
 - **Filter chats**: Typing hides rows that do not match, and the sections
   they empty.
+- **New message**: The button beside the filter opens a form for a message
+  to people you name (up to 20 handles) or to a whole workspace. Naming two
+  or more people is how a group chat starts; a chat with one teammate or a
+  workspace starts from its row instead.
 - **Keys**: While focus is in the chat list, `j`/`k` or the arrow keys move
   between chats, `Enter` opens one and `e` marks the focused chat read
   without opening it. Nothing happens while you type in a field.

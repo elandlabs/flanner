@@ -393,3 +393,20 @@ def test_the_empty_pane_does_not_call_muted_unread_nothing(client, signed_in):
     assert "except from muted senders" in page
     assert "1 unread from someone you muted" in page
     assert "Unread 1" not in page, "a muted chat never enters the Unread section"
+
+
+def test_a_new_message_form_starts_a_group_chat(client):
+    """The list only shows groups that exist; naming people is how one starts."""
+    page = client.get("/mesh/messages").text
+    assert 'href="/mesh/messages/compose"' in page
+
+    form = client.get("/mesh/messages/compose")
+    assert form.status_code == 200
+    assert 'name="to"' in form.text and 'name="workspace"' in form.text
+    assert '<option value="bob">' in form.text, "teammates come from the roster"
+
+    refused = client.post("/mesh/messages", data={"to": "nobody", "body": "hi"})
+    assert refused.status_code == 400
+    assert 'name="to"' in refused.text and 'value="nobody"' in refused.text, (
+        "a refused message goes back to its form with what was typed"
+    )
