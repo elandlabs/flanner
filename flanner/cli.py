@@ -337,6 +337,11 @@ def _say_what_changed() -> None:
     tui.ok(f"Updated: {previous} {tui.ARROW} {__version__}", to=tui.notices)
     if where:
         tui.hint(f"  What changed: {where}", to=tui.notices)
+    if release.tell_about_desktop_app():
+        tui.hint(
+            f"  New: a desktop app, with nothing to install first. {release.DESKTOP_DOWNLOAD}",
+            to=tui.notices,
+        )
     tui.notices.print()
 
 
@@ -8496,7 +8501,7 @@ def mesh_read(thread_id: str, as_json: bool) -> None:
 @click.option("--yes", is_flag=True, help="Send without asking (not for workspace messages)")
 @click.option("--json", "as_json", is_flag=True, help="Print the answer as JSON")
 def mesh_send(words: tuple[str, ...], yes: bool, as_json: bool) -> None:
-    """Message one or more teammates: flanner messages send ben chen "text\""""
+    """Message one or more teammates: flanner messages send ben chen "text\" """
     if len(words) < 2:
         raise click.UsageError("name at least one teammate, then the message in quotes")
     _preview_then_send(

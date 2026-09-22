@@ -256,3 +256,13 @@ def test_the_updates_command_sends_desktop_users_to_the_app(home, desktop):
     assert result.exit_code == 0
     assert "desktop app keeps flanner up to date" in result.output
     assert "update_check" not in release.read_state()
+
+
+def test_the_desktop_app_is_mentioned_once(home):
+    """A pip user hears about the app on one upgrade, not on every one after."""
+    assert release.tell_about_desktop_app() is True
+    assert release.tell_about_desktop_app() is False
+
+
+def test_the_desktop_app_is_never_mentioned_inside_it(home, desktop):
+    assert release.tell_about_desktop_app() is False

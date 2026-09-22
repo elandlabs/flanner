@@ -46,6 +46,10 @@ TIMEOUT_SECONDS = 2.0
 #: tell somebody to run a pip command against a Python they never chose.
 DESKTOP_MARKER = "flanner-desktop"
 
+#: Where the desktop app is offered. Said once to a pip user, on their first
+#: upgrade to a release that has it.
+DESKTOP_DOWNLOAD = "https://flanner.io/download"
+
 
 def _home() -> Path:
     """Where flanner keeps its files. Read directly, see the module docstring."""
@@ -114,6 +118,18 @@ def remember_version(current: str) -> None:
 def is_desktop() -> bool:
     """Whether this flanner is the one the desktop app bundles."""
     return (Path(sys.prefix) / DESKTOP_MARKER).is_file()
+
+
+def tell_about_desktop_app() -> bool:
+    """Whether to mention the desktop app now: once ever, and never inside it."""
+    if is_desktop():
+        return False
+    state = read_state()
+    if state.get("told_desktop_app"):
+        return False
+    state["told_desktop_app"] = True
+    write_state(state)
+    return True
 
 
 def update_check_consent() -> bool | None:
