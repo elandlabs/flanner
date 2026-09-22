@@ -124,6 +124,9 @@ ignore_missing_imports = true
 [tool.ruff]
 line-length = 99
 target-version = "py310"
+# The desktop shell's Rust build output holds a copy of the bundled Python
+# runtime, CPython's own library included. Never ours to lint or format.
+extend-exclude = ["desktop/src-tauri/target"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "S"]
