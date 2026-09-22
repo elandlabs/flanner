@@ -1,0 +1,62 @@
+name: Desktop
+
+# The desktop app's runtime: python-build-standalone with flanner installed,
+# and the launchers the app points agents at. It runs only when something the
+# runtime depends on changes, so flanner's own CI stays as it was.
+on:
+  pull_request:
+    branches: [main, development]
+    paths: &paths
+      - "desktop/**"
+      - "flanner/desktop.py"
+      - "flanner/release.py"
+      - "flanner/claude_integration.py"
+      - "flanner/cli.py"
+      - "flanner/server.py"
+      - "flanner/web/**"
+      - "pyproject.toml"
+      - ".github/workflows/desktop-ci.yml"
+  push:
+    branches: [main]
+    paths: *paths
+  workflow_dispatch:
+
+jobs:
+  runtime:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # One failing platform must not cancel the others: the point of
+      # running three is to learn which one broke.
+      fail-fast: false
+      matrix:
+        # macos-latest is Apple silicon, the only Mac the app ships for.
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Lint
+        if: runner.os == 'Linux'
+        run: |
+          pip install ruff
+          ruff check desktop/
+          ruff format --check desktop/
+      # The python-build-standalone archive is pinned by checksum in the
+      # builder, so a cache keyed on the builder cannot serve a stale one.
+      - uses: actions/cache@v4
+        with:
+          path: build/cache
+          key: pbs-${{ runner.os }}-${{ hashFiles('desktop/bundle/build_runtime.py') }}
+      - name: Build this commit's wheel
+        run: |
+          pip install build
+          python -m build --wheel -o build/dist
+      - name: Build the runtime
+        shell: bash
+        run: python desktop/bundle/build_runtime.py --flanner build/dist/flanner-*.whl
+      - name: Smoke-test the runtime
+        shell: bash
+        run: |
+          pip install pytest mcp
+          FLANNER_RUNTIME=build/runtime pytest desktop/tests/smoke -v -p no:cacheprovider
