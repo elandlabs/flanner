@@ -7,14 +7,21 @@
   <style>
     :root {
       --ground: #f6f7f9;
+      --panel: #ffffff;
       --ink: #1b2330;
       --quiet: #5b6576;
-      --accent: #2c9a44;
+      --line: #dfe3e9;
+      --accent: #1f7a37;
+      --accent-ink: #ffffff;
       --warn: #b3261e;
     }
     @media (prefers-color-scheme: dark) {
-      :root { --ground: #0b0e14; --ink: #e6e9ef; --quiet: #9aa4b2; --accent: #3fb950; --warn: #ff7b72; }
+      :root {
+        --ground: #0b0e14; --panel: #121722; --ink: #e6e9ef; --quiet: #9aa4b2;
+        --line: #252d3b; --accent: #3fb950; --accent-ink: #0b0e14; --warn: #ff7b72;
+      }
     }
+    [hidden] { display: none !important; }
     html, body { height: 100%; margin: 0; }
     body {
       background: var(--ground);
@@ -23,7 +30,8 @@
       display: grid;
       place-items: center;
     }
-    main { max-width: 34rem; padding: 0 24px; text-align: center; }
+    main { width: min(36rem, 100% - 48px); }
+    .status { text-align: center; }
     .dot {
       width: 14px; height: 14px; border-radius: 50%;
       background: var(--accent); margin: 0 auto 20px;
@@ -39,25 +47,181 @@
       color: var(--ink); background: color-mix(in srgb, var(--ink) 6%, transparent);
       padding: 12px 14px; border-radius: 8px; margin-top: 16px; font-size: 13px;
     }
+
+    form { display: none; background: var(--panel); border: 1px solid var(--line);
+           border-radius: 12px; padding: 28px; }
+    .setup form { display: grid; gap: 22px; }
+    .setup .status { display: none; }
+    form h1 { font-size: 20px; margin: 0; }
+    fieldset { border: 0; padding: 0; margin: 0; display: grid; gap: 10px; }
+    legend { font-weight: 600; margin-bottom: 8px; padding: 0; }
+    label { display: grid; grid-template-columns: 20px 1fr; gap: 10px; align-items: start;
+            cursor: pointer; }
+    input { margin: 3px 0 0; width: 16px; height: 16px; accent-color: var(--accent); }
+    .choice-title { font-weight: 600; }
+    .choice-detail { color: var(--quiet); font-size: 14px; }
+    ul { margin: 8px 0 0; padding-left: 18px; color: var(--quiet); font-size: 14px;
+         display: grid; gap: 4px; }
+    code { font: 13px ui-monospace, "Cascadia Mono", Menlo, monospace; color: var(--ink);
+           word-break: break-all; }
+    .connect.off ul { opacity: 0.5; }
+    .foot { color: var(--quiet); font-size: 13px; }
+    button {
+      justify-self: end; font: inherit; font-weight: 600; padding: 9px 20px;
+      border-radius: 8px; border: 0; background: var(--accent); color: var(--accent-ink);
+      cursor: pointer;
+    }
+    button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    button:disabled { opacity: 0.6; cursor: default; }
   </style>
 </head>
 <body>
   <main>
-    <div class="dot" aria-hidden="true"></div>
-    <h1 id="title">Starting flanner</h1>
-    <p id="detail">The first start after an install or update takes a little longer.</p>
+    <div class="status">
+      <div class="dot" aria-hidden="true"></div>
+      <h1 id="title">Starting flanner</h1>
+      <p id="detail">The first start after an install or update takes a little longer.</p>
+    </div>
+
+    <form id="setup" aria-labelledby="setup-title">
+      <h1 id="setup-title">Set up flanner</h1>
+
+      <fieldset id="which" hidden>
+        <legend>Which flanner should the app use?</legend>
+        <label>
+          <input type="radio" name="which" value="bundled" checked>
+          <span>
+            <span class="choice-title">The app's flanner (recommended)</span><br>
+            <span class="choice-detail">It updates with the app.</span>
+          </span>
+        </label>
+        <label>
+          <input type="radio" name="which" value="installed">
+          <span>
+            <span class="choice-title" id="installed-title">The one already installed</span><br>
+            <span class="choice-detail" id="installed-detail"></span>
+          </span>
+        </label>
+      </fieldset>
+
+      <fieldset class="connect" id="connect-group">
+        <label>
+          <input type="checkbox" id="connect" checked>
+          <span>
+            <span class="choice-title">Connect flanner to Claude and Codex</span><br>
+            <span class="choice-detail">So your AI tools can read and write your plans. This changes:</span>
+            <ul id="changes"></ul>
+          </span>
+        </label>
+      </fieldset>
+
+      <p class="foot">Nothing else on this computer is changed. You can set this up again from the
+        flanner icon in the tray.</p>
+      <button type="submit" id="continue">Continue</button>
+    </form>
   </main>
   <script>
-    // Called by the app when flanner could not start.
-    window.showError = function (message) {
-      document.body.classList.add('failed');
-      document.getElementById('title').textContent = 'flanner did not start';
-      const detail = document.getElementById('detail');
-      detail.textContent = '';
-      const pre = document.createElement('pre');
-      pre.textContent = message;
-      detail.append(pre);
-    };
+    (function () {
+      const body = document.body;
+
+      function item(parts) {
+        const li = document.createElement('li');
+        parts.forEach(function (part) {
+          if (part.code) {
+            const code = document.createElement('code');
+            code.textContent = part.code;
+            li.append(code);
+          } else {
+            li.append(part);
+          }
+        });
+        return li;
+      }
+
+      // Called by the app on a first start, with what connecting would change here.
+      window.showSetup = function (probe) {
+        if (body.classList.contains('setup') || body.classList.contains('answered')) return;
+        body.classList.add('setup');
+
+        const changes = document.getElementById('changes');
+        changes.replaceChildren(
+          item(['Your PATH: adds ', { code: probe.bin }, ' first, so terminals, Claude Code and Codex find flanner.']),
+        );
+        if (probe.claude_desktop) {
+          changes.append(item(['Claude Desktop: adds a flanner server to ', { code: probe.claude_desktop }, '.']));
+        }
+        if (probe.claude_code) {
+          changes.append(item(['Claude Code: registers flanner for your user, with ', { code: 'claude mcp add' }, '.']));
+        }
+        changes.append(item([{ code: probe.claude_md }, ': adds a short note telling Claude to use flanner.']));
+        if (probe.codex) {
+          changes.append(item(['Codex: adds a flanner server to ', { code: probe.codex }, '.']));
+        }
+
+        const other = probe.other_flanner;
+        if (other) {
+          document.getElementById('which').hidden = false;
+          document.getElementById('installed-title').textContent =
+            'Keep using flanner ' + other.version;
+          document.getElementById('installed-detail').textContent =
+            'Installed at ' + other.path + '. The app only shows its window, and nothing is connected.';
+        }
+
+        const connect = document.getElementById('connect');
+        const group = document.getElementById('connect-group');
+        document.querySelectorAll('input[name="which"]').forEach(function (radio) {
+          radio.addEventListener('change', function () {
+            const keep = radio.value === 'installed' && radio.checked;
+            connect.disabled = keep;
+            group.classList.toggle('off', keep || !connect.checked);
+          });
+        });
+        connect.addEventListener('change', function () {
+          group.classList.toggle('off', !connect.checked);
+        });
+        document.getElementById('continue').focus();
+      };
+
+      document.getElementById('setup').addEventListener('submit', async function (event) {
+        event.preventDefault();
+        const button = document.getElementById('continue');
+        button.disabled = true;
+        const keep = document.querySelector('input[name="which"]:checked').value === 'installed';
+        const connect = document.getElementById('connect').checked && !keep;
+        try {
+          await window.__TAURI__.core.invoke('finish_setup', { connect: connect, keepInstalled: keep });
+          body.classList.remove('setup');
+          body.classList.add('answered');
+          window.showStatus(connect ? 'Connecting flanner to Claude and Codex' : 'Starting flanner');
+        } catch (error) {
+          button.disabled = false;
+          window.showError(String(error));
+        }
+      });
+
+      window.showStatus = function (message) {
+        document.getElementById('title').textContent = message;
+      };
+
+      // Called by the app when flanner could not start.
+      window.showError = function (message) {
+        body.classList.remove('setup');
+        body.classList.add('failed');
+        document.getElementById('title').textContent = 'flanner did not start';
+        const detail = document.getElementById('detail');
+        detail.textContent = '';
+        const pre = document.createElement('pre');
+        pre.textContent = message;
+        detail.append(pre);
+      };
+
+      // The app may have asked before this page finished loading.
+      if (window.__TAURI__) {
+        window.__TAURI__.core.invoke('pending_setup').then(function (probe) {
+          if (probe) window.showSetup(JSON.parse(probe));
+        });
+      }
+    })();
   </script>
 </body>
 </html>
