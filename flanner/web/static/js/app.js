@@ -715,13 +715,14 @@ function inTextField() {
     return !!el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable);
 }
 document.addEventListener('keydown', function(e) {
-    // Ctrl+S or Cmd+S to save (prevent default and trigger form submit)
+    // Ctrl+S or Cmd+S submits the form that asked for it. It used to submit
+    // the first form on the page, which on a page with a mute form above
+    // the editor would have muted somebody.
     if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        const form = document.querySelector('form[data-save]');
+        if (!form) return;
         e.preventDefault();
-        const form = document.querySelector('form');
-        if (form) {
-            form.submit();
-        }
+        if (form.requestSubmit) form.requestSubmit(); else form.submit();
         return;
     }
     // "?" opens the keyboard-shortcuts help (but not while typing)

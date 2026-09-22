@@ -24,7 +24,7 @@
 <div class="pane">
   {% if error %}<div class="notice bad" role="alert">{{ error }}</div>{% endif %}
   <form method="POST" action="/plans/{{ plan_file.id }}/edit" id="plan-edit-form"
-        class="editor-shell" data-full-load>
+        class="editor-shell" data-full-load data-save>
 
     <div class="field">
       <label class="field-label" for="content">Content</label>
