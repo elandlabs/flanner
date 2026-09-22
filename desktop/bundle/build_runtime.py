@@ -9,6 +9,15 @@ that tells flanner it is the desktop app's (`flanner.release.is_desktop`).
 A release installs the exact version from PyPI, so the app and pip users
 run the same code. CI on a pull request installs the wheel it just built.
 
+flanner's dependencies come from runtime.lock, next to this file, and pip
+refuses any that does not match its recorded hash. flanner itself is then
+installed without dependencies, and `pip check` fails the build if the lock
+is missing anything flanner needs. Regenerate the lock after changing
+pyproject.toml's dependencies (one command):
+
+    uv pip compile pyproject.toml --universal --generate-hashes
+        --python-version 3.12 --no-header -o desktop/bundle/runtime.lock
+
 Stdlib only: it runs on a bare runner before anything else is installed.
 It builds for the machine it runs on, because pip installs that machine's
 wheels; each OS builds its own runtime in CI.
@@ -45,6 +54,7 @@ SHA256 = {
 MARKER = "flanner-desktop"
 
 ROOT = Path(__file__).resolve().parents[2]
+LOCK = Path(__file__).resolve().parent / "runtime.lock"
 
 #: Written into the runtime's site-packages, so it runs whenever the bundled
 #: Python starts: the app's sidecar, the launchers, and the copies of itself
@@ -144,7 +154,7 @@ def fetch(target: str, cache: Path) -> Path:
     return archive
 
 
-def build(flanner: str, out: Path, cache: Path) -> Path:
+def build(flanner: str, out: Path, cache: Path, lock: Path = LOCK) -> Path:
     """Unpack a fresh runtime into `out`, install `flanner`, mark it. Returns its python."""
     archive = fetch(host_target(), cache)
     if out.exists():
@@ -160,20 +170,14 @@ def build(flanner: str, out: Path, cache: Path) -> Path:
     # installed, and leaves them out of the runtime.
     isolated = {**os.environ, "PYTHONNOUSERSITE": "1"}
     isolated.pop("PYTHONPATH", None)
-    subprocess.run(  # noqa: S603 - the interpreter just unpacked, a fixed argv
-        [
-            str(python),
-            "-m",
-            "pip",
-            "install",
-            "--no-cache-dir",
-            "--no-warn-script-location",
-            "--disable-pip-version-check",
-            flanner,
-        ],
-        check=True,
-        env=isolated,
-    )
+    pip = [str(python), "-m", "pip"]
+    quiet = ["--no-cache-dir", "--no-warn-script-location", "--disable-pip-version-check"]
+    for step in (
+        ["install", *quiet, "--require-hashes", "--no-deps", "-r", str(lock)],
+        ["install", *quiet, "--no-deps", flanner],
+        ["check", "--disable-pip-version-check"],
+    ):
+        subprocess.run([*pip, *step], check=True, env=isolated)  # noqa: S603 - fixed argv
     purelib = subprocess.run(  # noqa: S603 - as above
         [str(python), "-c", "import sysconfig; print(sysconfig.get_path('purelib'))"],
         check=True,
@@ -201,8 +205,9 @@ def main() -> None:
     parser.add_argument("--flanner", required=True, help="flanner==X.Y.Z, or a wheel path")
     parser.add_argument("--out", type=Path, default=ROOT / "build" / "runtime")
     parser.add_argument("--cache", type=Path, default=ROOT / "build" / "cache")
+    parser.add_argument("--lock", type=Path, default=LOCK, help="hashed dependency lock")
     args = parser.parse_args()
-    python = build(args.flanner, args.out.resolve(), args.cache.resolve())
+    python = build(args.flanner, args.out.resolve(), args.cache.resolve(), args.lock.resolve())
     print(python)
 
 

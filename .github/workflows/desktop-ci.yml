@@ -42,6 +42,20 @@ jobs:
           pip install ruff
           ruff check desktop/
           ruff format --check desktop/
+      # Solved from the committed lock, not from nothing: uv keeps its pins,
+      # so this fails only when pyproject.toml needs something the lock does
+      # not give it, never because some dependency published a release.
+      - name: The runtime lock covers what pyproject declares
+        if: runner.os == 'Linux'
+        run: |
+          pip install uv
+          cp desktop/bundle/runtime.lock /tmp/expected.lock
+          uv pip compile pyproject.toml --universal --generate-hashes --python-version 3.12 --no-header -o /tmp/expected.lock --quiet
+          diff -u desktop/bundle/runtime.lock /tmp/expected.lock || {
+            echo "::error::desktop/bundle/runtime.lock is behind pyproject.toml. Regenerate it:"
+            echo "  uv pip compile pyproject.toml --universal --generate-hashes --python-version 3.12 --no-header -o desktop/bundle/runtime.lock"
+            exit 1
+          }
       # The python-build-standalone archive is pinned by checksum in the
       # builder, so a cache keyed on the builder cannot serve a stale one.
       - uses: actions/cache@v4
