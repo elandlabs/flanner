@@ -1800,6 +1800,22 @@ onPage(function () {
     // can show the real one and return a full path. Where it cannot, over SSH
     // or without Tk, the folder list drawn in the page does the same job.
     async function systemDialog(start, title) {
+        // Inside the desktop app the native dialog is the app's, not Tk's.
+        // The folder list endpoint then resolves the choice and works out
+        // the path relative to `base`, exactly as the server dialog does.
+        const tauriDialog = window.__TAURI__ && window.__TAURI__.dialog;
+        if (tauriDialog) {
+            try {
+                const chosen = await tauriDialog.open({ directory: true, defaultPath: start || undefined, title: title });
+                if (!chosen) return { cancelled: true };
+                const query = new URLSearchParams({ path: chosen, base: base || '' });
+                const response = await fetch('/api/directories?' + query);
+                const listing = response.ok ? await response.json() : {};
+                return listing.path ? { path: listing.path, relative: listing.relative } : { unavailable: 'failed' };
+            } catch (e) {
+                return { unavailable: 'failed' };
+            }
+        }
         const form = new FormData();
         form.set('initial', start || '');
         form.set('base', base || '');
