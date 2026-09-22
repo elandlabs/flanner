@@ -337,8 +337,11 @@ accepts only plugins, and flanner is not a plugin yet; one is planned. An
 organization on a Claude Team or Enterprise plan can switch channels off
 for everyone.
 
-With `channel` set, the hook skips anything the channel already delivered,
-so nothing shows twice.
+With `channel` set, a message appears the moment it arrives, and again at
+your next prompt with a note that it may be a repeat. The hook stays quiet
+between tool calls. The repeat is on purpose: if Claude Code was started
+without the flag, or channels are switched off, it drops channel messages
+without saying so, and the prompt is then the only place you see them.
 
 **Without the channel,** messages still reach you. They appear at your
 next prompt and between tool calls. An idle session shows nothing until you

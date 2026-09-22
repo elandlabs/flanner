@@ -275,7 +275,9 @@ def test_the_instructions_come_and_go_beside_the_existing_block(agents):
 # --- the Claude Code channel ------------------------------------------------------
 
 
-def test_with_channel_chosen_claude_code_skips_what_the_channel_delivered(db):
+def test_what_the_channel_pushed_still_shows_at_the_next_prompt(db):
+    """A push Claude Code did not listen to is dropped silently, so the
+    prompt must not skip it; it says it may be a repeat instead."""
     session = get_session()
     arrived(session)
     mesh_messages.set_interrupt("channel")
@@ -283,10 +285,15 @@ def test_with_channel_chosen_claude_code_skips_what_the_channel_delivered(db):
     pushed = mesh_messages.for_channel(session, label=LABEL)
 
     assert len(pushed) == 1 and "From @bob (Bob)" in pushed[0][0]
-    assert shown(session, agent="claude") == ""
-    assert shown(session, agent="codex", agent_session="codex-1"), (
-        "Codex has no channel, so its hook still shows it"
+    at_prompt = shown(session, agent="claude")
+    assert "From @bob (Bob)" in at_prompt
+    assert "may already have reached this session" in at_prompt
+    assert shown(session, agent="claude") == "", "once per agent session"
+    assert shown(session, event="PostToolUse", agent="claude", agent_session="s2") == "", (
+        "in channel mode Claude Code's hook stays quiet between tool calls"
     )
+    codex = shown(session, agent="codex", agent_session="codex-1")
+    assert "From @bob (Bob)" in codex and "may already" not in codex
     assert mesh_messages.for_channel(session, label=LABEL) == [], "pushed once"
 
 

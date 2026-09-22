@@ -822,7 +822,7 @@ SUMMARY_OVER = 3
 #: Sessions remembered, so the state file cannot grow without bound.
 _SESSIONS_KEPT = 200
 INTERRUPT_CHOICES = ("channel", "tool", "prompt")
-#: The hook state entry for messages the Claude Code channel delivered, so
+#: The hook state entry for messages the Claude Code channel pushed, so
 #: Claude Code's hook does not show them a second time.
 CHANNEL_KEY = "__channel__"
 
@@ -921,10 +921,13 @@ def for_agent(
         return ""
     state = _hook_state()
     mine = state.get(agent_session) or {"shown": [], "checked": 0}
-    if agent == "claude" and interrupt == "channel":
-        # Already pushed into the session by the channel (section 10.1).
-        delivered = (state.get(CHANNEL_KEY) or {}).get("shown") or []
-        mine = {**mine, "shown": sorted(set(mine.get("shown") or []) | set(delivered))}
+    # What the channel pushed is not skipped here. The server cannot tell
+    # whether Claude Code listened: started without the channel flag, or in
+    # an organization that blocks channels, it drops the push silently, and
+    # skipping would lose the message. So the prompt shows it again, saying
+    # so, and a session that did see it is told not to repeat it.
+    pushed = set((state.get(CHANNEL_KEY) or {}).get("shown") or [])
+    maybe_seen = agent == "claude" and interrupt == "channel"
     if event == "PostToolUse" and moment - float(mine.get("checked", 0)) < (
         TOOL_HOOK_COOLDOWN_SECONDS
     ):
@@ -953,6 +956,11 @@ def for_agent(
             "Tell the person, and open them with messages_inbox only if they ask.\n\n" + RULE
         )
     blocks = "\n\n".join(quoted(row, label) for row in fresh)
+    if maybe_seen and any(row.message_id in pushed for row in fresh):
+        blocks = (
+            "These may already have reached this session through the flanner "
+            "channel. If you have shown one already, do not show it again.\n\n" + blocks
+        )
     return f"{blocks}\n\n{RULE}"
 
 
@@ -961,7 +969,8 @@ def for_channel(session: Session, *, label: Any) -> list[tuple[str, dict[str, st
 
     Only when the person chose `channel`, never during quiet hours or from a
     muted sender, and each message once. What is returned is recorded as
-    delivered by the channel, so Claude Code's own hook skips it.
+    pushed; Claude Code's hook still shows it at the next prompt, since a
+    push nobody listened to is dropped without a word (see `for_agent`).
     """
     import time as _time
 
