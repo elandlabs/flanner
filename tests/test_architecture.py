@@ -211,6 +211,9 @@ ALLOWED = {
         "session",
     },
     "claude_integration": {"agent_paths"},
+    # The desktop app's side of flanner: launchers, the setup screen's probe,
+    # and PATH. It reads where the agents keep their configs, nothing more.
+    "desktop": {"claude_integration"},
     # One answer to "is flanner set up here?", shown by `status` and by the
     # agent's context tool. Local reads only.
     "setup_check": FOUNDATION
@@ -379,6 +382,8 @@ ALLOWED = {
     | {
         "crash",
         "tui",
+        # The hidden commands the desktop app runs: desktop-link, -probe, -connect.
+        "desktop",
         "actions",
         "setup_check",
         "skills_ops",
