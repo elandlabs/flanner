@@ -22,7 +22,7 @@ from uuid import UUID
 import click
 from rich.text import Text
 
-from . import tui
+from . import release, tui
 from .exceptions import DatabaseError, FlannerError, StorageError
 
 if TYPE_CHECKING:  # annotations only; `from __future__` makes them strings
@@ -273,7 +273,10 @@ class Sectioned(click.Group):
 
 
 @click.group(cls=Sectioned)
-@click.version_option(package_name="flanner")
+@click.version_option(
+    package_name="flanner",
+    message="%(prog)s, version %(version)s" + (" (desktop)" if release.is_desktop() else ""),
+)
 @click.option("--verbose", is_flag=True, help="Show debug output")
 @click.option("--quiet", is_flag=True, help="Only show errors")
 def cli(verbose: bool, quiet: bool) -> None:
@@ -7831,6 +7834,11 @@ def updates(choice: str | None) -> None:
     """
     from . import __version__, release
 
+    if release.is_desktop():
+        console.print()
+        tui.ok("The flanner desktop app keeps flanner up to date. Nothing to set here.")
+        console.print()
+        return
     if choice is not None:
         release.set_update_check_consent(choice == "on")
     allowed = release.update_check_consent()

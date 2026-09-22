@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -39,6 +40,11 @@ TELL_EVERY = timedelta(hours=24)
 #: Short on purpose. This runs inside a command somebody is waiting on,
 #: and being told about a release is never worth making them wait.
 TIMEOUT_SECONDS = 2.0
+
+#: The desktop app writes this file into the Python it bundles. Its own
+#: updater replaces flanner with the app, so a PyPI check there could only
+#: tell somebody to run a pip command against a Python they never chose.
+DESKTOP_MARKER = "flanner-desktop"
 
 
 def _home() -> Path:
@@ -105,8 +111,19 @@ def remember_version(current: str) -> None:
     write_state(state)
 
 
+def is_desktop() -> bool:
+    """Whether this flanner is the one the desktop app bundles."""
+    return (Path(sys.prefix) / DESKTOP_MARKER).is_file()
+
+
 def update_check_consent() -> bool | None:
-    """Whether the PyPI check was allowed, or None if nobody has been asked."""
+    """Whether the PyPI check was allowed, or None if nobody has been asked.
+
+    Always False in the desktop app, which updates itself. That also keeps
+    `flanner init` from asking, since it asks only while this is None.
+    """
+    if is_desktop():
+        return False
     answer = read_state().get("update_check")
     return answer if isinstance(answer, bool) else None
 

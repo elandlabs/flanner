@@ -74,7 +74,7 @@ MAX_WAITING = 20
 KEEP_FOR = timedelta(days=7)
 TIMEOUT_SECONDS = 3.0
 
-INSTALL_KINDS = ("pip", "uv-tool", "pipx", "editable")
+INSTALL_KINDS = ("pip", "uv-tool", "pipx", "editable", "desktop")
 SURFACES = ("cli", "mcp", "web")
 
 
@@ -213,6 +213,8 @@ def _chain(error: BaseException) -> Iterator[BaseException]:
 
 def install_kind() -> str:
     """How flanner was installed. One of INSTALL_KINDS, read from local metadata only."""
+    if release.is_desktop():
+        return "desktop"
     try:
         from importlib.metadata import distribution
 
