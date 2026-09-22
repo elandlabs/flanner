@@ -388,6 +388,25 @@ def test_an_earlier_install_is_replaced_not_duplicated(agents, earlier):
     assert commands == ["somebody-elses-hook", agent_hooks.mesh_hook_command("claude")]
 
 
+def test_the_hook_runs_from_a_folder_holding_a_flanner_directory(tmp_path):
+    """An agent started in a home directory with a `flanner` checkout in it
+    used to import that folder instead of the package, and fail every call."""
+    import subprocess
+
+    (tmp_path / "flanner").mkdir()
+    done = subprocess.run(  # noqa: S602 - the command exactly as an agent runs it
+        agent_hooks.mesh_hook_command("claude"),
+        shell=True,
+        cwd=tmp_path,
+        input='{"hook_event_name": "UserPromptSubmit", "session_id": "s"}',
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert done.returncode == 0, done.stderr
+    assert "Error" not in done.stderr
+
+
 def test_login_does_not_touch_the_agents(signed_in, tmp_path, monkeypatch):  # noqa: F811
     """Setting agents up is `flanner init`'s job, never a side effect of login."""
     from flanner import cli as cli_module

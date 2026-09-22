@@ -629,8 +629,9 @@ def upsert_global_nudge() -> bool:
 # checkout. One command serves both agents; it reads the event name from
 # the payload each agent sends on stdin.
 
-#: Recognises an installed entry, whatever interpreter it names.
-MESH_HOOK_MARK = "flanner messages hook"
+#: Recognises an installed entry, whatever interpreter it names, in both
+#: this command's form and the earlier `-m flanner messages hook` one.
+MESH_HOOK_MARK = " messages hook --agent "
 #: The command's name before the product was called Flanner Messages.
 #: Development installs wrote it, and init replaces it rather than adding
 #: a second hook beside it.
@@ -644,10 +645,19 @@ def mesh_hook_command(agent: str) -> str:
     an unknown command with a usage error, and Claude Code reads that exit
     code as a blocking error on every tool call. The interpreter that ran
     the installer is the one known to have the command.
+
+    Not `-m flanner` either: that puts the agent's working directory first
+    on the import path, and a folder there named `flanner` (a checkout, or
+    a home directory holding one) was imported instead of the package, so
+    the hook failed on every call. `-c` does the same, so the empty entry
+    is removed before flanner is imported, as the Windows login command does.
     """
     import sys
 
-    return f'"{sys.executable}" -m {MESH_HOOK_MARK} --agent {agent}'
+    script = (
+        "import sys;sys.path[:]=[p for p in sys.path if p];from flanner.cli import main;main()"
+    )
+    return f'"{sys.executable}" -c "{script}"{MESH_HOOK_MARK}{agent}'
 
 
 #: The events the hook answers. After a tool call it looks at most once a
