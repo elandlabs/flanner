@@ -1,0 +1,218 @@
+name: Desktop release
+
+# The desktop app for a flanner release (the desktop PRD, section 9).
+#
+# Runs after Publish has put the release on PyPI, so the app bundles the
+# exact package pip users get. Each platform builds its runtime from that
+# version, smoke-tests it, bundles and signs the app, and hands its files
+# to the publish job, which uploads them to the same GitHub release and
+# uploads latest.json last, once every platform has succeeded.
+#
+# A manual run with `unsigned` builds everything and uploads nothing: a
+# dry run of the pipeline before the signing accounts exist.
+#
+# What it needs, set once in the repository (see desktop/README.md):
+#   variable TAURI_UPDATER_PUBKEY                    updater public key
+#   secret   TAURI_SIGNING_PRIVATE_KEY (+ _PASSWORD) updater private key
+#   secrets  APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD,
+#            APPLE_SIGNING_IDENTITY, APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID
+#   secrets  AZURE_CLIENT_ID, AZURE_CLIENT_SECRET, AZURE_TENANT_ID
+#   variables AZURE_SIGNING_ENDPOINT, AZURE_SIGNING_ACCOUNT, AZURE_SIGNING_PROFILE
+# The secrets live in the protected `desktop` environment, which only this
+# workflow uses; pull requests, forks included, never see them.
+
+on:
+  workflow_run:
+    workflows: [Publish]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "A flanner version already on PyPI, e.g. 0.15.0"
+        required: true
+      unsigned:
+        description: "Dry run: build unsigned and upload nothing"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.pick.outputs.version }}
+      unsigned: ${{ steps.pick.outputs.unsigned }}
+    steps:
+      - name: Which version, and signed or not
+        id: pick
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_UNSIGNED: ${{ inputs.unsigned }}
+          # A release's Publish run is on the release tag, e.g. v0.15.0.
+          RELEASE_TAG: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          if [ -n "$INPUT_VERSION" ]; then
+            version="$INPUT_VERSION"; unsigned="$INPUT_UNSIGNED"
+          else
+            version="${RELEASE_TAG#v}"; unsigned=false
+          fi
+          echo "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || {
+            echo "::error::'$version' is not a release version"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "unsigned=$unsigned" >> "$GITHUB_OUTPUT"
+      - name: A signed release needs its keys
+        if: steps.pick.outputs.unsigned != 'true'
+        env:
+          PUBKEY: ${{ vars.TAURI_UPDATER_PUBKEY }}
+        run: |
+          [ -n "$PUBKEY" ] || {
+            echo "::error::Set the repository variable TAURI_UPDATER_PUBKEY first (desktop/README.md)."
+            exit 1; }
+      - name: PyPI serves the version
+        env:
+          VERSION: ${{ steps.pick.outputs.version }}
+        run: |
+          # Publish uploads, then PyPI takes a moment to serve it.
+          for attempt in $(seq 1 40); do
+            curl -fsS "https://pypi.org/pypi/flanner/$VERSION/json" > /dev/null && exit 0
+            sleep 15
+          done
+          echo "::error::PyPI never served flanner $VERSION"; exit 1
+
+  build:
+    needs: version
+    environment: desktop
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - os: windows-latest
+            bundles: nsis
+          - os: macos-latest
+            bundles: app,dmg
+          - os: ubuntu-22.04
+            bundles: appimage,deb
+    runs-on: ${{ matrix.os }}
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      UNSIGNED: ${{ needs.version.outputs.unsigned }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v${{ needs.version.outputs.version }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install the Linux webview
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+            librsvg2-dev patchelf
+      - name: Build the runtime from PyPI
+        shell: bash
+        run: python desktop/bundle/build_runtime.py --flanner "flanner==$VERSION"
+      - name: Smoke-test the runtime
+        shell: bash
+        run: |
+          pip install pytest mcp
+          FLANNER_RUNTIME=build/runtime pytest desktop/tests/smoke -v -p no:cacheprovider
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+      - name: Install the Tauri CLI
+        shell: bash
+        run: cargo install tauri-cli --version "^2" --locked
+      - name: Bundle the app
+        shell: bash
+        working-directory: desktop/src-tauri
+        env:
+          PUBKEY: ${{ vars.TAURI_UPDATER_PUBKEY }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_SIGNING_ENDPOINT: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          AZURE_SIGNING_ACCOUNT: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          AZURE_SIGNING_PROFILE: ${{ vars.AZURE_SIGNING_PROFILE }}
+        run: |
+          if [ "$UNSIGNED" = "true" ]; then
+            # A dry run: no updater files, no OS signing, and the Apple and
+            # Azure variables emptied so nothing half-signs.
+            unset APPLE_CERTIFICATE APPLE_SIGNING_IDENTITY APPLE_ID TAURI_SIGNING_PRIVATE_KEY
+            config=$(python -c "import json,sys; print(json.dumps({'version': sys.argv[1], 'bundle': {'createUpdaterArtifacts': False}}))" "$VERSION")
+          else
+            missing=""
+            for name in TAURI_SIGNING_PRIVATE_KEY; do [ -n "${!name}" ] || missing="$missing $name"; done
+            if [ "$RUNNER_OS" = "macOS" ]; then
+              for name in APPLE_CERTIFICATE APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+                [ -n "${!name}" ] || missing="$missing $name"; done
+            fi
+            if [ "$RUNNER_OS" = "Windows" ]; then
+              for name in AZURE_CLIENT_ID AZURE_CLIENT_SECRET AZURE_TENANT_ID AZURE_SIGNING_ENDPOINT AZURE_SIGNING_ACCOUNT AZURE_SIGNING_PROFILE; do
+                [ -n "${!name}" ] || missing="$missing $name"; done
+              cargo install trusted-signing-cli --locked
+            fi
+            [ -z "$missing" ] || { echo "::error::A signed release is missing:$missing"; exit 1; }
+            config=$(python - "$VERSION" "$PUBKEY" <<'PY'
+          import json, os, sys
+          version, pubkey = sys.argv[1], sys.argv[2]
+          config = {"version": version, "plugins": {"updater": {"pubkey": pubkey}}}
+          if os.environ.get("RUNNER_OS") == "Windows":
+              sign = "trusted-signing-cli -e {e} -a {a} -c {c} -d Flanner %1".format(
+                  e=os.environ["AZURE_SIGNING_ENDPOINT"],
+                  a=os.environ["AZURE_SIGNING_ACCOUNT"],
+                  c=os.environ["AZURE_SIGNING_PROFILE"],
+              )
+              config["bundle"] = {"windows": {"signCommand": sign}}
+          print(json.dumps(config))
+          PY
+            )
+          fi
+          cargo tauri build --config tauri.bundle.json --config "$config" --bundles ${{ matrix.bundles }}
+      - name: Give the files version-free names
+        shell: bash
+        run: python desktop/bundle/collect.py --version "$VERSION" --out dist/desktop
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ runner.os }}
+          path: dist/desktop/*
+          if-no-files-found: error
+
+  publish:
+    needs: [version, build]
+    if: needs.version.outputs.unsigned != 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v${{ needs.version.outputs.version }}
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist/desktop
+          merge-multiple: true
+      - name: Upload the installers
+        run: |
+          find dist/desktop -type f ! -name latest.json -print0 |
+            xargs -0 gh release upload "v$VERSION" --clobber --repo "$GITHUB_REPOSITORY"
+      # Last, and only now: an installed app that sees latest.json can
+      # always download every file it names.
+      - name: Upload latest.json
+        run: |
+          python desktop/bundle/latest_json.py --version "$VERSION" --dir dist/desktop > latest.json
+          gh release upload "v$VERSION" latest.json --clobber --repo "$GITHUB_REPOSITORY"
