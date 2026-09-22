@@ -131,6 +131,7 @@ select = ["E", "F", "W", "I", "B", "UP", "S"]
 # assert, hardcoded tmp paths, and a 0.0.0.0 bind literal (to test the
 # non-local-bind warning) are fine in tests and benchmarks
 "tests/*" = ["S101", "S104", "S105", "S107", "S108", "S603", "S607"]
+"desktop/tests/*" = ["S101", "S603", "S607"]
 # A test suite that happens to be packaged, so adapter authors can run it.
 "flanner/mesh_conformance.py" = ["S101"]
 "benchmarks/*" = ["S101", "S603", "S607"]
