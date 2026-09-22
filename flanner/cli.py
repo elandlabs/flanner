@@ -7836,6 +7836,32 @@ def desktop_link() -> None:
         console.print(str(path))
 
 
+@cli.command("desktop-probe", hidden=True)
+def desktop_probe() -> None:
+    """Print, as JSON, what the desktop app's setup screen shows.
+
+    Where each agent's config lives, and any other flanner on PATH.
+    """
+    from . import desktop
+
+    click.echo(json.dumps(desktop.probe()))
+
+
+@cli.command("desktop-connect", hidden=True)
+def desktop_connect() -> None:
+    """Put the launchers on PATH and register flanner with every agent.
+
+    What the desktop app runs when "Connect to Claude and Codex" is left
+    ticked. Registration is `flanner setup`'s, unchanged. PATH comes first
+    because Claude Code and Codex start the bare `flanner-mcp`.
+    """
+    from . import desktop
+
+    for change in desktop.add_to_path():
+        tui.ok(change)
+    _register_agents_globally()
+
+
 @cli.command("updates")
 @click.argument("choice", required=False, type=click.Choice(["on", "off"]))
 def updates(choice: str | None) -> None:
