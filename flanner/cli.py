@@ -137,7 +137,10 @@ def _command_path(group: click.Group, ctx: click.Context) -> str:
     path: list[str] = []
     current: click.Command = group
     try:
-        while isinstance(current, click.Group) and words:
+        # An option ends the path. Handed to `resolve_command`, `--help` is
+        # parsed as the root's own option, which printed the root help for
+        # `flanner messages --help` and every other group.
+        while isinstance(current, click.Group) and words and not words[0].startswith("-"):
             name, found, words = current.resolve_command(ctx, words)
             if found is None:
                 break

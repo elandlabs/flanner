@@ -1580,6 +1580,17 @@ def test_examples_reach_the_help_screen():
         assert "Examples:" in output, f"{' '.join(args)} has no examples"
 
 
+def test_a_group_help_shows_that_group_not_the_root():
+    """`flanner messages --help` printed the root help, as did every group."""
+    from click.testing import CliRunner
+
+    from flanner.cli import cli
+
+    for group in ("messages", "peer", "mesh", "skills"):
+        output = CliRunner().invoke(cli, [group, "--help"]).output
+        assert output.startswith(f"Usage: cli {group} "), f"{group}: {output[:60]}"
+
+
 # --- peer serve opens the store it hands to other threads ---
 
 
