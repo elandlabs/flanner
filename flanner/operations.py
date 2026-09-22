@@ -823,6 +823,16 @@ OPERATIONS: tuple[Operation, ...] = (
         cli=("demo seed",),
         why="A hidden tool for this repository's UI previews and browser suite, not a feature.",
     ),
+    _op(
+        "local",
+        "Set up the flanner the desktop app bundles",
+        "admin",
+        cli=("desktop-link", "desktop-probe", "desktop-connect"),
+        why=(
+            "Called by the desktop app when it installs, updates or is first set up, not by a "
+            "person or a tool call."
+        ),
+    ),
     # --- integrations, behind FLANNER_INTEGRATIONS ---------------------------
     _op(
         "integrations",
