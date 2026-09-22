@@ -217,6 +217,38 @@ def test_a_retry_of_a_message_already_held_counts_as_delivered(team, online):
     assert bob.session.query(MeshMessageModel).count() == 1
 
 
+def test_a_device_too_old_for_messages_fails_now_and_says_why(team, online):
+    """A 0.14.0 receiver answers "unknown operation"; that is not "try later"."""
+    alice, bob = team
+
+    class Outdated:
+        def _post(self, operation, body):
+            raise peer.PeerError(f"unknown operation: {operation}", status=404)
+
+    sent = alice.send(to=["bob"], body="hello", dial=lambda *a: Outdated())
+
+    (delivery,) = sent["delivery"]
+    assert (delivery["state"], delivery["code"]) == ("failed", refusals.PEER_OUTDATED)
+    assert "0.15.0" in delivery["message"]
+    assert alice.session.query(MeshDeliveryModel).one().next_attempt_at is None
+
+
+def test_a_delivered_retry_forgets_the_earlier_failure(team, online):
+    alice, bob = team
+    alice.send(to=["bob"], body="are you there?", dial=online.dial)
+    online(bob)
+    row = alice.session.query(MeshDeliveryModel).one()
+    assert row.code == refusals.UNKNOWN
+    row.next_attempt_at = mesh_messages.now_utc() - timedelta(seconds=1)
+    alice.session.commit()
+
+    with alice.active():
+        mesh_delivery.retry_due(alice.session, dial=online.dial)
+
+    alice.session.refresh(row)
+    assert (row.state, row.code, row.detail) == (mesh_messages.DELIVERED, "", "")
+
+
 def test_a_device_whose_organization_switched_messaging_off_refuses(team, online):
     alice, bob = team
     bob.join([alice, bob], features=(TEAM_SYNC,))

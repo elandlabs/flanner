@@ -471,6 +471,9 @@ def delivered(session: Session, row: MeshDeliveryModel, *, now: datetime | None 
     row.state = DELIVERED
     row.delivered_at = now or now_utc()
     row.next_attempt_at = None
+    # An earlier attempt's failure no longer describes this row.
+    row.code = ""
+    row.detail = ""
     row.attempts += 1
     session.commit()
 

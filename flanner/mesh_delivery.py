@@ -91,6 +91,23 @@ def person_view(roster: entitlements.Roster) -> Callable[[str], dict[str, str]]:
     return view
 
 
+def _refused(error: peer.PeerError) -> tuple[bool, str, str]:
+    """A device's refusal as (delivered, code, detail).
+
+    A flanner from before messaging answers "unknown operation" with no code
+    of its own, which reads as `unknown` and would be retried for a day as if
+    the device were unreachable. It is reachable; it needs upgrading.
+    """
+    if error.status == 404 and str(error).startswith("unknown operation"):
+        return (
+            False,
+            refusals.PEER_OUTDATED,
+            "Their flanner on this device is too old to receive messages. "
+            "It needs 0.15.0 or later.",
+        )
+    return (False, error.code, str(error))
+
+
 def send(
     session: Session,
     *,
@@ -214,7 +231,7 @@ def attempt(
                 dial(device_id, workspace_id, held)._post(peer.MESSAGE, body)
                 result = (True, "", "")
             except peer.PeerError as e:
-                result = (False, e.code, str(e))
+                result = _refused(e)
             except Exception as e:  # noqa: BLE001 - any failure to reach it means "try later"
                 result = (False, refusals.UNKNOWN, str(e))
         with lock:

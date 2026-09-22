@@ -130,6 +130,10 @@ MESSAGE_EXPIRED: Final = "message_expired"
 #: A short id that matches more than one thread.
 AMBIGUOUS_ID: Final = "ambiguous_id"
 
+#: The receiving device runs a flanner that predates the operation, so it
+#: answered "unknown operation". Retrying cannot help until it upgrades.
+PEER_OUTDATED: Final = "peer_outdated"
+
 #: Never sent. What a client uses for a code it does not recognise, so that
 #: "an old client met a new server" is a case with a name rather than a
 #: KeyError.
@@ -166,6 +170,7 @@ KNOWN: Final = frozenset(
         ROSTER_STALE,
         MESSAGE_EXPIRED,
         AMBIGUOUS_ID,
+        PEER_OUTDATED,
     }
 )
 
