@@ -49,6 +49,51 @@ def _platform() -> str:
     return sys.platform
 
 
+# The Windows Run key. Each helper checks `sys.platform` itself, written
+# out, because that is the one form a type checker reads as a platform
+# check: on Linux and macOS it skips the block instead of reporting that
+# `winreg` has none of these names. `_platform()` still chooses the branch,
+# so tests can switch it.
+
+
+def _registry_set(command: str) -> None:
+    if sys.platform == "win32":
+        import winreg
+
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _RUN_KEY, 0, winreg.KEY_SET_VALUE) as key:
+            winreg.SetValueEx(key, name(), 0, winreg.REG_SZ, command)
+
+
+def _registry_delete() -> bool:
+    removed = False
+    if sys.platform == "win32":
+        import winreg
+
+        try:
+            with winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER, _RUN_KEY, 0, winreg.KEY_SET_VALUE
+            ) as key:
+                winreg.DeleteValue(key, name())
+            removed = True
+        except FileNotFoundError:
+            pass
+    return removed
+
+
+def _registry_has() -> bool:
+    found = False
+    if sys.platform == "win32":
+        import winreg
+
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _RUN_KEY) as key:
+                winreg.QueryValueEx(key, name())
+            found = True
+        except FileNotFoundError:
+            pass
+    return found
+
+
 def _home() -> Path:
     return identity.flanner_home()
 
@@ -108,10 +153,7 @@ def enable() -> str:
     """Register the receiver to start at login. Returns where it was registered."""
     (_home() / DECLINED).unlink(missing_ok=True)
     if _platform() == "win32":
-        import winreg
-
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _RUN_KEY, 0, winreg.KEY_SET_VALUE) as key:
-            winreg.SetValueEx(key, name(), 0, winreg.REG_SZ, _windows_command())
+        _registry_set(_windows_command())
         return rf"HKCU\{_RUN_KEY}\{name()}"
     if _platform() == "darwin":
         path = _plist_path()
@@ -150,16 +192,7 @@ def enable() -> str:
 def disable() -> bool:
     """Remove this home's registration. True if there was one."""
     if _platform() == "win32":
-        import winreg
-
-        try:
-            with winreg.OpenKey(
-                winreg.HKEY_CURRENT_USER, _RUN_KEY, 0, winreg.KEY_SET_VALUE
-            ) as key:
-                winreg.DeleteValue(key, name())
-        except FileNotFoundError:
-            return False
-        return True
+        return _registry_delete()
     if _platform() == "darwin":
         path = _plist_path()
         if not path.exists():
@@ -178,14 +211,7 @@ def disable() -> bool:
 
 def enabled() -> bool:
     if _platform() == "win32":
-        import winreg
-
-        try:
-            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _RUN_KEY) as key:
-                winreg.QueryValueEx(key, name())
-        except FileNotFoundError:
-            return False
-        return True
+        return _registry_has()
     return (_plist_path() if _platform() == "darwin" else _unit_path()).exists()
 
 
