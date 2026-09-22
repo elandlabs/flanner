@@ -2275,11 +2275,13 @@ def start(port: int) -> None:
 
     log_path = get_mcp_dir() / "server.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    detach: dict[str, Any] = (
-        {"creationflags": subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP}
-        if os.name == "nt"
-        else {"start_new_session": True}
-    )
+    detach: dict[str, Any]
+    if sys.platform == "win32":
+        detach = {
+            "creationflags": subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+        }
+    else:
+        detach = {"start_new_session": True}
     with log_path.open("ab") as log:
         child = subprocess.Popen(  # noqa: S603 - fixed argv, no shell, no user input
             [sys.executable, "-m", "flanner.server", "--http", "--port", str(port)],
@@ -7585,11 +7587,13 @@ def peer_start(host: str, port: int | None, http: bool) -> None:
     # read as this one having started.
     written_so_far = log_path.stat().st_size if log_path.exists() else 0
 
-    detach: dict[str, Any] = (
-        {"creationflags": subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP}
-        if os.name == "nt"
-        else {"start_new_session": True}
-    )
+    detach: dict[str, Any]
+    if sys.platform == "win32":
+        detach = {
+            "creationflags": subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+        }
+    else:
+        detach = {"start_new_session": True}
     with log_path.open("ab") as log:
         child = subprocess.Popen(  # noqa: S603 - fixed argv, no shell, no user input
             argv,
