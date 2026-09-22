@@ -11,3 +11,22 @@ When the user asks to save a plan/design/architecture doc, confirm it is a plan,
 
 Never hand-write the YAML header; the tools generate it.
 <!-- /flanner:managed -->
+
+## Keep flanner-meshlab in step
+
+`flanner-meshlab` (next to this checkout) tests Flanner Mesh end to end in a
+Docker lab: two devices behind NAT routers, a control plane and a relay,
+with no internet. Features that cross devices or the control plane change
+what it has to prove.
+
+When a change adds or alters a peer operation, sync, the roster or
+entitlement, enrolment, messaging, or anything else that travels between
+devices or through the control plane:
+
+- Check whether a meshlab scenario covers it. If not, add or update one on
+  a meshlab branch named like the feature's branch.
+- Run it against this branch before merging:
+  `meshlab test <scenario> --flanner <client checkout> --cloud <cloud checkout>`.
+- Say in the PR which scenario covers the change, or why none is needed.
+
+A lab that lags behind the product passes while real teams fail.
