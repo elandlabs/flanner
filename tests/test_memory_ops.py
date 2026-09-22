@@ -143,7 +143,7 @@ def test_a_secret_is_refused_and_leaves_nothing_behind(store):
     with pytest.raises(mem.SecretRejected):
         mem.remember(
             session,
-            content="the key is sk_" "live_51H8xQ2KZvKuTb3mNaBcDeFgH",
+            content="the key is sk_" + "live_51H8xQ2KZvKuTb3mNaBcDeFgH",
             category="fact",
             project=project,
         )

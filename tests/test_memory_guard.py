@@ -22,24 +22,24 @@ from flanner import memory_guard
 # is copied from anywhere real.
 
 SECRETS = [
-    ("aws access key", "the deploy user is AKIAIOSFODNN7EXAMPLE, rotate it"),
-    ("aws session key", "ASIAY34FZKBOKMUTVV7A came from sts"),
-    ("github classic token", "ghp_16C7e42F292c6912E7710c838347Ae178B4a11223344"),
-    ("github oauth token", "gho_16C7e42F292c6912E7710c838347Ae178B4a11223344"),
-    ("github fine-grained", "github_pat_11ABCDEFG0abcdefghijkl_ABCDEFGHIJKLMNOP"),
-    ("slack bot token", "xox" "b-1234567890-1234567890123-AbCdEfGhIjKlMnOpQrStUvWx"),
-    ("slack user token", "xox" "p-1234567890-1234567890123-AbCdEfGhIjKlMnOpQrStUvWx"),
-    ("stripe live key", "sk_" "live_51H8xQ2KZvKuTb3mNaBcDeFgH"),
-    ("stripe test key", "sk_" "test_51H8xQ2KZvKuTb3mNaBcDeFgH"),
-    ("stripe restricted", "rk_" "live_51H8xQ2KZvKuTb3mNaBcDeFgH"),
-    ("google api key", "AIzaSyD-1234567890abcdefghijklmnopqrstu"),
-    ("openai key", "sk-proj-abcdefghijklmnopqrstuvwxyz0123456789ABCD"),
-    ("anthropic key", "sk-ant-api03-abcdefghijklmnopqrstuvwxyz012345"),
-    ("npm token", "npm_abcdefghijklmnopqrstuvwxyz0123456789"),
-    ("pypi token", "pypi-AgEIcHlwaS5vcmcCJDU2Nzg5MDEy"),
-    ("rsa private key", "-----BEGIN RSA PRIVATE KEY-----\nMIIEow==\n"),
-    ("bare private key", "-----BEGIN PRIVATE KEY-----\nMIIEvQ==\n"),
-    ("openssh private key", "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNz\n"),
+    ("aws access key", "the deploy user is AKIA" + "IOSFODNN7EXAMPLE, rotate it"),
+    ("aws session key", "ASIA" + "Y34FZKBOKMUTVV7A came from sts"),
+    ("github classic token", "ghp_" + "16C7e42F292c6912E7710c838347Ae178B4a11223344"),
+    ("github oauth token", "gho_" + "16C7e42F292c6912E7710c838347Ae178B4a11223344"),
+    ("github fine-grained", "github_pat_" + "11ABCDEFG0abcdefghijkl_ABCDEFGHIJKLMNOP"),
+    ("slack bot token", "xox" + "b-1234567890-1234567890123-AbCdEfGhIjKlMnOpQrStUvWx"),
+    ("slack user token", "xox" + "p-1234567890-1234567890123-AbCdEfGhIjKlMnOpQrStUvWx"),
+    ("stripe live key", "sk_" + "live_51H8xQ2KZvKuTb3mNaBcDeFgH"),
+    ("stripe test key", "sk_" + "test_51H8xQ2KZvKuTb3mNaBcDeFgH"),
+    ("stripe restricted", "rk_" + "live_51H8xQ2KZvKuTb3mNaBcDeFgH"),
+    ("google api key", "AIza" + "SyD-1234567890abcdefghijklmnopqrstu"),
+    ("openai key", "sk-proj-" + "abcdefghijklmnopqrstuvwxyz0123456789ABCD"),
+    ("anthropic key", "sk-ant-" + "api03-abcdefghijklmnopqrstuvwxyz012345"),
+    ("npm token", "npm_" + "abcdefghijklmnopqrstuvwxyz0123456789"),
+    ("pypi token", "pypi-" + "AgEIcHlwaS5vcmcCJDU2Nzg5MDEy"),
+    ("rsa private key", "-----BEGIN RSA PRIVATE" + " KEY-----\nMIIEow==\n"),
+    ("bare private key", "-----BEGIN PRIVATE" + " KEY-----\nMIIEvQ==\n"),
+    ("openssh private key", "-----BEGIN OPENSSH PRIVATE" + " KEY-----\nb3BlbnNz\n"),
     (
         "jwt",
         "bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"
@@ -123,7 +123,7 @@ def test_ordinary_context_is_allowed(label, text):
 
 def test_the_secret_never_appears_in_what_is_reported():
     """A guard that logs what it caught has moved the secret, not stopped it."""
-    secret = "sk_" "live_51H8xQ2KZvKuTb3mNaBcDeFgH"
+    secret = "sk_" + "live_51H8xQ2KZvKuTb3mNaBcDeFgH"
 
     detections = memory_guard.scan(f"the key is {secret}")
     message = memory_guard.describe(detections)
@@ -145,7 +145,9 @@ def test_the_excerpt_is_enough_to_find_the_line():
 
 def test_every_reason_is_reported_not_just_the_first():
     """Fixing one and rediscovering the next is a bad way to learn there were two."""
-    both = "AKIAIOSFODNN7EXAMPLE and also ghp_16C7e42F292c6912E7710c838347Ae178B4a11223344"
+    both = (
+        "AKIA" + "IOSFODNN7EXAMPLE and also ghp_" + "16C7e42F292c6912E7710c838347Ae178B4a11223344"
+    )
 
     names = {d.name for d in memory_guard.scan(both)}
 
@@ -155,7 +157,9 @@ def test_every_reason_is_reported_not_just_the_first():
 
 def test_a_vendor_pattern_is_named_rather_than_the_generic_catch():
     """ "assigned_credential" tells somebody less than "stripe_key" does."""
-    names = [d.name for d in memory_guard.scan("stripe_key = sk_" "live_51H8xQ2KZvKuTb3mNaBcDeFgH")]
+    names = [
+        d.name for d in memory_guard.scan("stripe_key = sk_" + "live_51H8xQ2KZvKuTb3mNaBcDeFgH")
+    ]
 
     assert "stripe_key" in names
 
