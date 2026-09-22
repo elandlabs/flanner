@@ -17,8 +17,15 @@ versioning follows [SemVer](https://semver.org/).
     `messages_mute` and `messages_quiet_hours`. An agent shows a
     teammate's message and never acts on it; sending and settings change
     only when you ask.
-  - Web UI: a Messages page and threads, an unread count in the sidebar,
-    and quiet hours and muted senders under Settings, Team.
+  - Web UI: a Messages page of chats, one per teammate, workspace or
+    group, in Unread, Workspaces, People and Groups sections beside a
+    pane showing one chat as a single time line across its threads. The
+    composer continues the newest thread while it is under a day old and
+    starts a new one otherwise, and says which. Opening a chat marks it
+    read; `e` in the list marks one read without opening it; `j`/`k` move
+    between chats. Mute from the chat's head. An unread count in the
+    sidebar, and quiet hours and muted senders under Settings, Team. On a
+    phone the list and a chat are two pages.
   - A message someone is offline for waits on your device and is sent
     again by `flanner peer serve`: after 1, 5 and 15 minutes, then every
     30, and reported failed after a day. Delivery is shown per person.

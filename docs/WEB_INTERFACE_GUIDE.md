@@ -114,34 +114,71 @@ Open your browser to: **http://localhost:8080**
 ### Messages (`/mesh/messages`)
 Messages between teammates on a Team Mesh plan. They go device to device;
 no server holds them. The page is under *Team* in the sidebar, with the
-unread count beside it.
-- **Thread list**: One row per thread, unread first (marked `●`), with the
-  people or workspace, the latest line and the time. A muted sender's
-  thread is marked *muted*.
-- **New message**: Type one or more handles (a **handle** is a teammate's
-  short name, like `ben`; the field suggests them), or pick *Everyone in a
-  workspace*. Up to 20 people. Plain text, up to 4 KB.
-- **Review and send**: Nothing is sent straight away. You see who it goes
-  to and the text, then press *Send* or *Cancel*.
-- **Delivery**: After sending, a notice says *Delivered to* or *Queued
-  for* each person. Queued means their device is not receiving right now;
-  it goes out when it is.
+unread count beside it. It is a list of **chats** beside a pane showing
+one of them. A chat is everyone you talk to in one place: one teammate,
+one workspace, or one group of people.
+- **Chat list**: Four sections, in this order. *Unread*: chats with
+  unread messages, newest first, with the count. *Workspaces*: every
+  workspace on your team, alphabetical. *People*: every teammate; those
+  with messages first, newest first, then the rest by handle (a **handle**
+  is a teammate's short name, like `ben`). *Groups*: messages to two or
+  more people, newest first; shown only when there are some. Every
+  teammate and workspace is listed even before anyone writes, so a first
+  message starts from the list.
+- **A row**: The name, the last line and its time. A dot marks unread; a
+  count sits at the right. A muted teammate's row says *muted*, and a
+  muted chat never rises into *Unread*; the *Unread* label says how many
+  unread it holds (`Unread 2 · 1 muted`). A red mark ends the line when
+  your last message there was not delivered.
+- **Filter chats**: Typing hides rows that do not match, and the sections
+  they empty.
+- **Keys**: While focus is in the chat list, `j`/`k` or the arrow keys move
+  between chats, `Enter` opens one and `e` marks the focused chat read
+  without opening it. Nothing happens while you type in a field.
+- **Quiet hours**: While they are on, one line under the filter says
+  *Quiet until 07:00* and links to Settings. They are changed there only.
+- **Nothing open**: On a wide screen the pane says how much is unread and
+  in how many chats. On a phone the list fills the page and a chat opens
+  as its own page, with a back arrow.
 - **Arrivals**: The page updates itself. A toast names the sender, never
-  the message, so nothing private shows on a shared screen.
+  the message, so nothing private shows on a shared screen. While you have
+  a reply half-written the page does not change under you: a line says
+  *New messages · Show* instead.
 - **Not set up**: Signed out, on a plan without messaging, messaging
   switched off by your organization, or an out-of-date team list: the page
   says which, and what to run.
 
-### A Thread (`/mesh/messages/{thread}`)
-- **Conversation**: Every message, oldest first, each as a quoted block
-  with the sender and time. Your own show *you* and their delivery per
-  person.
-- **Reply**: The box at the bottom answers everyone on the thread. It
-  previews first, like a new message.
-- **Retention**: A line says how long messages are kept. Your
-  organization's admin sets it in the console: 30, 90 (the default), 180
-  or 365 days.
-- **Marking read**: Opening a thread marks it read.
+### A Chat (`/mesh/messages/c/{key}`)
+- **Time line**: Every message in the chat, oldest first, whichever
+  thread it was sent in, with a day row (*Today*, *Yesterday*, *Mon 15
+  Sep*) where the day changes. Times are in this machine's zone. A
+  teammate's words are a quoted block; yours are plain, with *delivered
+  N · queued N* beside them. A reply into an older thread carries a
+  *re "…"* mark that jumps to the message it answers. A message that
+  points at a plan shows a *plan* chip that opens it.
+- **Not delivered**: A red *1 failed* pill and a line under the message
+  saying who and why. There is no retry; a message that failed for a
+  fixable reason (their flanner too old, say) is sent again as a new one.
+- **Marking read**: Opening a chat marks every message in it read. From
+  the list, `e` marks the focused chat read without opening it.
+- **Mute**: *Mute* in the chat's head opens a small panel with one control
+  per person in the chat: mute for 8 hours, 1 day or until you unmute, or
+  *Unmute*. A muted teammate's messages still arrive; they never interrupt,
+  and they are not told. *muted* shows on their row, in the head and on
+  each of their messages.
+- **Reply**: The box at the bottom. The line under its label says where
+  the message goes: *Continues the thread "…"* joins the chat's newest
+  thread while that is under a day old; otherwise *Starts a new thread*.
+  Either way it previews first: you see who it goes to and the text, then
+  press *Send* or *Cancel*. Up to 4 KB of plain text. The hint says how
+  long messages are kept; your organization's admin sets that in the
+  console: 30, 90 (the default), 180 or 365 days.
+- **Delivery**: After sending, a notice says *Delivered to* or *Queued
+  for* each person. Queued means their device is not receiving right now;
+  it goes out when it is.
+- **Old thread links**: `/mesh/messages/{thread}`, the address a desktop
+  notification or `flanner messages` prints, opens the chat with that
+  thread's first message in view.
 
 ### Settings → Team → Messages (`/settings`)
 - **Your handle**: Shown read-only. It comes from your email and cannot be
