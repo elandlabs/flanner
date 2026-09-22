@@ -7,29 +7,38 @@
 //!   it to Claude and Codex, then links the launchers and connects;
 //! - creates the store when there is none (`flanner init`, outside any repo);
 //! - starts `flanner web` on a free port and shows it in the window;
-//! - keeps a tray icon, and stops flanner when the app quits.
+//! - keeps a tray icon: background sync, start at login, updates;
+//! - says when something new is waiting, and stops flanner when it quits.
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod flanner;
+mod sync;
+mod updates;
+mod waiting;
 
 use std::fs;
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::Child;
-use std::sync::{mpsc, Mutex};
+use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
-use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
-use tauri::{AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent};
+use tauri::{AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent, Wry};
+use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
+use tauri_plugin_notification::NotificationExt;
 
 use flanner::{text, Flanner};
 
 /// A cold first start imports FastAPI and SQLAlchemy from a fresh copy.
 const START_TIMEOUT: Duration = Duration::from_secs(90);
+
+/// Passed by the login item, so a start at login stays in the tray.
+const AT_LOGIN: &str = "--at-login";
 
 /// Which flanner the person chose on the setup screen.
 #[derive(Clone, Debug)]
@@ -47,11 +56,21 @@ struct Pending {
     reply: mpsc::Sender<(Choice, bool)>,
 }
 
+struct Tray {
+    sync: CheckMenuItem<Wry>,
+    update: MenuItem<Wry>,
+}
+
 #[derive(Default)]
-struct State {
+pub struct State {
     /// The `flanner web` process, so quitting can stop it.
     web: Mutex<Option<Child>>,
     setup: Mutex<Option<Pending>>,
+    /// The flanner in use, once boot has chosen it.
+    flanner: Mutex<Option<Flanner>>,
+    sync: Arc<sync::Sync>,
+    pub update: Mutex<Option<tauri_plugin_updater::Update>>,
+    tray: Mutex<Option<Tray>>,
 }
 
 fn main() {
@@ -60,13 +79,21 @@ fn main() {
             show(app)
         }))
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_autostart::init(
+            MacosLauncher::LaunchAgent,
+            Some(vec![AT_LOGIN]),
+        ))
         .manage(State::default())
         .invoke_handler(tauri::generate_handler![pending_setup, finish_setup])
         .setup(|app| {
+            let at_login = std::env::args().any(|arg| arg == AT_LOGIN);
             WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
                 .title("Flanner")
                 .inner_size(1280.0, 860.0)
                 .min_inner_size(720.0, 520.0)
+                .visible(!at_login)
                 .build()?;
             tray(app)?;
             let handle = app.handle().clone();
@@ -75,6 +102,7 @@ fn main() {
                     report(&handle, &message);
                 }
             });
+            updates::watch(app.handle().clone());
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -88,7 +116,7 @@ fn main() {
         .expect("the app could not start")
         .run(|app, event| {
             if let RunEvent::Exit = event {
-                stop(app);
+                stop_everything(app);
             }
         });
 }
@@ -130,8 +158,16 @@ fn boot(app: &AppHandle) -> Result<(), String> {
             Choice::Installed(path) => json!(path),
         };
         settings["connected"] = json!(connect);
-        save_settings(&data, &settings)?;
     }
+    let version = app.package_info().version.to_string();
+    let updated_from = settings["version"].as_str().map(str::to_string);
+    settings["version"] = json!(version);
+    save_settings(&data, &settings)?;
+    app.state::<State>()
+        .flanner
+        .lock()
+        .expect("flanner lock")
+        .replace(chosen.clone());
 
     status(app, "Starting flanner");
     let port = free_port().map_err(text)?;
@@ -148,7 +184,20 @@ fn boot(app: &AppHandle) -> Result<(), String> {
     wait_until_serving(app, port, &log)?;
 
     let url = format!("http://127.0.0.1:{port}/").parse().map_err(text)?;
-    main_window(app)?.navigate(url).map_err(text)
+    main_window(app)?.navigate(url).map_err(text)?;
+
+    if settings["sync"].as_bool() == Some(true) {
+        start_sync(app);
+    }
+    waiting::watch(app.clone(), port);
+    if updated_from.is_some_and(|before| before != version) {
+        notify(
+            app,
+            &format!("Flanner updated to {version}"),
+            "Restart Claude and Codex so they use the new version too.",
+        );
+    }
+    Ok(())
 }
 
 /// Show the setup screen and wait for the answer.
@@ -227,6 +276,14 @@ fn save_settings(data: &Path, settings: &Value) -> Result<(), String> {
     fs::write(data.join("settings.json"), pretty).map_err(text)
 }
 
+fn remember(app: &AppHandle, key: &str, value: Value) {
+    if let Ok(data) = flanner::data_dir(app) {
+        let mut settings = load_settings(&data);
+        settings[key] = value;
+        let _ = save_settings(&data, &settings);
+    }
+}
+
 fn wait_until_serving(app: &AppHandle, port: u16, log: &Path) -> Result<(), String> {
     let address = SocketAddr::from(([127, 0, 0, 1], port));
     let deadline = Instant::now() + START_TIMEOUT;
@@ -261,12 +318,75 @@ fn free_port() -> std::io::Result<u16> {
     Ok(TcpListener::bind(("127.0.0.1", 0))?.local_addr()?.port())
 }
 
+// --- background sync -----------------------------------------------------------
+
+fn start_sync(app: &AppHandle) {
+    let state = app.state::<State>();
+    let Some(chosen) = state.flanner.lock().expect("flanner lock").clone() else {
+        return; // boot starts it once flanner is chosen
+    };
+    let Ok(data) = flanner::data_dir(app) else {
+        return;
+    };
+    let handle = app.clone();
+    state.sync.start(
+        chosen,
+        data.clone(),
+        data.join("logs").join("sync.log"),
+        move |reason| {
+            set_sync_ticked(&handle, false);
+            remember(&handle, "sync", json!(false));
+            notify(&handle, "Background sync stopped", &reason);
+        },
+    );
+}
+
+fn set_sync_ticked(app: &AppHandle, ticked: bool) {
+    if let Some(tray) = app
+        .state::<State>()
+        .tray
+        .lock()
+        .expect("tray lock")
+        .as_ref()
+    {
+        let _ = tray.sync.set_checked(ticked);
+    }
+}
+
+// --- the tray ----------------------------------------------------------------
+
 fn tray(app: &tauri::App) -> tauri::Result<()> {
+    let data = flanner::data_dir(app.handle()).unwrap_or_default();
+    let syncing = load_settings(&data)["sync"].as_bool() == Some(true);
+    let at_login = app.autolaunch().is_enabled().unwrap_or(false);
+
     let open = MenuItem::with_id(app, "open", "Open Flanner", true, None::<&str>)?;
+    let sync = CheckMenuItem::with_id(
+        app,
+        "sync",
+        "Keep syncing in the background",
+        true,
+        syncing,
+        None::<&str>,
+    )?;
+    let login =
+        CheckMenuItem::with_id(app, "login", "Start at login", true, at_login, None::<&str>)?;
+    let update = MenuItem::with_id(app, "update", "Flanner is up to date", false, None::<&str>)?;
     let again = MenuItem::with_id(app, "setup", "Set up again…", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit Flanner", true, None::<&str>)?;
-    let line = PredefinedMenuItem::separator(app)?;
-    let menu = Menu::with_items(app, &[&open, &again, &line, &quit])?;
+    let menu = Menu::with_items(
+        app,
+        &[
+            &open,
+            &PredefinedMenuItem::separator(app)?,
+            &sync,
+            &login,
+            &update,
+            &again,
+            &PredefinedMenuItem::separator(app)?,
+            &quit,
+        ],
+    )?;
     let mut tray = TrayIconBuilder::with_id("main")
         .tooltip("Flanner")
         .menu(&menu);
@@ -275,12 +395,80 @@ fn tray(app: &tauri::App) -> tauri::Result<()> {
     }
     tray.on_menu_event(|app, event| match event.id.as_ref() {
         "open" => show(app),
+        "sync" => toggle_sync(app),
+        "login" => toggle_login(app),
+        "update" => {
+            let handle = app.clone();
+            tauri::async_runtime::spawn(async move { updates::install(&handle).await });
+        }
         "setup" => set_up_again(app),
         "quit" => app.exit(0),
         _ => {}
     })
     .build(app)?;
+    app.state::<State>()
+        .tray
+        .lock()
+        .expect("tray lock")
+        .replace(Tray { sync, update });
     Ok(())
+}
+
+fn toggle_sync(app: &AppHandle) {
+    let state = app.state::<State>();
+    let ticked = state
+        .tray
+        .lock()
+        .expect("tray lock")
+        .as_ref()
+        .and_then(|tray| tray.sync.is_checked().ok())
+        .unwrap_or(false);
+    remember(app, "sync", json!(ticked));
+    if ticked {
+        start_sync(app);
+    } else {
+        state.sync.stop();
+    }
+}
+
+fn toggle_login(app: &AppHandle) {
+    let launcher = app.autolaunch();
+    let result = if launcher.is_enabled().unwrap_or(false) {
+        launcher.disable()
+    } else {
+        launcher.enable()
+    };
+    if let Err(error) = result {
+        notify(app, "Start at login did not change", &error.to_string());
+    }
+}
+
+/// Called by `updates` when an update is waiting.
+pub fn offer_update(app: &AppHandle, version: &str) {
+    if let Some(tray) = app
+        .state::<State>()
+        .tray
+        .lock()
+        .expect("tray lock")
+        .as_ref()
+    {
+        let _ = tray
+            .update
+            .set_text(format!("Restart to update to {version}"));
+        let _ = tray.update.set_enabled(true);
+    }
+}
+
+/// Called by `waiting` with how many things wait on the person.
+pub fn set_waiting(app: &AppHandle, total: u64) {
+    if let Some(tray) = app.tray_by_id("main") {
+        let tip = match total {
+            0 => "Flanner".to_string(),
+            1 => "Flanner: 1 thing needs you".to_string(),
+            n => format!("Flanner: {n} things need you"),
+        };
+        let _ = tray.set_tooltip(Some(tip));
+    }
 }
 
 /// Forget the setup answer and restart, so the setup screen shows again.
@@ -292,9 +480,11 @@ fn set_up_again(app: &AppHandle) {
         }
         let _ = save_settings(&data, &settings);
     }
-    stop(app);
+    stop_everything(app);
     app.restart();
 }
+
+// --- the window ----------------------------------------------------------------
 
 fn main_window(app: &AppHandle) -> Result<tauri::WebviewWindow, String> {
     app.get_webview_window("main")
@@ -324,8 +514,17 @@ fn report(app: &AppHandle, message: &str) {
     }
 }
 
-fn stop(app: &AppHandle) {
-    if let Some(mut child) = app.state::<State>().web.lock().expect("web lock").take() {
+pub fn notify(app: &AppHandle, title: &str, body: &str) {
+    let _ = app.notification().builder().title(title).body(body).show();
+}
+
+/// Stop every process the app started. Every way out comes through here:
+/// Quit, "Set up again…", and the updater's own exit on Windows.
+pub fn stop_everything(app: &AppHandle) {
+    let state = app.state::<State>();
+    state.sync.stop();
+    let web = state.web.lock().expect("web lock").take();
+    if let Some(mut child) = web {
         let _ = child.kill();
         let _ = child.wait();
     }

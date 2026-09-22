@@ -172,7 +172,9 @@ def test_the_answer_starts_flanner_and_is_remembered(app: App, window: Window) -
 
     assert flanner.title() == "Dashboard"
     saved: dict[str, Any] = json.loads((app.data / "settings.json").read_text(encoding="utf-8"))
-    assert saved == {"flanner": "bundled", "connected": False}
+    assert saved["flanner"] == "bundled"
+    assert saved["connected"] is False
+    assert saved["version"]  # remembered, so the next version can say it was updated
 
 
 def test_the_page_may_open_the_folder_dialog(window: Window) -> None:

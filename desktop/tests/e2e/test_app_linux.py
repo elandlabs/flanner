@@ -99,7 +99,9 @@ def test_the_answer_starts_flanner_and_is_remembered(driver: Any, data: Path) ->
     _until(lambda: driver.current_url.startswith("http://127.0.0.1:"))
     _until(lambda: driver.title == "Dashboard")
     saved = json.loads((data / "settings.json").read_text(encoding="utf-8"))
-    assert saved == {"flanner": "bundled", "connected": False}
+    assert saved["flanner"] == "bundled"
+    assert saved["connected"] is False
+    assert saved["version"]  # remembered, so the next version can say it was updated
 
 
 def test_the_page_may_open_the_folder_dialog(driver: Any) -> None:
