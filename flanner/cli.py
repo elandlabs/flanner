@@ -7823,6 +7823,19 @@ def peer_stop() -> None:
     _stop_pid(get_peer_pid_file(), "Peer server")
 
 
+@cli.command("desktop-link", hidden=True)
+def desktop_link() -> None:
+    """Point the launchers in FLANNER_HOME/bin at this flanner.
+
+    Run by the desktop app after it installs or updates flanner. Not for
+    people: a pip flanner run by hand would take the launchers over.
+    """
+    from . import desktop
+
+    for path in desktop.link():
+        console.print(str(path))
+
+
 @cli.command("updates")
 @click.argument("choice", required=False, type=click.Choice(["on", "off"]))
 def updates(choice: str | None) -> None:
