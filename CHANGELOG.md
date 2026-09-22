@@ -73,6 +73,14 @@ versioning follows [SemVer](https://semver.org/).
   roster from an older control plane carries no names, and ids are shown
   as before.
 
+### Fixed
+- **A flanner left running across an upgrade no longer writes to the
+  upgraded database.** The `flanner-mcp` that Claude or Codex started, a
+  peer server, or the web UI checked the database version only when it
+  started. After an upgrade migrated the database, it went on saving rows
+  the new version did not expect. It now refuses the write and says to
+  restart it; nothing is saved.
+
 ## [0.14.0] - 2026-09-18
 
 ### Added

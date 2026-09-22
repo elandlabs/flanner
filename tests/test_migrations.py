@@ -74,3 +74,24 @@ def test_missing_migration_is_an_error(tmp_path, monkeypatch):
             _apply_schema(engine)
     finally:
         engine.dispose()
+
+
+def test_a_process_open_across_an_upgrade_saves_nothing(db):
+    """The store is checked when it opens. A newer flanner can migrate it later.
+
+    A flanner-mcp an agent started, or the web UI, stays up across an
+    upgrade and never opens the store again, so the check has to happen
+    at commit as well.
+    """
+    dbmod.create_project(dbmod.get_session(), name="before")
+
+    with dbmod._engine.begin() as conn:
+        conn.exec_driver_sql(f"PRAGMA user_version = {SCHEMA_VERSION + 1}")
+
+    session = dbmod.get_session()
+    with pytest.raises(DatabaseError, match="Restart it"):
+        dbmod.create_project(session, name="after")
+    session.close()
+
+    names = [p.name for p in dbmod.get_session().query(dbmod.ProjectModel)]
+    assert names == ["before"]

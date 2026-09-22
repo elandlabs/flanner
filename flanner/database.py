@@ -26,6 +26,7 @@ from sqlalchemy import (
     UniqueConstraint,
     cast,
     create_engine,
+    event,
     exists,
     func,
     inspect,
@@ -1281,6 +1282,24 @@ def _apply_schema(engine: Engine) -> None:
             conn.exec_driver_sql(f"PRAGMA user_version = {target}")
 
 
+def _refuse_newer_schema(session: Session) -> None:
+    """Refuse to commit into a database a newer flanner has migrated.
+
+    `_apply_schema` checks once, when the store opens. A process that stays
+    up across an upgrade never opens it again: a `flanner-mcp` an agent
+    started, a peer server, the web UI. Without this it would go on writing
+    rows the new schema does not expect. One PRAGMA per commit, and the
+    commit has not flushed yet, so a refusal leaves nothing written.
+    """
+    found = int(session.connection().exec_driver_sql("PRAGMA user_version").scalar() or 0)
+    if found > SCHEMA_VERSION:
+        raise DatabaseError(
+            f"flanner was updated while this process was running (the database is "
+            f"v{found}, this process knows v{SCHEMA_VERSION}), so nothing was saved. "
+            f"Restart it to finish; if Claude or Codex started it, restart that app."
+        )
+
+
 def init_database(db_path: str | None = None) -> None:
     """
     Initialize the database and create tables.
@@ -1329,6 +1348,7 @@ def init_database(db_path: str | None = None) -> None:
 
     # Create session factory
     _SessionLocal = sessionmaker(bind=_engine, autocommit=False, autoflush=False)
+    event.listen(_SessionLocal, "before_commit", _refuse_newer_schema)
 
     logger.info("Database initialized at: %s", db_path)
 
