@@ -109,35 +109,35 @@ device; no server holds them. A **handle** is a teammate's short name, like
 
 ```bash
 # Read
-flanner mesh inbox                    # unread threads
-flanner mesh inbox --all              # read ones too (--json for scripts)
-flanner mesh read 7f3a                # one thread, with delivery for what you sent
+flanner messages inbox                    # unread threads
+flanner messages inbox --all              # read ones too (--json for scripts)
+flanner messages read 7f3a                # one thread, with delivery for what you sent
 
 # Send (always shows who it goes to and asks first)
-flanner mesh send ben "can you look at the migration plan?"
-flanner mesh send ben chen "deploying billing at 15:00"
-flanner mesh send ben "..." --yes     # skip the question, for scripts
-flanner mesh reply 7f3a "next release"
-flanner mesh broadcast "heads up, deploying in ten minutes"   # this repo's workspace
-flanner mesh broadcast --workspace WORKSPACE_ID "..."         # always asks; no --yes
+flanner messages send ben "can you look at the migration plan?"
+flanner messages send ben chen "deploying billing at 15:00"
+flanner messages send ben "..." --yes     # skip the question, for scripts
+flanner messages reply 7f3a "next release"
+flanner messages broadcast "heads up, deploying in ten minutes"   # this repo's workspace
+flanner messages broadcast --workspace WORKSPACE_ID "..."         # always asks; no --yes
 
 # Stay undisturbed (this device only)
-flanner mesh mute chen                # until you unmute
-flanner mesh mute chen --for 8h       # or 30m, 1d
-flanner mesh mute chen --off
-flanner mesh quiet-hours              # show them
-flanner mesh quiet-hours 22:00-07:00  # every day, local time
-flanner mesh quiet-hours off
+flanner messages mute chen                # until you unmute
+flanner messages mute chen --for 8h       # or 30m, 1d
+flanner messages mute chen --off
+flanner messages quiet-hours              # show them
+flanner messages quiet-hours 22:00-07:00  # every day, local time
+flanner messages quiet-hours off
 
 # How agents show new messages
-flanner mesh interrupt                # show the current choice
-flanner mesh interrupt tool           # between tool calls and at your next prompt (default)
-flanner mesh interrupt prompt         # at your next prompt only
-flanner mesh interrupt channel        # the moment they arrive, in Claude Code started with the channel
+flanner messages interrupt                # show the current choice
+flanner messages interrupt tool           # between tool calls and at your next prompt (default)
+flanner messages interrupt prompt         # at your next prompt only
+flanner messages interrupt channel        # the moment they arrive, in Claude Code started with the channel
 
 # Follow along
-flanner mesh watch                    # print messages as they arrive; Ctrl+C stops
-flanner mesh wait --timeout 600       # print the next message and exit (for agents)
+flanner messages watch                    # print messages as they arrive; Ctrl+C stops
+flanner messages wait --timeout 600       # print the next message and exit (for agents)
 
 # Receive even after a reboot
 flanner peer autostart                # is this device receiving, and at login?

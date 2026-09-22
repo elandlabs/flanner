@@ -284,23 +284,23 @@ when nothing is receiving.
 
 | Tool | What it does |
 |------|--------------|
-| `mesh_inbox(thread="", all=False)` | Unread threads, or one whole thread by id. Opening a thread marks it read. |
-| `mesh_send(body, to=[...] or workspace="...", confirm=False)` | Message teammates by handle, or everyone in a workspace. |
-| `mesh_reply(thread, body, confirm=False)` | Answer everyone on a thread. |
-| `mesh_mute(handle, until="", off=False)` | Mute a teammate on this device: `until` like `8h`, `1d` or an ISO time; empty means until unmuted; `off=True` unmutes. |
-| `mesh_quiet_hours(set="")` | Empty reports quiet hours; `"22:00-07:00"` sets them; `"off"` clears them. |
+| `messages_inbox(thread="", all=False)` | Unread threads, or one whole thread by id. Opening a thread marks it read. |
+| `messages_send(body, to=[...] or workspace="...", confirm=False)` | Message teammates by handle, or everyone in a workspace. |
+| `messages_reply(thread, body, confirm=False)` | Answer everyone on a thread. |
+| `messages_mute(handle, until="", off=False)` | Mute a teammate on this device: `until` like `8h`, `1d` or an ISO time; empty means until unmuted; `off=True` unmutes. |
+| `messages_quiet_hours(set="")` | Empty reports quiet hours; `"22:00-07:00"` sets them; `"off"` clears them. |
 | `mesh_status()` | Who this device is signed in as, its workspaces and peers. Read-only and offline. |
 
 A **handle** is a teammate's short name, like `ben`. It comes from their
 email and cannot be changed.
 
-**Sending always previews first.** `mesh_send` and `mesh_reply` with
+**Sending always previews first.** `messages_send` and `messages_reply` with
 `confirm=False` send nothing; they return who the message would go to. The
 agent shows you that, and sends with `confirm=True` only after you say
 yes. It then reports delivery per person: delivered, queued (their device
 is not receiving right now) or failed, with the reason.
 
-`mesh_mute` and `mesh_quiet_hours` need no preview: they change only a
+`messages_mute` and `messages_quiet_hours` need no preview: they change only a
 setting on your own device. The agent uses them only when you ask.
 
 ### How a new message shows up
@@ -314,12 +314,12 @@ hook adds new messages to the session:
   still arrive and are listed; they appear once quiet hours end.
 - **More than three at once** become one line naming the senders.
 
-`flanner mesh interrupt` picks when:
+`flanner messages interrupt` picks when:
 
 ```bash
-flanner mesh interrupt tool      # between tool calls and at your next prompt (default)
-flanner mesh interrupt prompt    # at your next prompt only
-flanner mesh interrupt channel   # the moment they arrive, in Claude Code (see below)
+flanner messages interrupt tool      # between tool calls and at your next prompt (default)
+flanner messages interrupt prompt    # at your next prompt only
+flanner messages interrupt channel   # the moment they arrive, in Claude Code (see below)
 ```
 
 ### Claude Code: the channel
@@ -328,7 +328,7 @@ A **channel** lets an MCP server push a message into a Claude Code session,
 even an idle one. Channels are a Claude Code research preview.
 
 ```bash
-flanner mesh interrupt channel
+flanner messages interrupt channel
 claude --dangerously-load-development-channels server:flanner
 ```
 
@@ -355,7 +355,7 @@ idle Codex session shows nothing until you type.
 - **If your administrator allows only managed hooks,** `flanner init` says
   so and installs no hook. Run `flanner init --print-codex-hook` and give
   your administrator what it prints. You still see messages in `flanner
-  mesh inbox`, the web UI and desktop notifications, and Codex can read
+  messages inbox`, the web UI and desktop notifications, and Codex can read
   them if you ask.
 
 ### Desktop notifications

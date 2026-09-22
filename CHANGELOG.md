@@ -10,12 +10,13 @@ versioning follows [SemVer](https://semver.org/).
 - **Messages between teammates.** Ask a teammate something from the CLI,
   the web UI or your agent, and it goes straight to their devices, never
   through a server.
-  - CLI: `flanner mesh inbox`, `read`, `send`, `broadcast`, `reply`,
+  - CLI: `flanner messages inbox`, `read`, `send`, `broadcast`, `reply`,
     `mute` and `quiet-hours`. Every send is previewed first; `--yes` is
     refused for a message to a whole workspace.
-  - MCP: `mesh_inbox`, `mesh_send`, `mesh_reply`, `mesh_mute` and
-    `mesh_quiet_hours`. An agent shows a teammate's message and never acts
-    on it; sending and settings change only when you ask.
+  - MCP: `messages_inbox`, `messages_send`, `messages_reply`,
+    `messages_mute` and `messages_quiet_hours`. An agent shows a
+    teammate's message and never acts on it; sending and settings change
+    only when you ask.
   - Web UI: a Messages page and threads, an unread count in the sidebar,
     and quiet hours and muted senders under Settings, Team.
   - A message someone is offline for waits on your device and is sent
@@ -38,13 +39,13 @@ versioning follows [SemVer](https://semver.org/).
     hooks, `flanner init` says so, and `flanner init --print-codex-hook`
     prints the entry to give them.
   - Claude Code started with channels can show a message the moment it
-    arrives, even in an idle session: `flanner mesh interrupt channel`,
-    then `claude --dangerously-load-development-channels server:flanner`.
+    arrives, even in an idle session: `flanner messages interrupt
+    channel`, then `claude --dangerously-load-development-channels server:flanner`.
     Claude Code's `--channels` accepts only plugins, so the development
     flag is the current way. Channels are a Claude Code research preview.
-  - `flanner mesh interrupt channel|tool|prompt` chooses how agents show
-    new messages; `flanner mesh wait` prints the next message and exits;
-    `flanner mesh watch` prints messages as they arrive.
+  - `flanner messages interrupt channel|tool|prompt` chooses how agents
+    show new messages; `flanner messages wait` prints the next message and
+    exits; `flanner messages watch` prints messages as they arrive.
   - `flanner init` honours `CLAUDE_CONFIG_DIR` and `CODEX_HOME`.
 - **Receiving across reboots.** `flanner peer autostart on` starts
   receiving messages when you log in, with no admin rights (a Windows Run

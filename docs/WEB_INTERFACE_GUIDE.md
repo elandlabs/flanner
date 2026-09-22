@@ -152,7 +152,7 @@ unread count beside it.
   quiet until the end time. They apply to this device only, every day, in
   its local time.
 - **Muted senders**: Each muted teammate, with *Unmute*. Mute someone with
-  `flanner mesh mute`. A muted sender's messages still arrive; they never
+  `flanner messages mute`. A muted sender's messages still arrive; they never
   interrupt, and they are not told.
 
 ## 🎨 Design Features
