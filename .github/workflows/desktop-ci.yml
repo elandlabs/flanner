@@ -74,3 +74,23 @@ jobs:
         run: |
           pip install pytest mcp
           FLANNER_RUNTIME=build/runtime pytest desktop/tests/smoke -v -p no:cacheprovider
+      # The app itself, on Windows only for now: WebView2 opens a DevTools
+      # port that Playwright can attach to. macOS and Linux need
+      # tauri-driver, which comes with the rest of M3.
+      - uses: Swatinem/rust-cache@v2
+        if: runner.os == 'Windows'
+        with:
+          workspaces: desktop/src-tauri
+      - name: Build and test the app
+        if: runner.os == 'Windows'
+        shell: bash
+        working-directory: desktop/src-tauri
+        run: |
+          rustup component add rustfmt clippy
+          cargo fmt --check
+          cargo clippy --all-targets -- -D warnings
+          cargo build
+          pip install playwright
+          cd ../..
+          FLANNER_DESKTOP_APP=desktop/src-tauri/target/debug/flanner-desktop.exe \
+            FLANNER_RUNTIME=build/runtime pytest desktop/tests/e2e -v -p no:cacheprovider
