@@ -256,10 +256,11 @@ On a Team Mesh plan with messaging switched on, teammates can send each
 other short messages, device to device. Those messages reach Claude Code
 and Codex too.
 
-**Your agent shows a teammate's message and never acts on it.** It quotes
-the message, names the sender, and says it was only shown. That holds even
-when a message asks it to run something, change a setting, mute someone or
-send a reply. Only you can ask for those.
+**flanner tells your agent to show a teammate's message and never act on
+it.** The agent quotes the message, names the sender, and says it was only
+shown, even when a message asks it to run something, change a setting,
+mute someone or send a reply. These are instructions to the agent, not
+locks: what it may do on your machine is still set by its own permissions.
 
 ### Setting it up
 
@@ -294,14 +295,18 @@ when nothing is receiving.
 A **handle** is a teammate's short name, like `ben`. It comes from their
 email and cannot be changed.
 
-**Sending always previews first.** `messages_send` and `messages_reply` with
-`confirm=False` send nothing; they return who the message would go to. The
-agent shows you that, and sends with `confirm=True` only after you say
-yes. It then reports delivery per person: delivered, queued (their device
-is not receiving right now) or failed, with the reason.
+**The agent is told to preview first.** `messages_send` and
+`messages_reply` with `confirm=False` send nothing; they return who the
+message would go to. The agent is told to show you that, and to send with
+`confirm=True` only after you say yes. Nothing in flanner checks that a
+preview was shown, so a call with `confirm=True` sends at once. Delivery is
+reported per person: delivered, queued (their device is not receiving
+right now) or failed, with the reason. `flanner actions list` shows every
+message an agent sent.
 
 `messages_mute` and `messages_quiet_hours` need no preview: they change only a
-setting on your own device. The agent uses them only when you ask.
+setting on your own device. The agent is told to use them only when you
+ask.
 
 ### How a new message shows up
 
