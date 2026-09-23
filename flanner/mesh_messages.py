@@ -19,6 +19,7 @@ from __future__ import annotations
 import difflib
 import hashlib
 import json
+import re
 import unicodedata
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -241,6 +242,16 @@ def record_outgoing(
 # --- receiving -----------------------------------------------------------------
 
 
+#: A reply names its thread by the id of the message that began it, which is
+#: always an artifact id. The sender chooses this field, and a short id cut
+#: from it goes into the web UI's form addresses, so nothing else is kept.
+_MESSAGE_ID = re.compile(r"sha256:[0-9a-f]{64}")
+
+#: How far ahead of this device's clock a message may say it was sent. A
+#: later date kept its thread newest for good, and it never expired.
+CLOCK_SKEW = timedelta(minutes=5)
+
+
 @dataclass(frozen=True)
 class Caller:
     """Who sent it, as the peer layer proved: device, user, role here."""
@@ -296,9 +307,14 @@ def receive(
         check_body(str(fields.get("body") or ""))
         fields["refs"] = check_refs(fields.get("refs"))
         sent_at = _parse_stamp(str(fields["sent_at"]))
+        thread = fields.get("thread_id")
+        if thread is not None and not _MESSAGE_ID.fullmatch(str(thread)):
+            raise ValueError("its thread is not a message id")
     except (ValueError, KeyError, TypeError) as e:
         raise MessageError(refusals.MALFORMED, f"not a message: {e}") from None
 
+    if sent_at > moment + CLOCK_SKEW:
+        raise MessageError(refusals.MALFORMED, "not a message: it is dated in the future")
     if sent_at < moment - timedelta(days=roster.message_retention_days):
         raise MessageError(refusals.MESSAGE_EXPIRED, "Arrived after the retention period.")
 
