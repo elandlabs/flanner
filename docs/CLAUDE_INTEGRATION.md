@@ -369,7 +369,8 @@ for a muted sender. They are on by default;
 Clicking one opens the thread in the web UI, when `flanner web` is
 running. That works on Windows, on macOS with `terminal-notifier`
 installed, and on Linux with `notify-send` from libnotify 0.7.9 or later.
-Elsewhere the notification shows without the click.
+Elsewhere the notification shows without the click. On Linux,
+notifications need `notify-send`; without it, none appear.
 
 ## 🐛 Troubleshooting
 
