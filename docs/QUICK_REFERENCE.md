@@ -3,20 +3,23 @@
 ## Installation
 
 ```bash
-# Install dependencies
-pip install -e .
+# Install the flanner command (Python 3.10 or later)
+uv tool install flanner
 
-# Install flanner command (recommended)
-pip install -e .
+# Or, without uv
+pipx install flanner
+pip install flanner
 ```
+
+Both `flanner` and `flanner-mcp` end up on your PATH.
 
 ## Core Commands
 
 ```bash
-# Initialize Flanner in your project
+# Adopt the repository you are in, and register with your agents
 flanner init
 
-# Check status
+# Check status: the MCP server, the catalog, and one row per agent
 flanner status
 
 # List projects
@@ -26,18 +29,33 @@ flanner list
 flanner list --project PROJECT_NAME
 ```
 
-## Plan File Management
+## Plans
+
+Agents create and revise plans through the MCP tools; a person uses the web
+interface. There is no CLI command that writes a plan.
 
 ```bash
-# Sync existing files into database
+# Every version of a plan, who wrote it, and when
+flanner history PLAN_NAME
+
+# What changed between two versions (defaults to the last two)
+flanner diff PLAN_NAME 2 3
+
+# Whether a plan still matches the code, with the evidence
+flanner freshness
+flanner freshness PLAN_NAME
+flanner why PLAN_NAME
+
+# Re-import plan files that already carry a flanner header,
+# for example after restoring .plans/ from a backup
 flanner sync
-
-# Sync with preview (dry run)
 flanner sync --dry-run
-
-# Sync specific project only
 flanner sync --project PROJECT_NAME
 ```
+
+`flanner sync` skips any Markdown file without a flanner header. To add a
+plan of your own, ask your agent to save it, or paste it into the web
+interface.
 
 ## Web Interface
 
@@ -52,19 +70,23 @@ flanner web --open-browser
 flanner web --port 3000
 ```
 
-## Claude Code Integration
+## Agent Integration
+
+`flanner init` registers flanner with Claude Code, Claude Desktop and Codex,
+and writes the agent guidance, the guard hook and two skills into the
+repository. These repair it later:
 
 ```bash
-# Show integration status
+# One row per agent, each checked where that agent looks
+flanner status
+
+# Re-run the registration with every agent
+flanner setup
+
+# Claude Desktop only: its config file
 flanner claude-info
-
-# Register MCP server
 flanner register
-
-# Force update configuration
 flanner register --force
-
-# Unregister from Claude
 flanner unregister
 ```
 
@@ -162,33 +184,34 @@ default; `FLANNER_DESKTOP_NOTIFICATIONS=off` turns them off.
 cd your-project
 flanner init
 # Creates ~/.flanner/data.db
-# Registers with Claude Code
-# Sets up project
+# Registers the MCP server with Claude Code, Claude Desktop and Codex
+# Creates .plans/ and adds it to .gitignore
+# Writes the guidance block into CLAUDE.md and AGENTS.md, the guard hook,
+# .mcp.json, and the flanner-plan and flanner-memory skills
 ```
 
-### Creating Plan Files
+### Creating a Plan
 
-**Via Claude (Recommended):**
+**Through your agent (recommended):**
 ```
-Ask Claude: "Create a new architecture plan for this project"
+Ask Claude or Codex: "Save this plan with flanner"
 ```
 
-**Manual Creation:**
+The agent calls `create_plan_file_tool`, which writes `.plans/NAME_v1.md`
+with its header. In Claude Code, the guard hook refuses a direct write into
+`.plans/`, so a plan cannot skip the versioning.
+
+**By hand:** open `flanner web`, choose the project, and use New plan.
+
+### Revising a Plan
+
+Ask the agent to revise it, or edit it in the web interface. Each revision
+is saved as a new version in its own file, such as `NAME_v2.md`; nothing is
+edited in place, and nobody increments a version by hand.
+
 ```bash
-# 1. Create file in .plans/
-# 2. Add frontmatter with UUIDs
-# 3. Run sync
-flanner sync
-```
-
-### Updating Plan Versions
-
-```bash
-# 1. Edit the plan file
-# 2. Increment version: in frontmatter
-# 3. Update created_at:
-# 4. Run sync
-flanner sync
+flanner history PLAN_NAME    # every version
+flanner diff PLAN_NAME       # the last two, compared
 ```
 
 ### Viewing Plans
@@ -208,31 +231,41 @@ Ask Claude: "Show version history for architecture plan"
 ## Directory Structure
 
 ```
-~/.flanner/              # Flanner data directory
-├── data.db              # SQLite database
-└── server.pid           # Server process ID
+~/.flanner/                  # Flanner data directory
+├── data.db                  # SQLite catalog and search index
+├── server.log               # MCP server output
+└── memory/personal/         # Your personal memories
 
 your-project/
-├── .git/
-├── .gitignore           # Auto-updated
-├── .plans/              # Plan files (git-ignored)
-│   ├── architecture.md
-│   └── api-design.md
-├── flanner/
+├── .gitignore               # .plans/ and .flanner/memory/ added
+├── .plans/                  # Plan files, one per version (git-ignored)
+│   ├── architecture_v1.md
+│   ├── architecture_v2.md
+│   └── api-design_v1.md
+├── .flanner/memory/         # Project memories (git-ignored on first save)
 └── ...
 ```
 
 ## Plan File Format
 
+The tools write the header; never write it by hand.
+
 ```yaml
 ---
 mcp_plan_file: true
-project_id: uuid-here
-plan_file_id: uuid-here
+plan_manager_version: '1.0'
+project_id: 3d816ecd-489a-4fa0-abe2-15ec93f60d5a
+project_name: my-app
+plan_file_id: 59c34f9c-8471-47fc-97f2-8dcfefa15434
 plan_name: architecture
-version: 1
-created_at: '2025-12-25T10:00:00Z'
-created_by: user
+version: 2
+created_at: '2026-01-15T10:30:00.000000Z'
+created_by: claude
+artifact_id: sha256:6f3e9b1c07a24d58b1e0c9f4a2d7e8b3c5f1a0d9e8c7b6a5f4e3d2c1b0a9f8e7
+parents:
+- sha256:2c9d4e1f7a0b3c6d8e5f2a1b4c7d0e9f3a6b5c8d1e4f7a0b2c5d8e1f4a7b0c3d
+workspace_id: local:3d816ecd-489a-4fa0-abe2-15ec93f60d5a
+actor_device_id: dev_7ab74afd93b09861
 ---
 
 # Your Plan Title
@@ -240,15 +273,19 @@ created_by: user
 Your plan content here...
 ```
 
+The last four fields appear on a version saved with a device signing key.
+`workspace_id` reads `local:` and the project id until the repository joins
+a team.
+
 ## Troubleshooting
 
 ### Command not found
 ```bash
-# Use Python module instead
-python -m flanner.cli --help
+# Run it as a module instead
+python -m flanner --help
 
-# Or install properly
-pip install -e .
+# Or reinstall it as a tool
+uv tool install flanner
 ```
 
 ### Database not initialized
@@ -256,24 +293,26 @@ pip install -e .
 flanner init
 ```
 
-### MCP server not registered
+### Your agent does not see the MCP server
 ```bash
-flanner register
-# Then restart Claude Code
+flanner status   # which agent is missing it
+flanner setup    # register with every agent again
+# Then restart the agent
 ```
 
 ### Plan files not showing
 ```bash
-flanner sync
+flanner sync     # imports files that carry a flanner header
+flanner doctor   # the catalog against the files on disk
 ```
 
 ## Tips
 
 - ✅ Run `flanner init` in each project
 - ✅ Use `sync --dry-run` before syncing
-- ✅ Check `status` regularly
-- ✅ Keep version numbers sequential
-- ✅ Restart Claude after registration
+- ✅ Check `flanner status` when an agent seems not to see flanner
+- ✅ Let the tools number versions; they skip a number whose file exists
+- ✅ Restart the agent after registering
 
 ## Getting Help
 
@@ -281,7 +320,7 @@ flanner sync
 # General help
 flanner --help
 
-# Command-specific help
+# Command-specific help, with worked examples
 flanner init --help
 flanner sync --help
 flanner web --help
@@ -289,13 +328,8 @@ flanner web --help
 
 ## Documentation
 
-- `README.md` - Full documentation
-- `INSTALLATION.md` - Installation guide
-- `VERSIONING_GUIDE.md` - How versioning works
-- `PLAN_FILE_MANAGEMENT.md` - Plan file details
-- `CLAUDE_INTEGRATION.md` - Claude Code integration
-
----
-
-**Version:** 1.0.0
-**Quick Reference for:** Flanner
+- [README](../README.md) - Full documentation
+- [INSTALLATION.md](INSTALLATION.md) - Installation guide
+- [VERSIONING_GUIDE.md](VERSIONING_GUIDE.md) - How versioning works
+- [PLAN_FILE_MANAGEMENT.md](PLAN_FILE_MANAGEMENT.md) - Plan file details
+- [CLAUDE_INTEGRATION.md](CLAUDE_INTEGRATION.md) - Claude Code integration
