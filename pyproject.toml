@@ -152,9 +152,12 @@ timeout = 300
 # did. `pytest -m browser` is the new job, and `make browser` locally.
 markers = [
     "browser: drives the local web UI in a real browser (needs `playwright install chromium`)",
+    "os_integration: registers real services and shows real notifications; throwaway machines only",
 ]
 # Opt-in in fact, not only in CI. Playwright's synchronous API leaves an
 # event loop running in the test process, and every later test that calls
 # asyncio.run() then fails: a plain local `pytest` failed ten. `-m browser`
-# on the command line replaces this and selects them.
-addopts = "-m 'not browser'"
+# on the command line replaces this and selects them. `os_integration`
+# changes the machine it runs on, and also skips itself unless
+# FLANNER_OS_INTEGRATION=1, since a command-line `-m` replaces this one.
+addopts = "-m 'not browser and not os_integration'"
