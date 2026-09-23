@@ -7717,6 +7717,10 @@ def peer_start(host: str, port: int | None, http: bool) -> None:
             stdin=subprocess.DEVNULL,
             stdout=log,
             stderr=log,
+            # From the flanner home, not wherever this was typed: `-m flanner`
+            # imports a folder named `flanner` there (a checkout) instead of
+            # the package, and the server never starts.
+            cwd=str(get_mcp_dir()),
             **detach,
         )
 

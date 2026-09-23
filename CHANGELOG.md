@@ -78,6 +78,11 @@ versioning follows [SemVer](https://semver.org/).
   now include the wordmark's outline, Sora Bold's fl ligature and the dot,
   in the text colour. The favicon is the kit's icon from the same outline.
 
+### Fixed
+- `flanner peer start` did not start the background server when run from a
+  folder that holds a folder named `flanner`, such as a home directory with
+  a checkout in it: it imported that folder instead of the package. It now
+  starts from the flanner home.
 
 ## [0.14.0] - 2026-09-18
 
