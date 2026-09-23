@@ -351,8 +351,10 @@ idle Codex session shows nothing until you type.
 
 - **Trust the hook once.** Codex skips a new hook until you open Codex and
   run `/hooks` to trust it. Do this after `flanner init`.
-- **If your administrator allows only managed hooks,** `flanner init` says
-  so and installs no hook. Run `flanner init --print-codex-hook` and give
+- **If your administrator allows only managed hooks,** Codex skips
+  flanner's hook. `flanner init` warns you when that rule is in a
+  `requirements.toml` on this machine, but cannot see one pushed by device
+  management. Either way, run `flanner init --print-codex-hook` and give
   your administrator what it prints. You still see messages in `flanner
   messages inbox`, the web UI and desktop notifications, and Codex can read
   them if you ask.
