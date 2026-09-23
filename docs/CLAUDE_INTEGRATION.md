@@ -377,18 +377,21 @@ notifications need `notify-send`; without it, none appear.
 
 ## 🐛 Troubleshooting
 
-### Issue: "Could not find Claude Code configuration path"
+### Issue: "Could not find Claude Desktop configuration path"
+
+`flanner register` prints this about Claude Desktop only. `flanner status`
+shows whether Claude Code and Codex are set up.
 
 **Solution:**
-- Ensure Claude Code is installed
+- Ensure Claude Desktop is installed
 - Check if `~/.claude/claude_desktop_config.json` exists (create manually if needed)
 - Try manual registration
 
-### Issue: "MCP server registered but not working in Claude"
+### Issue: "MCP server registered but not working in Claude Desktop"
 
 **Solutions:**
-1. Restart Claude Code completely
-2. Check Claude Code's MCP settings UI to verify registration
+1. Restart Claude Desktop completely
+2. Check Claude Desktop's MCP settings to verify registration
 3. Run `flanner claude-info` to verify configuration
 4. Re-register with `flanner register --force`
 
@@ -412,7 +415,7 @@ if system == "Windows":
 # Skip Claude integration during init
 flanner init --skip-claude
 
-# Or unregister after init
+# Or remove flanner from Claude Desktop's config after init
 flanner unregister
 ```
 
