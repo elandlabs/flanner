@@ -189,6 +189,25 @@ def a_message(mid, *, author="bob", to='["you"]', at=None, outgoing=False):
     return session
 
 
+def test_an_arrival_is_a_new_message_from_a_teammate_counted_as_a_number(signed_in):
+    """The live stream's toast fires for the tenth message too, and not for a send."""
+    from flanner.web import _arrived, _messages_signature
+
+    def snapshot():
+        return {"messages": _messages_signature(get_session())}
+
+    for n in range(9):
+        a_message(f"in{n}")
+    nine = snapshot()
+    a_message("in9")
+    ten = snapshot()
+    a_message("out0", author="you", to='["bob"]', outgoing=True)
+    sent = snapshot()
+
+    assert _arrived(nine, ten), "the tenth message was not an arrival"
+    assert not _arrived(ten, sent), "your own send was taken for an arrival"
+
+
 def test_the_messages_page_lists_the_roster_and_says_nothing_is_unread(client):
     page = client.get("/mesh/messages")
     assert page.status_code == 200

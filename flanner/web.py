@@ -1752,8 +1752,8 @@ def _catalog_snapshot(session: Any) -> dict[str, str]:
 
 
 def _messages_signature(session: Any) -> str:
-    """What changed among messages: a count, the newest arrival, the newest
-    delivery, and how many deliveries have failed.
+    """What changed among messages: a count, how many came from teammates,
+    the newest row, the newest delivery, and how many deliveries have failed.
 
     One query, because the snapshot runs once a second for the life of the
     process. The failed count is there because a delivery that gives up
@@ -1762,6 +1762,11 @@ def _messages_signature(session: Any) -> str:
     """
     from .database import MeshDeliveryModel, MeshMessageModel
 
+    incoming = (
+        session.query(func.count(MeshMessageModel.message_id))
+        .filter(MeshMessageModel.outgoing.is_(False))
+        .scalar_subquery()
+    )
     delivered = session.query(func.max(MeshDeliveryModel.delivered_at)).scalar_subquery()
     failed = (
         session.query(func.count(MeshDeliveryModel.id))
@@ -1769,15 +1774,31 @@ def _messages_signature(session: Any) -> str:
         .scalar_subquery()
     )
     try:
-        count, newest, latest, given_up = session.query(
+        count, received, newest, latest, given_up = session.query(
             func.count(MeshMessageModel.message_id),
+            incoming,
             func.max(MeshMessageModel.received_at),
             delivered,
             failed,
         ).one()
     except Exception:  # noqa: BLE001 - live updates must not fail on a missing table
         return "none"
-    return f"{count}|{newest}|{latest}|{given_up}"
+    return f"{count}|{received}|{newest}|{latest}|{given_up}"
+
+
+def _arrived(seen: dict[str, str], now: dict[str, str]) -> bool:
+    """Whether a teammate's message arrived between two snapshots.
+
+    Counted from incoming messages only, and as numbers. A send is a row
+    too, and it raised a toast naming whoever last wrote to you; compared as
+    text, "10" sorts before "9", and the tenth arrival raised none.
+    """
+
+    def received(snapshot: dict[str, str]) -> int:
+        fields = snapshot.get("messages", "").split("|")
+        return int(fields[1]) if len(fields) > 1 and fields[1].isdigit() else 0
+
+    return received(now) > received(seen)
 
 
 def _arrival_toast(session: Any) -> str:
@@ -1838,10 +1859,7 @@ async def events(request: Request) -> StreamingResponse:
             removed = sorted(set(seen) - set(now))
             changed = sorted(k for k in now.keys() & seen.keys() if now[k] != seen[k])
             if added or removed or changed:
-                arrived = (
-                    "messages" in changed
-                    and now["messages"].split("|")[0] > seen.get("messages", "").split("|")[0]
-                )
+                arrived = "messages" in changed and _arrived(seen, now)
                 seen = now
                 news: dict[str, Any] = {"added": added, "removed": removed, "changed": changed}
                 if arrived:
