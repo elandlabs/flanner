@@ -374,6 +374,9 @@ ALLOWED = {
         "session",
         "artifacts",
         "entitlements",
+        # A signed-in demo's chats, received and sent through the messaging
+        # write path like everything else it seeds.
+        "mesh_messages",
     },
     "cli": FOUNDATION
     | {
