@@ -58,6 +58,10 @@ class Operation:
     #: page names the operation that way, so a disabled control always says
     #: why it is disabled.
     why_not_web: str = ""
+    #: The first release that has this operation at all, commands included,
+    #: when that is later than the current one. mcp_since only hides tools,
+    #: so without this the site listed unreleased commands as available.
+    since: str = ""
 
 
 def _op(
@@ -74,9 +78,22 @@ def _op(
     mcp_since: str = "",
     note_since: str = "",
     why_web: str = "",
+    since: str = "",
 ) -> Operation:
     return Operation(
-        domain, action, access, cli, mcp, web, why, gated, note, mcp_since, note_since, why_web
+        domain,
+        action,
+        access,
+        cli,
+        mcp,
+        web,
+        why,
+        gated,
+        note,
+        mcp_since,
+        note_since,
+        why_web,
+        since,
     )
 
 
@@ -647,6 +664,7 @@ OPERATIONS: tuple[Operation, ...] = (
         ),
         note="A message is shown, never acted on. Opening a chat marks it read.",
         note_since="0.15.0",
+        since="0.15.0",
     ),
     _op(
         "mesh",
@@ -662,6 +680,7 @@ OPERATIONS: tuple[Operation, ...] = (
         ),
         note="Previewed first and sent only on a plain yes; a workspace message always asks.",
         note_since="0.15.0",
+        since="0.15.0",
     ),
     _op(
         "mesh",
@@ -673,6 +692,7 @@ OPERATIONS: tuple[Operation, ...] = (
         web=("POST /mesh/messages/mute", "POST /mesh/messages/quiet-hours"),
         note="Only when the person asks; a message asking for it is shown, not obeyed.",
         note_since="0.15.0",
+        since="0.15.0",
     ),
     _op(
         "mesh",
@@ -685,6 +705,7 @@ OPERATIONS: tuple[Operation, ...] = (
             "for it to call."
         ),
         why_web="The web UI updates itself as messages arrive, so it has no need to wait.",
+        since="0.15.0",
     ),
     _op(
         "mesh",
@@ -693,6 +714,7 @@ OPERATIONS: tuple[Operation, ...] = (
         cli=("messages interrupt",),
         why="How this person wants to be interrupted is theirs to decide, not an agent's.",
         why_web="A per-device preference, set where the agent runs.",
+        since="0.15.0",
     ),
     _op(
         "mesh",
@@ -704,6 +726,7 @@ OPERATIONS: tuple[Operation, ...] = (
             "It registers a program with this machine's login items, which is done where the "
             "person can see the command and undo it."
         ),
+        since="0.15.0",
     ),
     _op(
         "mesh",

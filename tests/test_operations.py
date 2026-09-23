@@ -141,9 +141,28 @@ def test_release_markers_are_versions_and_add_up():
     would publish a tool early or hide it for good."""
     import re
 
-    marked = [v for op in operations.OPERATIONS for v in (op.mcp_since, op.note_since) if v]
+    marked = [
+        v for op in operations.OPERATIONS for v in (op.mcp_since, op.note_since, op.since) if v
+    ]
     assert all(re.fullmatch(r"\d+\.\d+\.\d+", v) for v in marked), marked
     newest = max(marked, key=lambda v: tuple(int(p) for p in v.split(".")))
     total = operations.as_json()["mcp_tool_count"]
     assert operations.released_tool_count(newest) == total
     assert operations.released_tool_count("0.0.0") < total
+
+
+def test_an_unreleased_operation_hides_its_tools_too():
+    """`since` hides an operation's commands on the site, and `mcp_since` its
+    tools. A tool that shipped before its own operation would be listed with
+    nothing beside it, so a set `mcp_since` is never older than `since`."""
+
+    def key(v: str) -> tuple[int, ...]:
+        return tuple(int(p) for p in v.split("."))
+
+    early = [
+        op.action
+        for op in operations.OPERATIONS
+        if op.since and op.mcp_since and key(op.mcp_since) < key(op.since)
+    ]
+    assert early == []
+    assert any(op.since for op in operations.OPERATIONS)
