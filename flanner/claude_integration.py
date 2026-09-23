@@ -244,7 +244,7 @@ def unregister_mcp_server(server_name: str = "flanner") -> tuple[bool, str]:
     config = read_claude_config()
 
     if server_name not in config.get("mcpServers", {}):
-        return False, f"Server '{server_name}' is not registered in Claude Code"
+        return False, f"Server '{server_name}' is not registered in Claude Desktop"
 
     # Remove server
     del config["mcpServers"][server_name]
@@ -267,7 +267,7 @@ def verify_server_config() -> tuple[bool, str, dict[str, Any] | None]:
 
     # Check if registered
     if not is_server_registered(server_name):
-        return False, "MCP server is not registered in Claude Code", None
+        return False, "MCP server is not registered in Claude Desktop", None
 
     # Get current config
     current_config = get_server_config_from_claude(server_name)
@@ -352,12 +352,12 @@ def check_server_status() -> dict[str, Any]:
     status["config_path"] = str(config_path) if config_path else "Not found"
 
     if not config_path:
-        status["message"] = "Claude Code configuration path not found"
-        status["action_needed"] = "Please ensure Claude Code is installed"
+        status["message"] = "Claude Desktop configuration path not found"
+        status["action_needed"] = "Please ensure Claude Desktop is installed"
         return status
 
     if not is_server_registered():
-        status["message"] = "MCP server is not registered in Claude Code"
+        status["message"] = "MCP server is not registered in Claude Desktop"
         status["action_needed"] = "Run: flanner init (or manually register)"
         return status
 

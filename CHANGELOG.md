@@ -86,7 +86,8 @@ versioning follows [SemVer](https://semver.org/).
   parses every example against its command.
 - **`register`, `unregister` and `claude-info` say Claude Desktop.** They
   have always edited Claude Desktop's config, while their help and
-  messages said Claude Code. `flanner setup` covers every agent, and
+  messages said Claude Code. So did the warning `flanner status` prints
+  when that config is missing. `flanner setup` covers every agent, and
   `flanner status` checks each one.
 
 ## [0.14.0] - 2026-09-18
