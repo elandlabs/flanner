@@ -78,6 +78,16 @@ versioning follows [SemVer](https://semver.org/).
   now include the wordmark's outline, Sora Bold's fl ligature and the dot,
   in the text colour. The favicon is the kit's icon from the same outline.
 
+### Fixed
+- **Help examples that failed as written.** `flanner review decide ...
+  --accept`, `flanner review pack ... --out` and `flanner review import
+  NAME --from FILE` all stopped with "No such option". They now show the
+  decision as a word, `--output`, and the file as the argument, and a test
+  parses every example against its command.
+- **`register`, `unregister` and `claude-info` say Claude Desktop.** They
+  have always edited Claude Desktop's config, while their help and
+  messages said Claude Code. `flanner setup` covers every agent, and
+  `flanner status` checks each one.
 
 ## [0.14.0] - 2026-09-18
 
