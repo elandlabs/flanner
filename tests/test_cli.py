@@ -1875,3 +1875,52 @@ def test_main_guard_is_the_last_statement_in_cli():
     last = ast.parse(Path(cli_module.__file__).read_text(encoding="utf-8")).body[-1]
     assert isinstance(last, ast.If)
     assert ast.unparse(last.test) == "__name__ == '__main__'"
+
+
+def _example_invocations():
+    """Each example as a shell would split it, with its comment dropped.
+
+    A trailing backslash joins a line to the next, as it does in a shell,
+    and the explanation after a run of two or more spaces is not part of
+    the command.
+    """
+    from flanner.cli import EXAMPLES
+
+    for path, lines in sorted(EXAMPLES.items()):
+        pending = ""
+        for line in lines:
+            text = pending + line.strip()
+            if text.endswith("\\"):
+                pending = text[:-1].rstrip() + " "
+                continue
+            pending = ""
+            yield path, re.split(r"\s{2,}", text, maxsplit=1)[0]
+
+
+@pytest.mark.parametrize(("path", "example"), list(_example_invocations()))
+def test_every_example_parses_as_written(path, example, tmp_path, monkeypatch):
+    """The tests above check that an example names a real command, not
+    that it runs. `review decide --accept`, `review pack --out` and
+    `review import NAME --from` all failed with "No such option" for
+    releases. Parsing each example against its command, without invoking
+    it, catches a flag, a choice or an argument that does not exist."""
+    import shlex
+
+    import click
+
+    from flanner.cli import cli
+
+    words = shlex.split(example)[1:]
+    node: click.Command = cli
+    name = "flanner"
+    while isinstance(node, click.Group) and words and words[0] in node.commands:
+        name, *words = words
+        node = node.commands[name]
+    # A file an example names has to exist for a click.Path(exists=True)
+    # argument to parse; the command is never run, so empty is enough.
+    monkeypatch.chdir(tmp_path)
+    for word in words:
+        if re.fullmatch(r"[\w.-]+\.[A-Za-z]{2,4}", word):
+            (tmp_path / word).write_text("{}", encoding="utf-8")
+    with node.make_context(name, list(words)):
+        pass

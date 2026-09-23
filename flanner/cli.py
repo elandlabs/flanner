@@ -9281,23 +9281,23 @@ EXAMPLES: dict[str, tuple[str, ...]] = {
     "invite": ("flanner invite raj@acme.test",),
     "members": ("flanner members",),
     "join": (
-        "flanner join ws_f24dca1f15b391e1 bind this repository",
+        "flanner join ws_f24dca1f15b391e1  bind this repository",
         "flanner join                     lists the ids you may use",
         "flanner join --clear             leave the workspace",
     ),
     "review status": ("flanner review status payment-webhooks --project checkout-service",),
     "review propose": ("flanner review propose payment-webhooks --message 'retry budget raised'",),
     "review decide": (
-        "flanner review decide payment-webhooks --accept",
-        "flanner review decide payment-webhooks --reject",
+        "flanner review decide payment-webhooks approve",
+        "flanner review decide payment-webhooks request_changes",
     ),
     "review comment": (
         "flanner review comment payment-webhooks \\",
         "        --on 'The retry budget is three attempts' \\",
         "        -m 'Is three enough under load?'",
     ),
-    "review pack": ("flanner review pack payment-webhooks --out review.html",),
-    "review import": ("flanner review import payment-webhooks --from review.notes.json",),
+    "review pack": ("flanner review pack payment-webhooks --output review.html",),
+    "review import": ("flanner review import review.notes.json --plan payment-webhooks",),
     "peer serve": (
         "flanner peer serve               reachable with no open port",
         "flanner peer serve --http --port 8776",
