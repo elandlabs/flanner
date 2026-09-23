@@ -304,7 +304,9 @@ hook adds new messages to the session:
 - **At your next prompt.** Always.
 - **Between tool calls,** at most once a minute. This is the default.
 - **Never during quiet hours or from a muted sender.** Those messages
-  still arrive and are listed; they appear once quiet hours end.
+  still arrive and are listed. What quiet hours held back appears at your
+  first prompt after they end; a muted sender's messages appear only if
+  you unmute them while they are still unread.
 - **More than three at once** become one line naming the senders.
 
 `flanner messages interrupt` picks when:
