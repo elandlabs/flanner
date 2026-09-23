@@ -45,24 +45,12 @@ flanner init
 flanner status
 ```
 
-**Output shows:**
-```
-============================================================
-MCP PLAN MANAGER STATUS
-============================================================
-
-Server Status: Stopped
-Database: C:\Users\...\. flanners\data.db
-Projects: 1
-Total Plan Files: 3
-
-------------------------------------------------------------
-CLAUDE CODE INTEGRATION
-------------------------------------------------------------
-
-Config Path: C:\Users\...\Claude\claude_desktop_config.json
-MCP Server: Registered & Valid
-```
+**It shows** one table: the MCP server, the database and catalog, one row
+each for Claude Desktop, Claude Code and Codex (each checked where that
+agent looks), the Claude Desktop config path, and rows for the current
+project. On a device whose plan includes messages, a Messages row says
+whether this device is receiving. `flanner status` only reads; it changes
+nothing.
 
 ### 3. View Detailed Info
 
@@ -192,7 +180,7 @@ flanner init
 ### Scenario 2: Moved Project Directory
 ```bash
 # You moved the mcp-cli folder
-# Run init or status to detect and update
+# Run init to detect and update
 flanner init
 
 # ✓ Configuration automatically updated with new path
@@ -424,19 +412,12 @@ flanner unregister
 
 ### In `status` command:
 
-**Registered & Valid** (Green):
-- ✅ MCP server is registered
-- ✅ Configuration is correct
-- ✅ No action needed
+The Claude Desktop row reads one of:
 
-**Registered (config outdated)** (Yellow):
-- ⚠️ MCP server is registered
-- ⚠️ Configuration has changed
-- 💡 Run `flanner init` to update
-
-**Not Registered** (Yellow):
-- ⚠️ MCP server not found in Claude config
-- 💡 Run `flanner init` or `flanner register`
+- **registered**: flanner's entry is there and matches this install.
+- **registered, config is out of date**: the entry no longer matches this
+  install. Run `flanner register --force` or `flanner init`.
+- **not registered**: run `flanner register`.
 
 ### In `claude-info` command:
 
