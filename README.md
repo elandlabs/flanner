@@ -212,7 +212,8 @@ transport, which publishes builds for macOS on Apple Silicon, Linux on
 x86-64 and arm64, and Windows on x86-64. It is declared only for those, so
 installing flanner works everywhere; elsewhere it is simply absent and
 `flanner peer status` says so. Everything else in flanner is unaffected,
-and peers on a shared network still sync over an address.
+and peers on a shared network still sync over an address. Messages are
+the exception: they always travel over `iroh`, so both devices need it.
 
 Alpine and other musl distributions are the exception: the Linux build does
 not match there, so the install fails rather than skipping it. Use a
