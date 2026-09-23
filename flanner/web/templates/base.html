@@ -42,7 +42,7 @@
       {{ ico.icon('menu', 18) }}</button>
 
     <div class="rail-brand">
-      <a href="/"><span class="brand-dot" aria-hidden="true"></span>flanner
+      <a href="/" aria-label="flanner, home">{% include "_wordmark.html" %}
         <span class="rail-badge">local</span></a>
     </div>
 
@@ -188,8 +188,8 @@
     <footer class="sitefoot">
       <div class="sitefoot-in">
         <span class="mark">
-          <span class="dot" aria-hidden="true"></span>
-          flanner <span class="ver mono">{{ app_version }}</span>
+          {% include "_wordmark.html" %}
+          <span class="ver mono">{{ app_version }}</span>
           {% if newer %}
           <span class="ver-new" title="Update with: uv tool upgrade flanner">{{ newer }} available</span>
           {% endif %}

@@ -72,6 +72,12 @@ versioning follows [SemVer](https://semver.org/).
   the signed roster, so a teammate cannot choose what they are shown as. A
   roster from an older control plane carries no names, and ids are shown
   as before.
+### Changed
+- **The web UI draws the wordmark and favicon from the brand kit.** The
+  rail and the footer showed the name typed in Geist beside a CSS dot; they
+  now include the wordmark's outline, Sora Bold's fl ligature and the dot,
+  in the text colour. The favicon is the kit's icon from the same outline.
+
 
 ## [0.14.0] - 2026-09-18
 

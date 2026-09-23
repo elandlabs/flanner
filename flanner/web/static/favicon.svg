@@ -1,15 +1,5 @@
-<!-- flanner. Rebuilt as vector from the supplied raster so it has no
-     watermark, scales without blur, and reads at 16px. The gap between the
-     dot and the letters is tighter than the wordmark's, because at favicon
-     sizes that space is what costs legibility. -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="flanner">
-  <rect width="64" height="64" rx="14" fill="#0B0E14"/>
-  <g transform="translate(4 13.8) scale(0.1677)">
-    <circle cx="66" cy="116" r="64" fill="#3FB950"/>
-    <g transform="translate(-38 0)">
-      <path d="M224 217V60C224 28 240 0 268 0h27c10 6 10 20 5 32v13h-35v172z" fill="#F8FAFC"/>
-      <rect x="200" y="65" width="101" height="20" fill="#F8FAFC"/>
-      <rect x="327" y="6" width="42" height="211" fill="#F8FAFC"/>
-    </g>
-  </g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="flanner">
+  <rect x="0" y="0" width="1024" height="1024" rx="224" fill="#0B0E14"/>
+  <circle cx="223.63" cy="589.33" r="172.80" fill="#3FB950"/>
+  <path transform="translate(492.647 800.000) scale(0.789041)" fill="#F8FAFC" d="M83.5 0V-542.8Q83.5 -637.8 137.2 -683.9Q191 -730 296.2 -730H345V-611H289.2Q262 -611 247.2 -596.1Q232.5 -581.2 232.5 -554.2V0ZM20 -415.5V-532.5H349V-415.5ZM448.5 0V-730H609V0ZM389.5 -612V-730H609V-612Z"/>
 </svg>

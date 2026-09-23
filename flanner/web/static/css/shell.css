@@ -56,12 +56,9 @@ a:hover { color: var(--accent-hi); }
   display: inline-flex; align-items: center; gap: 8px;
   color: var(--text); font-weight: 600; font-size: var(--t-base);
 }
-/* The mark flanner.io and the favicon both use. It replaced a gradient
-   square holding an `f`, which was a second logo for one product. */
-.brand-dot {
-  width: 9px; height: 9px; border-radius: 50%; flex: none;
-  background: var(--brand);
-}
+/* The wordmark, drawn: the brand kit's outline, so the name is never retyped
+   in a font. 14px tall keeps it at the kit's 80px minimum width. */
+.wordmark { height: 14px; width: auto; display: block; flex: none; }
 
 .rail-badge {
   font: 500 var(--t-xs) var(--font-mono); color: var(--text-3);
@@ -234,9 +231,6 @@ a:hover { color: var(--accent-hi); }
 .sitefoot .mark {
   display: inline-flex; align-items: center; gap: 7px;
   font-weight: 600; color: var(--text-3);
-}
-.sitefoot .mark .dot {
-  width: 7px; height: 7px; border-radius: 50%; background: var(--accent);
 }
 .sitefoot .ver { font-weight: 500; font-size: var(--t-xs); color: var(--text-4); }
 .sitefoot .links { display: flex; flex-wrap: wrap; gap: 8px 18px; }
