@@ -29,10 +29,10 @@ Flanner is local-first, and stays that way when a team uses it. Plans sync direc
 - **Automatic headers and versioning**: every plan gets YAML frontmatter, and each revision is a new version with a full history.
 - **Git protection**: plans live in `.plans/` and are kept out of commits automatically.
 - **Agent integration**: `flanner init` wires CLAUDE.md, AGENTS.md, and a guard hook so agents save plans through flanner instead of scattering raw markdown.
-- **Memory**: the durable context around a plan — a constraint, a rejected library, a fact about the environment — kept as Markdown files a later session can search. Explicit by default, refuses anything that looks like a credential, and shared with a teammate only when somebody asks for it.
+- **Memory**: the durable context around a plan — a constraint, a rejected library, a fact about the environment — kept as Markdown files a later session can search. By default an agent proposes and you approve; it refuses anything that looks like a credential, and shares with a teammate only when somebody asks for it.
 - **Skills**: what your agents actually load. Skill packages arrive from a project, your home directory and every installed plugin at once, and when two share a name one wins silently. `flanner skills scan` reads them all and `flanner skills doctor` says which copy is in effect and what is wrong with the rest. A read: nothing in a package is executed.
 - **Messages** (Team Mesh): teammates can message each other inside their agents, device to device. `flanner messages send` previews before it sends, and an agent shows a teammate's message but never acts on it.
-- **Issue tracker links**: tie a plan to its Linear (or JIRA) issue; with a `LINEAR_API_KEY`, flanner verifies the issue and shows its live state, in the CLI and the dashboard.
+- **Issue tracker links** (off in this build): tie a plan to its Linear (or JIRA) issue; with a `LINEAR_API_KEY`, flanner verifies the issue and shows its live state, in the CLI and the dashboard. Built but not supported yet: set `FLANNER_INTEGRATIONS=1` to turn them on.
 - **Reading view**: a browser dashboard to read, edit, and walk the history of plans (light and dark, fully offline).
 - **Per-project config**: customize the plan directory per repository.
 
@@ -65,9 +65,9 @@ flanner web --open-browser     # http://localhost:8080
 
 `flanner init` is safe to re-run. It detects your git root, creates `.plans/`, updates `.gitignore`, and installs the agent integration.
 
-Three agents, three different files, and `init` handles all of it — there is no second command to remember. It writes a project-scoped `.mcp.json` that **Claude Code** reads, registers the server at user scope and in **Claude Desktop**'s config, and adds managed blocks to `CLAUDE.md` and `AGENTS.md`. **Codex** reads `AGENTS.md` but registers MCP servers in `~/.codex/config.toml`, which flanner does not edit — `init` prints the two lines to paste. `flanner status` shows a row per agent, each checked where that agent actually looks, and `flanner setup` re-runs the registration on its own if one of them needs repairing later.
+Three agents, three different files, and `init` handles all of it — there is no second command to remember. It writes a project-scoped `.mcp.json` that **Claude Code** reads, registers the server at user scope and in **Claude Desktop**'s config, and adds managed blocks to `CLAUDE.md` and `AGENTS.md`. **Codex** reads `AGENTS.md` and registers MCP servers in `~/.codex/config.toml`; when Codex is installed, `init` adds flanner's entry there, and prints the two lines to paste only when it cannot edit the file safely. `flanner status` shows a row per agent, each checked where that agent actually looks, and `flanner setup` re-runs the registration on its own if one of them needs repairing later.
 
-`--setup` picks which of them you want, and repeats: `flanner init --setup codex` registers Codex and nothing else. `--skip-claude` opts out of all of it.
+`--setup` picks which of them you want, and repeats: `flanner init --setup codex` registers Codex and nothing else. `--skip-claude` registers with no agent, though the repository's own files are still written.
 
 Adopting a repository somebody else set up? `flanner init --sync` also imports the plan files already committed in it, so `flanner list` shows them straight away.
 
@@ -82,13 +82,14 @@ flanner config NAME [--plan-dir DIR] [...]              # change project setting
 flanner web [--port 8080] [--host 127.0.0.1] [--open-browser]
 flanner start [--port 8765] / flanner stop              # MCP server in the background, over http
 flanner peer start / flanner peer stop                  # serve plans to teammates in the background
-flanner mem remember "..." / flanner mem recall "..."   # durable context for later sessions
-flanner mem list / show ID / supersede ID "..."         # browse, read, and correct
-flanner mem mode [off|explicit|suggest|auto-safe]       # how much this project captures
+flanner mem remember "..." --category fact              # durable context for later sessions
+flanner mem recall "..."                                # search what earlier sessions knew
+flanner mem list / show ID / supersede ID --with "..."  # browse, read, and correct
+flanner mem mode [off|explicit|suggest|auto_safe]       # how much this project captures
 flanner mem share ID / flanner mem withdraw ID          # give one to the team, or ask them to stop
 flanner skills scan / flanner skills doctor             # what your agents load, and what is wrong
 flanner skills list [--all] / inspect NAME              # browse them, or read every copy of one
-flanner skills observe enable / flanner skills report   # record which get used, off until you ask
+flanner skills observe enable / flanner skills report   # record which get used; init asks
 flanner skills adopt NAME / install HASH / rollback ID  # keep a copy, install it, put it back
 flanner skills share HASH / transfers / import ID       # send one to the team; receiving is not installing
 flanner register [--force] / flanner unregister         # MCP registration with Claude Desktop
@@ -150,7 +151,9 @@ The web UI binds `127.0.0.1` with no authentication. Do not expose it beyond loc
 <details>
 <summary><b>Issue tracker links (Linear, JIRA)</b></summary>
 
-Link plan files to issues so a plan and its ticket travel together.
+Link plan files to issues so a plan and its ticket travel together. Built but
+not supported yet: the commands are hidden, and refuse to run unless
+`FLANNER_INTEGRATIONS=1` is set.
 
 ```bash
 flanner linear auth                                     # verify LINEAR_API_KEY, print MCP snippet
@@ -296,8 +299,10 @@ nothing else unless you turn it on. See [What flanner sends](#what-flanner-sends
 
 ## What flanner sends
 
-Nothing, by default. Two things can be turned on, each with its own question
-at `flanner init` and its own command:
+Nothing, by default. Two things can be turned on, each with its own command.
+The version check has its own question at `flanner init`. Crash reports will
+too once they have somewhere to go: this build has no reporting address, so
+`init` does not ask about them and nothing is sent.
 
 | | Where it goes | What it carries | Turn it off |
 |---|---|---|---|
