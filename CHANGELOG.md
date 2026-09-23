@@ -70,8 +70,8 @@ versioning follows [SemVer](https://semver.org/).
   proposer and approvers in `flanner review status`, and `flanner members`
   show people as `@ben (Ben Otieno)` instead of a user id. Names come from
   the signed roster, so a teammate cannot choose what they are shown as. A
-  roster from an older control plane carries no names, and ids are shown
-  as before.
+  roster from an older control plane carries no handles or names; people
+  on it then show as `@` and the first eight characters of their user id.
 ### Changed
 - **The web UI draws the wordmark and favicon from the brand kit.** The
   rail and the footer showed the name typed in Geist beside a CSS dot; they
