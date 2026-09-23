@@ -756,7 +756,7 @@ OPERATIONS: tuple[Operation, ...] = (
         "See how this device reaches its peers",
         "read",
         cli=("peer status",),
-        why="It contacts peers over the network, which is never agent-initiated.",
+        why="It dials peers to test the path, which is for you to run and watch.",
     ),
     _op(
         "mesh",
