@@ -364,7 +364,9 @@ idle Codex session shows nothing until you type.
 Whatever agent you use, `flanner peer serve` shows a desktop notification
 naming the sender, never the message. It stays quiet during quiet hours and
 for a muted sender. They are on by default;
-`FLANNER_DESKTOP_NOTIFICATIONS=off` turns them off.
+`FLANNER_DESKTOP_NOTIFICATIONS=off` turns them off. Set it where the
+receiver runs: one started at login does not see variables set in your
+shell.
 
 Clicking one opens the thread in the web UI, when `flanner web` is
 running. That works on Windows, on macOS with `terminal-notifier`

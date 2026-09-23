@@ -175,7 +175,9 @@ organization's admin sets how long they are kept: 30, 90 (the default),
 warns when nothing on this device is receiving.
 
 Desktop notifications name the sender, never the message. They are on by
-default; `FLANNER_DESKTOP_NOTIFICATIONS=off` turns them off.
+default; `FLANNER_DESKTOP_NOTIFICATIONS=off` turns them off. Set it where
+the receiver runs: one started at login does not see variables set in
+your shell.
 
 ## Common Workflows
 
