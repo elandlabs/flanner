@@ -784,7 +784,9 @@ def _adopt_repository(project_root: str, plan_dir: str, force_new_project: bool)
     help="Which agents to register with. Repeatable. Default: all",
 )
 @click.option(
-    "--skip-claude", is_flag=True, help="Register with no agent at all (same as --setup none)"
+    "--skip-claude",
+    is_flag=True,
+    help="Register with no agent (same as --setup none); the repository's files are still written",
 )
 @click.option("--sync", is_flag=True, help="Import plan files already in the repository")
 @click.option(
@@ -3012,16 +3014,16 @@ def setup() -> None:
 @click.option("--url", default=None, help="Server URL (for cloud type)")
 @click.option("--api-key", default=None, help="API key (for cloud type)")
 def register(force: bool, server_type: str, url: str | None, api_key: str | None) -> None:
-    """Register MCP server with Claude Code"""
-    console.print("\n[MCP] Registering MCP server with Claude Code...\n", style="cyan")
+    """Register the MCP server in Claude Desktop's config"""
+    console.print("\n[MCP] Registering MCP server with Claude Desktop...\n", style="cyan")
 
     from .claude_integration import get_claude_config_path, register_mcp_server
 
-    # Check if Claude Code config exists
+    # Check if Claude Desktop's config exists
     config_path = get_claude_config_path()
     if not config_path:
-        tui.bad("Could not find Claude Code configuration path")
-        console.print("  Please ensure Claude Code is installed", style="yellow")
+        tui.bad("Could not find Claude Desktop configuration path")
+        console.print("  Please ensure Claude Desktop is installed", style="yellow")
         return
 
     # Validate cloud server parameters
@@ -3043,9 +3045,9 @@ def register(force: bool, server_type: str, url: str | None, api_key: str | None
             console.print(f"Project directory: {project_dir}", style="white")
 
         console.print("\nNext steps:", style="cyan")
-        console.print("  1. Restart Claude Code to load the new MCP server", style="white")
+        console.print("  1. Restart Claude Desktop to load the new MCP server", style="white")
         console.print(
-            "  2. Check Claude Code's MCP settings to verify registration", style="white"
+            "  2. Check Claude Desktop's MCP settings to verify registration", style="white"
         )
         console.print(
             "  3. Test by asking Claude to list projects or create a plan", style="white"
@@ -3056,8 +3058,8 @@ def register(force: bool, server_type: str, url: str | None, api_key: str | None
 
 @cli.command()
 def unregister() -> None:
-    """Unregister MCP server from Claude Code"""
-    console.print("\n[MCP] Unregistering MCP server from Claude Code...\n", style="cyan")
+    """Remove the MCP server from Claude Desktop's config"""
+    console.print("\n[MCP] Unregistering MCP server from Claude Desktop...\n", style="cyan")
 
     from .claude_integration import unregister_mcp_server
 
@@ -3070,14 +3072,14 @@ def unregister() -> None:
 
     if success:
         tui.ok(f"{message}")
-        console.print("\n  Restart Claude Code for changes to take effect", style="yellow")
+        console.print("\n  Restart Claude Desktop for changes to take effect", style="yellow")
     else:
         tui.bad(f"{message}")
 
 
 @cli.command()
 def claude_info() -> None:
-    """Show Claude Code integration information"""
+    """Show flanner's entry in Claude Desktop's config; flanner status covers every agent"""
     console.print()
 
     from .claude_integration import get_claude_config_info, registration_instructions

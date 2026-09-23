@@ -282,7 +282,7 @@ def verify_server_config() -> tuple[bool, str, dict[str, Any] | None]:
 
 def get_claude_config_info() -> dict[str, Any]:
     """
-    Get information about Claude Code configuration.
+    Get information about Claude Desktop's configuration.
 
     Returns:
         Dictionary with configuration information

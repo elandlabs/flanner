@@ -550,7 +550,7 @@ def test_register_no_config_path(runner, monkeypatch):
     monkeypatch.setattr(ci, "get_claude_config_path", lambda: None)
     result = runner.invoke(cli, ["register"])
     assert result.exit_code == 0
-    assert "Could not find Claude Code configuration path" in result.output
+    assert "Could not find Claude Desktop configuration path" in result.output
 
 
 def test_register_cloud_requires_url(runner, claude_config):
