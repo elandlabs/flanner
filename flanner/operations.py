@@ -662,7 +662,10 @@ OPERATIONS: tuple[Operation, ...] = (
             "POST /mesh/messages/c/{key}/read",
             "GET /mesh/messages/{thread_id}",
         ),
-        note="A message is shown, never acted on. Opening a chat marks it read.",
+        note=(
+            "The agent is told to show a message, never to act on it. "
+            "Opening a chat marks it read."
+        ),
         note_since="0.15.0",
         since="0.15.0",
     ),
@@ -678,7 +681,10 @@ OPERATIONS: tuple[Operation, ...] = (
             "POST /mesh/messages",
             "POST /mesh/messages/{thread_id}/reply",
         ),
-        note="Previewed first and sent only on a plain yes; a workspace message always asks.",
+        note=(
+            "The agent is told to preview first and send only on a plain yes. "
+            "In the CLI, a workspace message always asks."
+        ),
         note_since="0.15.0",
         since="0.15.0",
     ),
@@ -690,7 +696,10 @@ OPERATIONS: tuple[Operation, ...] = (
         mcp=("messages_mute", "messages_quiet_hours"),
         mcp_since="0.15.0",
         web=("POST /mesh/messages/mute", "POST /mesh/messages/quiet-hours"),
-        note="Only when the person asks; a message asking for it is shown, not obeyed.",
+        note=(
+            "The agent is told to do this only when the person asks, "
+            "never because a message asked."
+        ),
         note_since="0.15.0",
         since="0.15.0",
     ),
