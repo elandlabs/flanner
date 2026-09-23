@@ -333,9 +333,10 @@ claude --dangerously-load-development-channels server:flanner
 ```
 
 The development flag is the current way. Claude Code's `--channels` flag
-accepts only plugins, and flanner is not a plugin yet; one is planned. An
-organization on a Claude Team or Enterprise plan can switch channels off
-for everyone.
+accepts only plugins, and flanner is not a plugin yet; one is planned. On a
+Claude Team or Enterprise plan, channels are blocked, the development flag
+included, until an Owner turns them on in the Claude Code admin settings or
+sets `channelsEnabled` in managed settings.
 
 With `channel` set, a message appears the moment it arrives, and again at
 your next prompt with a note that it may be a repeat. The hook stays quiet
