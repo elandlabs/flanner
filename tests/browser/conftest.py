@@ -62,21 +62,27 @@ def _free_port() -> int:
         return int(sock.getsockname()[1])
 
 
-@pytest.fixture(scope="session")
-def seeded_home(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """A known catalog, built by `flanner demo seed` through the domain layer."""
-    home = tmp_path_factory.mktemp("flanner-home")
-    env = {**os.environ, "PYTHONPATH": str(REPO_ROOT)}
+def _env(**extra: str) -> dict[str, str]:
+    """The environment every seeding and serving process gets.
+
+    No keychain: a signed-in home has a device key, and a test run must not
+    leave one per temp home in the developer's own credential store.
+    """
+    env = {**os.environ, "PYTHONPATH": str(REPO_ROOT), "FLANNER_NO_KEYCHAIN": "1", **extra}
     env.pop("FLANNER_DB_PATH", None)
+    return env
+
+
+def _seed(home: Path, *flags: str) -> Path:
     result = subprocess.run(  # noqa: S603
         # `-m flanner`, not `-m flanner.cli`: `cli.py` carries its own
         # `if __name__ == "__main__"` two thirds of the way down the file,
         # so running the module directly dispatches before the commands
         # below that line have been defined.
-        [sys.executable, "-m", "flanner", "demo", "seed", "--home", str(home)],
+        [sys.executable, "-m", "flanner", "demo", "seed", "--home", str(home), *flags],
         capture_output=True,
         text=True,
-        env=env,
+        env=_env(),
         cwd=str(REPO_ROOT),
         timeout=300,
     )
@@ -86,22 +92,47 @@ def seeded_home(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 @pytest.fixture(scope="session")
+def seeded_home(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """A known catalog, built by `flanner demo seed` through the domain layer."""
+    return _seed(tmp_path_factory.mktemp("flanner-home"))
+
+
+@pytest.fixture(scope="session")
+def signed_in_home(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """The same catalog on a device signed in to a team, with chats in it."""
+    return _seed(tmp_path_factory.mktemp("flanner-home-signed-in"), "--signed-in")
+
+
+@pytest.fixture(scope="session")
 def server(seeded_home: Path) -> Iterator[str]:
-    """uvicorn on 127.0.0.1, on a port nobody else has, over the seeded home.
+    """uvicorn on 127.0.0.1, on a port nobody else has, over the seeded home."""
+    yield from _serve(seeded_home)
+
+
+@pytest.fixture(scope="session")
+def signed_in_server(signed_in_home: Path) -> Iterator[str]:
+    """The signed-in home, served. Discovery off: a send dials teammates'
+    devices that never answer, and learning that must not need the internet."""
+    yield from _serve(signed_in_home, FLANNER_DISCOVERY="off")
+
+
+def _serve(home: Path, **extra: str) -> Iterator[str]:
+    """uvicorn on 127.0.0.1, on a port nobody else has, over `home`.
 
     127.0.0.1 and not localhost: `flanner/web.py` refuses a `Host` header it
     does not serve, and the loopback literal is always on that list.
     """
     port = _free_port()
-    env = {
-        **os.environ,
-        "PYTHONPATH": str(REPO_ROOT),
-        "FLANNER_HOME": str(seeded_home),
+    env = _env(
+        FLANNER_HOME=str(home),
         # The suite asserts on the UI, not on pypi being reachable, and a
         # release check on a runner with no network is a slow page.
-        "FLANNER_NO_UPDATE_CHECK": "1",
-    }
-    env.pop("FLANNER_DB_PATH", None)
+        FLANNER_NO_UPDATE_CHECK="1",
+        # A message arriving must not put a notification on the screen of
+        # whoever runs the suite.
+        FLANNER_DESKTOP_NOTIFICATIONS="off",
+        **extra,
+    )
     process = subprocess.Popen(  # noqa: S603
         [
             sys.executable,
