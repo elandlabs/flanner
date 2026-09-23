@@ -163,7 +163,7 @@ flanner messages wait --timeout 600       # print the next message and exit (for
 
 # Receive even after a reboot
 flanner peer autostart                # is this device receiving, and at login?
-flanner peer autostart on
+flanner peer autostart on             # starts now on macOS and Linux; Windows: next login
 flanner peer autostart off
 ```
 
