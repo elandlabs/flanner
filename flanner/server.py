@@ -2353,12 +2353,25 @@ CHANNEL_POLL_SECONDS = 2.0
 CHANNEL_START_SECONDS = 3.0
 
 
-def _channel_batch() -> list[tuple[str, dict[str, str]]]:
+def _channel_start() -> set[str]:
+    """What was unread when this server started. Never raises: the server must live."""
+    from .services import mesh_channel_start
+
+    try:
+        return mesh_channel_start()
+    except Exception:  # noqa: BLE001 - an empty start only means pushing a backlog
+        import logging
+
+        logging.getLogger(__name__).warning("could not read unread messages", exc_info=True)
+        return set()
+
+
+def _channel_batch(pushed: set[str]) -> list[tuple[str, dict[str, str]]]:
     """New messages to push, or nothing. Never raises: the server must live."""
     from .services import mesh_channel_batch
 
     try:
-        return mesh_channel_batch()
+        return mesh_channel_batch(pushed)
     except Exception:  # noqa: BLE001 - a failed look is retried on the next
         import logging
 
@@ -2388,9 +2401,12 @@ async def _run_stdio_with_channel() -> None:
     async with stdio_server() as (read_stream, write_stream):
 
         async def push() -> None:
+            # This server's own record of what it pushed to its client. What
+            # was already unread when it started is the hook's to show.
+            pushed = await anyio.to_thread.run_sync(_channel_start)
             await anyio.sleep(CHANNEL_START_SECONDS)
             while True:
-                for content, meta in await anyio.to_thread.run_sync(_channel_batch):
+                for content, meta in await anyio.to_thread.run_sync(_channel_batch, pushed):
                     note = JSONRPCNotification(
                         jsonrpc="2.0",
                         method="notifications/claude/channel",

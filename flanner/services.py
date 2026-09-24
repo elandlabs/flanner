@@ -1554,8 +1554,16 @@ def mesh_quiet_hours(set: str = "") -> dict[str, Any]:  # noqa: A002 - the plan'
     )
 
 
-def mesh_channel_batch() -> list[tuple[str, dict[str, str]]]:
-    """Messages for the Claude Code channel to push now; empty when off."""
+def mesh_channel_start() -> set[str]:
+    """What was already unread when a channel started; left to the hook."""
+    from . import mesh_messages
+
+    ensure_database()
+    return mesh_messages.unread_incoming(get_session())
+
+
+def mesh_channel_batch(pushed: set[str]) -> list[tuple[str, dict[str, str]]]:
+    """Messages for this server's Claude Code channel to push now; empty when off."""
     from . import mesh_delivery, mesh_messages
     from . import session as cache
     from .mesh_messages import MessageError
@@ -1565,7 +1573,7 @@ def mesh_channel_batch() -> list[tuple[str, dict[str, str]]]:
     except MessageError:
         return []
     ensure_database()
-    return mesh_messages.for_channel(get_session(), label=cache.teammate_labels())
+    return mesh_messages.for_channel(get_session(), label=cache.teammate_labels(), pushed=pushed)
 
 
 REGISTRY: dict[str, Callable[..., Any]] = {

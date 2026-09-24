@@ -323,8 +323,9 @@ def test_what_the_channel_pushed_still_shows_at_the_next_prompt(db):
     session = get_session()
     arrived(session)
     mesh_messages.set_interrupt("channel")
+    here: set[str] = set()
 
-    pushed = mesh_messages.for_channel(session, label=LABEL)
+    pushed = mesh_messages.for_channel(session, label=LABEL, pushed=here)
 
     assert len(pushed) == 1 and "From @bob (Bob)" in pushed[0][0]
     at_prompt = shown(session, agent="claude")
@@ -336,13 +337,37 @@ def test_what_the_channel_pushed_still_shows_at_the_next_prompt(db):
     )
     codex = shown(session, agent="codex", agent_session="codex-1")
     assert "From @bob (Bob)" in codex and "may already" not in codex
-    assert mesh_messages.for_channel(session, label=LABEL) == [], "pushed once"
+    assert mesh_messages.for_channel(session, label=LABEL, pushed=here) == [], "pushed once"
+
+
+def test_every_server_pushes_to_its_own_client_once(db):
+    """Only the Claude Code started with the channel listens, and no server
+    can tell which that is, so none may take a message from another."""
+    session = get_session()
+    mesh_messages.set_interrupt("channel")
+    desktop, channel_session = set(), set()
+    arrived(session)
+
+    assert len(mesh_messages.for_channel(session, label=LABEL, pushed=desktop)) == 1
+    assert len(mesh_messages.for_channel(session, label=LABEL, pushed=channel_session)) == 1
+    assert mesh_messages.for_channel(session, label=LABEL, pushed=desktop) == []
+
+
+def test_a_new_session_is_not_pushed_a_backlog(db):
+    session = get_session()
+    mesh_messages.set_interrupt("channel")
+    arrived(session)
+
+    pushed = mesh_messages.unread_incoming(session)
+
+    assert mesh_messages.for_channel(session, label=LABEL, pushed=pushed) == []
+    assert "From @bob (Bob)" in shown(session, agent="claude"), "the hook shows it instead"
 
 
 def test_the_channel_pushes_nothing_unless_chosen(db):
     session = get_session()
     arrived(session)
-    assert mesh_messages.for_channel(session, label=LABEL) == []
+    assert mesh_messages.for_channel(session, label=LABEL, pushed=set()) == []
 
 
 def test_the_server_declares_the_channel_and_pushes_a_new_message(signed_in, tmp_path):  # noqa: F811

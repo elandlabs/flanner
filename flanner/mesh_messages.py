@@ -1194,8 +1194,8 @@ SUMMARY_OVER = 3
 #: Sessions remembered, so the state file cannot grow without bound.
 _SESSIONS_KEPT = 200
 INTERRUPT_CHOICES = ("channel", "tool", "prompt")
-#: The hook state entry for messages the Claude Code channel pushed, so
-#: Claude Code's hook does not show them a second time.
+#: The hook state entry for messages a channel pushed, device-wide, so Claude
+#: Code's hook can say at the next prompt that one may be a repeat.
 CHANNEL_KEY = "__channel__"
 
 RULE = (
@@ -1336,31 +1336,50 @@ def for_agent(
     return f"{blocks}\n\n{RULE}"
 
 
-def for_channel(session: Session, *, label: Any) -> list[tuple[str, dict[str, str]]]:
+def unread_incoming(session: Session) -> set[str]:
+    """Ids of messages from teammates not read yet.
+
+    What a channel starting now leaves to the hook: a new session is not
+    handed a backlog as a burst of pushes.
+    """
+    rows = session.query(MeshMessageModel.message_id).filter(
+        MeshMessageModel.outgoing.is_(False), MeshMessageModel.read_at.is_(None)
+    )
+    return {message_id for (message_id,) in rows}
+
+
+def for_channel(
+    session: Session, *, label: Any, pushed: set[str]
+) -> list[tuple[str, dict[str, str]]]:
     """Messages to push into Claude Code now, as (content, meta) pairs.
 
-    Only when the person chose `channel`, never during quiet hours or from a
-    muted sender, and each message once. What is returned is recorded as
-    pushed; Claude Code's hook still shows it at the next prompt, since a
-    push nobody listened to is dropped without a word (see `for_agent`).
+    Only when the person chose `channel`, and never during quiet hours or
+    from a muted sender. `pushed` is what this server already pushed to its
+    own client, and gains what is returned. Every flanner server pushes each
+    message to its own client once: only the Claude Code started with the
+    channel listens, a server cannot tell which one that is, and a claim
+    shared by the device let Claude Desktop or Codex take a push nobody saw.
+    What is returned is recorded device-wide too, and Claude Code's hook
+    still shows it at the next prompt, since a push nobody listened to is
+    dropped without a word (see `for_agent`).
     """
     import time as _time
 
     if settings()["interrupt"] != "channel" or quiet_hours()["active"]:
         return []
-    state = _hook_state()
-    mine = state.get(CHANNEL_KEY) or {"shown": [], "checked": 0}
-    shown = set(mine.get("shown") or [])
     silenced = muted(session)
     fresh = [
         row
         for row in session.query(MeshMessageModel)
         .filter(MeshMessageModel.outgoing.is_(False), MeshMessageModel.read_at.is_(None))
         .order_by(MeshMessageModel.sent_at)
-        if row.message_id not in shown and row.author_user_id not in silenced
+        if row.message_id not in pushed and row.author_user_id not in silenced
     ]
+    pushed.update(row.message_id for row in fresh)
+    state = _hook_state()
+    mine = state.get(CHANNEL_KEY) or {"shown": [], "checked": 0}
     state[CHANNEL_KEY] = {
-        "shown": sorted(shown | {row.message_id for row in fresh}),
+        "shown": sorted(set(mine.get("shown") or []) | {row.message_id for row in fresh}),
         "checked": _time.time(),
     }
     _save_hook_state(state)
