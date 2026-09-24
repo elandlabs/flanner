@@ -5608,7 +5608,7 @@ def _enrollment_report(project: Any) -> list[EnrollmentCheck]:
                 "not_enrolled",
                 "info",
                 "Not enrolled with a team. Local plan work needs no account.",
-                "flanner accept <token> --as your-handle",
+                "flanner accept <token> --as your-user-id",
             )
         ]
         if bound:
@@ -5618,7 +5618,7 @@ def _enrollment_report(project: Any) -> list[EnrollmentCheck]:
                     "problem",
                     f"This project is bound to workspace {bound}, but the device is not "
                     "enrolled, so review here counts for nobody.",
-                    "flanner accept <token> --as your-handle",
+                    "flanner accept <token> --as your-user-id",
                 )
             )
         return checks
