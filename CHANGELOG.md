@@ -62,10 +62,11 @@ versioning follows [SemVer](https://semver.org/).
   - `flanner init` honours `CLAUDE_CONFIG_DIR` and `CODEX_HOME`.
 - **Receiving across reboots.** `flanner peer autostart on` starts
   receiving messages now and whenever you log in, with no admin rights (a
-  Windows Run entry, a macOS LaunchAgent or a systemd user service);
-  `flanner login` and `flanner init` offer it once. `flanner status` shows
-  whether this device is receiving and how to fix it when not, and a
-  sender sees why a message is queued.
+  Windows Run entry, a macOS LaunchAgent or a systemd user service); if
+  launchctl or systemctl cannot start it, nothing is registered and the
+  command says so. `flanner login` and `flanner init` offer it once.
+  `flanner status` shows whether this device is receiving and how to fix
+  it when not, and a sender sees why a message is queued.
 - Clicking a message notification opens the thread in the web UI when it
   is running: on Windows; on macOS with `terminal-notifier` installed
   (`brew install terminal-notifier`); on Linux with a `notify-send` from

@@ -116,6 +116,33 @@ def test_windows_leaves_a_running_receiver_alone(home, monkeypatch):
     assert launched == []
 
 
+@pytest.mark.parametrize("platform", ["darwin", "linux"])
+def test_a_login_service_that_will_not_start_is_reported_and_removed(home, monkeypatch, platform):
+    monkeypatch.setattr(autostart, "_platform", lambda: platform)
+    monkeypatch.setattr(autostart, "_run", lambda *argv: False)
+
+    with pytest.raises(autostart.AutostartError, match="peer start"):
+        autostart.enable()
+
+    assert not autostart.enabled(), "a failed registration must not look like one"
+
+
+def test_the_command_says_when_autostart_failed(monkeypatch):
+    from click.testing import CliRunner
+
+    from flanner.cli import cli
+
+    def fails() -> str:
+        raise autostart.AutostartError("systemctl --user could not start the service.")
+
+    monkeypatch.setattr(autostart, "enable", fails)
+    result = CliRunner().invoke(cli, ["peer", "autostart", "on"])
+
+    assert result.exit_code == 1
+    assert "could not start the service" in result.output
+    assert "receives messages now" not in result.output
+
+
 def test_turning_it_on_forgets_an_earlier_no(home, monkeypatch):
     monkeypatch.setattr(autostart, "_platform", lambda: "linux")
     autostart.decline()

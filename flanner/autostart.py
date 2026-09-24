@@ -39,6 +39,11 @@ HEARTBEAT = "receiver.json"
 HEARTBEAT_FRESH_SECONDS = 90
 DECLINED = "autostart-declined"
 _RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+_MEANWHILE = "flanner peer start receives until you restart."
+
+
+class AutostartError(Exception):
+    """The login service was not set up. The message says what to do instead."""
 
 
 def _platform() -> str:
@@ -193,7 +198,12 @@ def enable() -> str:
                 }
             )
         )
-        _run("launchctl", "load", "-w", str(path))
+        if not _run("launchctl", "load", "-w", str(path)):
+            disable()
+            raise AutostartError(
+                "launchctl could not load the login agent, so nothing starts at login. "
+                f"{_MEANWHILE}"
+            )
         return str(path)
     path = _unit_path()
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -206,8 +216,15 @@ def enable() -> str:
         "[Install]\nWantedBy=default.target\n",
         encoding="utf-8",
     )
-    _run("systemctl", "--user", "daemon-reload")
-    _run("systemctl", "--user", "enable", "--now", f"{name()}.service")
+    if not (
+        _run("systemctl", "--user", "daemon-reload")
+        and _run("systemctl", "--user", "enable", "--now", f"{name()}.service")
+    ):
+        disable()
+        raise AutostartError(
+            "systemctl --user could not start the service; it needs a systemd user "
+            f"session. {_MEANWHILE}"
+        )
     return str(path)
 
 

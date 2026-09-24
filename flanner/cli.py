@@ -7766,7 +7766,11 @@ def peer_autostart(choice: str | None) -> None:
     from . import autostart
 
     if choice == "on":
-        where = autostart.enable()
+        try:
+            where = autostart.enable()
+        except autostart.AutostartError as e:
+            tui.bad(str(e))
+            raise SystemExit(1) from None
         tui.ok("This device receives messages now, and whenever you log in")
         console.print(f"  Registered at {tui.code(where)}", style="muted")
         console.print(f"  Undo with {tui.command('flanner peer autostart off')}", style="muted")
@@ -7813,7 +7817,11 @@ def _offer_autostart() -> None:
     # Registering a program to run at login is consent, so nobody being
     # there (an empty pipe, a script) is a no, never a yes.
     if _ask_yes_no("  Start receiving messages when you log in?", default=True, unattended=False):
-        where = autostart.enable()
+        try:
+            where = autostart.enable()
+        except autostart.AutostartError as e:
+            tui.warn(str(e))
+            return
         tui.ok("This device receives messages now, and whenever you log in")
         console.print(f"  Registered at {tui.code(where)}", style="muted")
     else:
