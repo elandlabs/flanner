@@ -174,21 +174,36 @@ def _git_repo_with_history(root: Path) -> None:
     _git(root, "commit", "-q", "-m", f"move {_MOVED_FILE} out of this service")
 
 
-def _signed_in_session(organization: str = "org_demo") -> None:
-    """Cache a genuinely signed entitlement, so the Team group renders joined.
+#: The team a signed-in demo belongs to, so the Messages page has people and
+#: chats in it. Invented people; the demo user is `demo`.
+_TEAMMATES = {"ben": "Ben Otieno", "chen": "Chen Wu", "dana": "Dana Reyes"}
+
+
+def _signed_in_session(organization: str = "org_demo") -> dict[str, Any]:
+    """Cache a genuinely signed entitlement and roster, so the Team group renders joined.
 
     Self-signed on purpose: the control plane's key is whatever the keyring
-    says it is, and a demo home is not proving anything to anybody. It is a
-    real token through the real encoder, so nothing downstream needs a
-    special case for it.
+    says it is, and a demo home is not proving anything to anybody. They are
+    real tokens through the real encoders, so nothing downstream needs a
+    special case for them. Returns each teammate's device key, which only a
+    demo holds, so their messages can be signed as they would sign them.
     """
+    import base64
+
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
     from . import identity
     from . import session as cache
     from .artifacts import canonical_bytes
-    from .entitlements import Claims, WorkspaceCapability, encode_token
-    from .workflow import MAINTAINER
+    from .entitlements import (
+        MESH_MESSAGES,
+        ROSTER,
+        TEAM_SYNC,
+        Claims,
+        WorkspaceCapability,
+        encode_token,
+    )
+    from .workflow import EDITOR, MAINTAINER
 
     key = Ed25519PrivateKey.generate()
     now = datetime.now(timezone.utc)
@@ -197,6 +212,8 @@ def _signed_in_session(organization: str = "org_demo") -> None:
         return moment.isoformat().replace("+00:00", "Z")
 
     device_id = identity.device_id()
+    teammates = {handle: Ed25519PrivateKey.generate() for handle in _TEAMMATES}
+    devices = {handle: identity.device_id_for(k.public_key()) for handle, k in teammates.items()}
     claims = Claims(
         organization_id=organization,
         user_id="demo",
@@ -205,8 +222,41 @@ def _signed_in_session(organization: str = "org_demo") -> None:
         issued_at=stamp(now - timedelta(minutes=1)),
         expires_at=stamp(now + timedelta(days=30)),
         workspace_capabilities=(WorkspaceCapability(workspace_id="ws_demo", role=MAINTAINER),),
+        features=(TEAM_SYNC, MESH_MESSAGES),
     )
     token = encode_token(claims, identity.sign(canonical_bytes(claims.to_dict()), key))
+    roster_fields = {
+        "kind": ROSTER,
+        "key_id": "sk_demo",
+        "organization_id": organization,
+        "issued_at": stamp(now - timedelta(minutes=1)),
+        "expires_at": stamp(now + timedelta(days=30)),
+        "workspaces": {
+            "ws_demo": [
+                {
+                    "user_id": "demo",
+                    "role": MAINTAINER,
+                    "devices": [device_id],
+                    "handle": "demo",
+                    "name": "Demo User",
+                },
+                *(
+                    {
+                        "user_id": handle,
+                        "role": EDITOR,
+                        "devices": [devices[handle]],
+                        "handle": handle,
+                        "name": name,
+                    }
+                    for handle, name in _TEAMMATES.items()
+                ),
+            ]
+        },
+    }
+    signed = canonical_bytes(roster_fields)
+    roster = (
+        base64.urlsafe_b64encode(signed).decode().rstrip("=") + "." + identity.sign(signed, key)
+    )
     cache.save(
         cache.Session(
             endpoint="https://api.flanner.invalid",
@@ -216,8 +266,97 @@ def _signed_in_session(organization: str = "org_demo") -> None:
             entitlement=token,
             keyring={"sk_demo": identity.public_key_b64(key.public_key())},
             org_role="admin",
+            device_keys={
+                device_id: identity.device_public_key_b64(),
+                **{
+                    devices[h]: identity.public_key_b64(k.public_key())
+                    for h, k in teammates.items()
+                },
+            },
+            roster=roster,
         )
     )
+    return teammates
+
+
+def _chats(session: Any, teammates: dict[str, Any]) -> None:
+    """A person, a group and a workspace chat, received and sent the real way.
+
+    Incoming messages are signed with each teammate's key and go through
+    `receive`, so they pass every check a pushed message does. Dana is
+    muted, so the list shows what a muted sender looks like.
+    """
+    from . import entitlements, identity, mesh_messages
+    from . import session as cache
+    from .database import MeshDeliveryModel, MeshMessageModel
+    from .workflow import EDITOR
+
+    held = cache.load()
+    roster = entitlements.verify_roster(held.roster, held.keyring) if held else None
+    if roster is None:
+        raise RuntimeError("the demo roster did not verify")
+    now = mesh_messages.now_utc()
+
+    def incoming(
+        handle: str, to: Any, body: str, hours_ago: float, thread: str | None = None
+    ) -> str:
+        key = teammates[handle]
+        envelope, payload = mesh_messages.compose(
+            workspace_id="ws_demo",
+            to=to,
+            body=body,
+            refs=[],
+            thread_id=thread,
+            user_id=handle,
+            organization_id="org_demo",
+            sent_at=now - timedelta(hours=hours_ago),
+            signing_key=key,
+        )
+        mesh_messages.receive(
+            session,
+            envelope=envelope.to_dict(),
+            payload=payload,
+            caller=mesh_messages.Caller(envelope.actor_device_id, handle, EDITOR),
+            workspace_id="ws_demo",
+            me="demo",
+            roster=roster,
+            public_key=identity.public_key_b64(key.public_key()),
+            now=now,
+        )
+        return envelope.artifact_id
+
+    def outgoing(to: list[str], body: str, hours_ago: float, thread: str) -> None:
+        sent = now - timedelta(hours=hours_ago)
+        envelope, payload = mesh_messages.compose(
+            workspace_id="ws_demo",
+            to=to,
+            body=body,
+            refs=[],
+            thread_id=thread,
+            user_id="demo",
+            organization_id="org_demo",
+            sent_at=sent,
+        )
+        devices: dict[str, tuple[str, ...]] = {
+            h: (identity.device_id_for(teammates[h].public_key()),) for h in to
+        }
+        mesh_messages.record_outgoing(session, envelope, payload, devices, now=sent)
+        for row in session.query(MeshDeliveryModel).filter_by(message_id=envelope.artifact_id):
+            mesh_messages.delivered(session, row, now=sent + timedelta(minutes=1))
+
+    asked = incoming("ben", ["demo"], "Could you read the rate-limiting plan before Thursday?", 50)
+    session.get(MeshMessageModel, asked).read_at = now - timedelta(hours=49)
+    session.commit()
+    outgoing(["ben"], "Yes, first thing tomorrow.", 49, asked)
+    incoming("ben", ["demo"], "Thanks. The burst is per key now, not per account.", 1)
+
+    column = incoming(
+        "chen", ["ben", "demo"], "Are we dropping the old webhook column this release?", 20
+    )
+    incoming("ben", ["chen", "demo"], "Next release. Two consumers still read it.", 19, column)
+
+    incoming("dana", {"workspace": "ws_demo"}, "Deploy freeze from Friday 18:00 to Monday.", 3)
+    mesh_messages.mute(session, "dana", until=None)
 
 
 def seed(home: Path | str, *, signed_in: bool = False) -> dict[str, Any]:
@@ -377,7 +516,7 @@ def seed(home: Path | str, *, signed_in: bool = False) -> dict[str, Any]:
     session.commit()
 
     if signed_in:
-        _signed_in_session()
+        _chats(session, _signed_in_session())
 
     manifest: dict[str, Any] = {
         "home": str(home),

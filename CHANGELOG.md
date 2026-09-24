@@ -89,6 +89,10 @@ versioning follows [SemVer](https://semver.org/).
   messages said Claude Code. So did the warning `flanner status` prints
   when that config is missing. `flanner setup` covers every agent, and
   `flanner status` checks each one.
+- `flanner peer start` did not start the background server when run from a
+  folder that holds a folder named `flanner`, such as a home directory with
+  a checkout in it: it imported that folder instead of the package. It now
+  starts from the flanner home.
 
 ## [0.14.0] - 2026-09-18
 

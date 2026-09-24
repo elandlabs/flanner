@@ -211,6 +211,38 @@ def test_review_status_shows_the_proposer_by_handle_and_name(joined):
     assert "@mo (Mo)" in ran.output
 
 
+def test_review_status_shows_markup_in_a_name_rather_than_obeying_it(joined):
+    """Each member types their own name; a link in it is text, not a link."""
+    team = signed(
+        {
+            "kind": ROSTER,
+            "organization_id": "org_1",
+            "issued_at": _stamp(),
+            "expires_at": _stamp(timedelta(hours=1)),
+            "workspaces": {
+                WORKSPACE: [
+                    {
+                        "user_id": "mo",
+                        "role": EDITOR,
+                        "devices": [TEAMMATE_DEVICE],
+                        "handle": "mo",
+                        "name": "[link=https://evil.example]Mo[/link]",
+                    }
+                ]
+            },
+        }
+    )
+    sign_in(team=team)
+    teammate_proposes(joined)
+
+    ran = CliRunner().invoke(
+        cli, ["review", "status", "arch", "--project", "p"], env={"COLUMNS": "250"}
+    )
+
+    assert ran.exit_code == 0, ran.output
+    assert "[link=https://evil.example]Mo[/link]" in ran.output
+
+
 def test_without_a_roster_a_teammates_proposal_is_still_dropped(joined):
     session, proj, plan_file, _ = joined
     sign_in()

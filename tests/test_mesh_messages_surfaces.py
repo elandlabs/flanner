@@ -123,6 +123,27 @@ def test_quiet_hours_that_make_no_sense_are_refused_with_an_example(signed_in):
     assert "22:00-07:00" in result.output
 
 
+def test_watch_shows_markup_in_a_message_rather_than_obeying_it(signed_in, monkeypatch):
+    """A teammate's link is printed as the text they wrote, never as a link."""
+    from flanner import cli as cli_module
+
+    session = a_message("markup")
+    row = session.query(MeshMessageModel).one()
+    row.body = "see [link=https://evil.example]the plan[/link]"
+    session.commit()
+    monkeypatch.setattr(cli_module, "_new_messages_since", lambda _session, _since: [row])
+
+    def stop(_seconds):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(cli_module.time, "sleep", stop)
+
+    result = run("messages", "watch")
+
+    assert result.exit_code == 0, result.output
+    assert "[link=https://evil.example]the plan[/link]" in result.output
+
+
 def test_mute_for_a_while_then_unmute(signed_in):
     assert "Muted @bob until" in run("messages", "mute", "bob", "--for", "8h").output
     assert "Unmuted @bob" in run("messages", "mute", "bob", "--off").output
@@ -187,6 +208,25 @@ def a_message(mid, *, author="bob", to='["you"]', at=None, outgoing=False):
     )
     session.commit()
     return session
+
+
+def test_an_arrival_is_a_new_message_from_a_teammate_counted_as_a_number(signed_in):
+    """The live stream's toast fires for the tenth message too, and not for a send."""
+    from flanner.web import _arrived, _messages_signature
+
+    def snapshot():
+        return {"messages": _messages_signature(get_session())}
+
+    for n in range(9):
+        a_message(f"in{n}")
+    nine = snapshot()
+    a_message("in9")
+    ten = snapshot()
+    a_message("out0", author="you", to='["bob"]', outgoing=True)
+    sent = snapshot()
+
+    assert _arrived(nine, ten), "the tenth message was not an arrival"
+    assert not _arrived(ten, sent), "your own send was taken for an arrival"
 
 
 def test_the_messages_page_lists_the_roster_and_says_nothing_is_unread(client):

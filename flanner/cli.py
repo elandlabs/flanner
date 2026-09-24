@@ -5331,8 +5331,9 @@ def review_status(plan_name: str | None, project: str | None) -> None:
         table.add_row(
             view.proposal_id[:19] + "...",
             f"[{style}]{view.state}[/{style}]",
-            name(view.proposer),
-            ", ".join(name(user) for user in view.approvals) or "--",
+            # Text: teammates choose their names, and markup in one is not obeyed.
+            Text(name(view.proposer)),
+            Text(", ".join(name(user) for user in view.approvals) or "--"),
         )
     console.print(table)
 
@@ -7373,6 +7374,7 @@ def invite(email: str, admin: bool) -> None:
 def members() -> None:
     """List your organization's members and seat count (admins only)"""
     from . import account
+    from .entitlements import displayable
 
     result = _console_call(account.list_members)
     console.print(f"Seats in use: {result.get('seats', 0)}\n")
@@ -7383,7 +7385,8 @@ def members() -> None:
         handle = member.get("handle")
         table.add_row(
             f"@{handle}" if handle else member.get("user_id") or "(not joined)",
-            member.get("name") or "-",
+            # Each member types their own name: shown as text, never obeyed.
+            Text(displayable(member.get("name") or "-")),
             member.get("email") or "-",
             member["role"],
             member["state"],
@@ -7719,6 +7722,10 @@ def peer_start(host: str, port: int | None, http: bool) -> None:
             stdin=subprocess.DEVNULL,
             stdout=log,
             stderr=log,
+            # From the flanner home, not wherever this was typed: `-m flanner`
+            # imports a folder named `flanner` there (a checkout) instead of
+            # the package, and the server never starts.
+            cwd=str(get_mcp_dir()),
             **detach,
         )
 
@@ -8703,7 +8710,8 @@ def mesh_watch() -> None:
             session.expire_all()
             for row in _new_messages_since(session, since):
                 since = max(since, row.received_at)
-                console.print(tui.printable(mesh_messages.quoted(row, label)))
+                # Plain text: markup in a teammate's message is shown, never obeyed.
+                console.print(Text(tui.printable(mesh_messages.quoted(row, label))))
                 console.print()
             time.sleep(2)
     except KeyboardInterrupt:

@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import ast
 import plistlib
+import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -38,7 +40,7 @@ def test_macos_registers_a_launch_agent_for_this_home(home, monkeypatch):
     where = autostart.enable()
 
     agent = plistlib.loads(Path(where).read_bytes())
-    assert agent["ProgramArguments"][-3:] == ["flanner", "peer", "serve"]
+    assert agent["ProgramArguments"][1:] == ["-c", autostart._MAIN, "peer", "serve"]
     assert agent["EnvironmentVariables"]["FLANNER_HOME"] == str(autostart._home())
     assert agent["RunAtLoad"] is True
     assert autostart.enabled()
@@ -55,11 +57,30 @@ def test_linux_registers_a_user_service_and_starts_it(home, monkeypatch):
     where = autostart.enable()
 
     unit = Path(where).read_text(encoding="utf-8")
-    assert "peer serve" in unit and "WantedBy=default.target" in unit
+    assert f'-c "{autostart._MAIN}" peer serve' in unit and "WantedBy=default.target" in unit
     assert f"FLANNER_HOME={autostart._home()}" in unit
     assert ("systemctl", "--user", "enable", "--now", f"{autostart.name()}.service") in home
     assert autostart.disable() is True
     assert not Path(where).exists()
+
+
+def test_macos_and_linux_start_the_package_whatever_folder_they_start_in(tmp_path, monkeypatch):
+    """A folder named `flanner` where the receiver starts is not what it imports.
+
+    `whoami`, not `--version`: `--version` answers before the command group
+    runs, and the group's first import is the one that failed.
+    """
+    (tmp_path / "flanner").mkdir()
+    monkeypatch.chdir(tmp_path)
+    shown = subprocess.run(  # noqa: S603 - our own interpreter
+        [sys.executable, "-c", autostart._MAIN, "whoami"],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    assert shown.returncode == 0, shown.stdout + shown.stderr
+    assert "not signed in" in shown.stdout
 
 
 def test_the_windows_login_command_is_valid_python_for_this_home():

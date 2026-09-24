@@ -220,6 +220,29 @@ def ready_to_spawn(stored, monkeypatch):
     return stored
 
 
+def test_the_background_server_starts_in_the_flanner_home(ready_to_spawn, monkeypatch):
+    """Not wherever `peer start` was typed: `-m flanner` imports a folder
+    named `flanner` from there (a checkout) instead of the package."""
+    started: dict[str, object] = {}
+
+    class _Capture:
+        pid = 424242
+
+        def __init__(self, argv, **kwargs) -> None:
+            started.update(kwargs, argv=argv)
+
+        def poll(self) -> int:
+            return 1
+
+        def terminate(self) -> None: ...
+
+    monkeypatch.setattr(subprocess, "Popen", _Capture)
+    ready_to_spawn.invoke(cli, ["peer", "start"])
+
+    assert started["argv"][-2:] == ["peer", "serve"]
+    assert started["cwd"] == os.environ["FLANNER_HOME"]
+
+
 def test_a_wide_bind_is_warned_about_where_the_person_will_see_it(ready_to_spawn):
     """`peer serve` warns too, but in the background its output goes to the
     log file. A warning written where nobody looks is not a warning."""

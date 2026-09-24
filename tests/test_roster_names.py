@@ -139,3 +139,39 @@ def test_flanner_members_shows_handles_and_names(monkeypatch):
 
     assert result.exit_code == 0, result.output
     assert "@ben" in result.output and "Ben O" in result.output
+
+
+#: A name as a hostile teammate might set it: an escape sequence that writes
+#: the clipboard, a bidirectional override, and Rich markup for a link.
+HOSTILE_NAME = "\x1b]52;c;cHduZWQ=\x07Ben‮O [link=https://evil.example]x[/link]"
+
+
+def test_a_name_from_the_roster_cannot_act_on_the_screen_showing_it():
+    """Signed by the control plane, but typed by the member, so not trusted."""
+    parsed = verify_roster(roster([{**BEN, "name": HOSTILE_NAME}]), KEYRING)
+
+    (member,) = parsed.members("ws_core")
+    assert "\x1b" not in member.name and "\x07" not in member.name
+    assert "‮" not in member.name
+    assert "Ben" in member.name
+
+
+def test_flanner_members_shows_markup_in_a_name_rather_than_obeying_it(monkeypatch):
+    from flanner import account
+    from flanner.cli import cli
+
+    member = {
+        "user_id": "usr_ben",
+        "handle": "ben",
+        "name": HOSTILE_NAME,
+        "email": "ben@x.test",
+        "role": "member",
+        "state": "active",
+    }
+    monkeypatch.setattr(account, "list_members", lambda: {"seats": 1, "members": [member]})
+
+    result = CliRunner().invoke(cli, ["members"], env={"COLUMNS": "200"})
+
+    assert result.exit_code == 0, result.output
+    assert "[link=https://evil.example]" in result.output
+    assert "\x1b]52" not in result.output

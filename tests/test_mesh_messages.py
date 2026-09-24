@@ -344,14 +344,14 @@ def test_a_workspace_message_reaches_everyone_else_in_it(tmp_path, issuer_key, o
 # --- the receiving device's own checks -----------------------------------------
 
 
-def received(bob, alice, *, to, body="hi", sent_at=None, roster=None):
+def received(bob, alice, *, to, body="hi", sent_at=None, roster=None, thread_id=None):
     """Push one message signed by alice straight into bob's `receive`."""
     envelope, payload = mesh_messages.compose(
         workspace_id=WORKSPACE,
         to=to,
         body=body,
         refs=[],
-        thread_id=None,
+        thread_id=thread_id,
         user_id="alice",
         organization_id="org_1",
         sent_at=sent_at,
@@ -392,6 +392,34 @@ def test_a_message_older_than_retention_is_refused(team, issuer_key):
             roster=roster,
         )
     assert refused.value.code == refusals.MESSAGE_EXPIRED
+
+
+def test_a_reply_naming_a_thread_that_is_not_a_message_id_is_refused(team):
+    """The sender picks this field, and a short id cut from it goes into a
+    form's address: `../` there sent a reply to another route."""
+    alice, bob = team
+    with pytest.raises(MessageError) as refused:
+        received(bob, alice, to=["bob"], thread_id="sha256:../../skills/purge#aaaaaaaaaaaa")
+    assert refused.value.code == refusals.MALFORMED
+    assert bob.session.query(MeshMessageModel).count() == 0
+
+
+def test_a_reply_naming_a_real_thread_id_is_accepted(team):
+    alice, bob = team
+    thread = "sha256:" + "a" * 64
+    assert received(bob, alice, to=["bob"], thread_id=thread) == "accepted"
+    assert bob.session.query(MeshMessageModel).one().thread_id == thread
+
+
+def test_a_message_dated_in_the_future_is_refused(team):
+    """A future date kept its thread the newest for good, and never expired."""
+    alice, bob = team
+    later = mesh_messages.now_utc() + mesh_messages.CLOCK_SKEW + timedelta(minutes=1)
+    with pytest.raises(MessageError) as refused:
+        received(bob, alice, to=["bob"], sent_at=later)
+    assert refused.value.code == refusals.MALFORMED
+    soon = mesh_messages.now_utc() + timedelta(minutes=2)
+    assert received(bob, alice, to=["bob"], sent_at=soon) == "accepted"
 
 
 def test_twenty_one_messages_in_a_minute_is_one_too_many(team):

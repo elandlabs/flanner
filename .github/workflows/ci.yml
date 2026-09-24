@@ -43,10 +43,11 @@ jobs:
       # suite actually sits (86%), so a change that stops testing something
       # fails here rather than being noticed a release later. It was 80,
       # which left six points of room to quietly lose.
-      # `-m "not browser"`: the browser suite has its own job below, and
-      # this one measures exactly what it measured before it existed.
+      # `-m "not browser ..."`: the browser suite and the real-OS tests have
+      # their own jobs below, and this one measures exactly what it
+      # measured before they existed.
       - name: Tests with coverage gate
-        run: pytest -m "not browser" --cov=flanner --cov-fail-under=85 -q
+        run: pytest -m "not browser and not os_integration" --cov=flanner --cov-fail-under=85 -q
       - name: Audit dependencies
         run: pip-audit --skip-editable
         continue-on-error: false
@@ -91,6 +92,58 @@ jobs:
         with:
           name: browser-artifacts
           path: browser-artifacts/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # The operating system's own services, called for real. Every other job
+  # fakes `systemctl --user`, `launchctl` and `notify-send`; this one runs
+  # them, which registers a service and shows notifications, so it only
+  # ever runs on runners that are thrown away afterwards. Windows was
+  # walked through by hand and is not here.
+  os-integration:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      # Lingering starts this user's systemd manager without a login, which
+      # is what `systemctl --user` talks to. The mock notification server
+      # comes from the distribution, for the system Python.
+      - name: A user service manager and a notification server
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q libnotify-bin python3-dbusmock libglib2.0-bin dbus
+          sudo loginctl enable-linger "$USER"
+          echo "XDG_RUNTIME_DIR=/run/user/$(id -u)" >> "$GITHUB_ENV"
+          for _ in $(seq 30); do
+            XDG_RUNTIME_DIR=/run/user/$(id -u) systemctl --user is-system-running >/dev/null 2>&1 && break
+            sleep 1
+          done
+      - name: terminal-notifier, for the clickable path
+        if: runner.os == 'macOS'
+        run: brew install terminal-notifier
+      - name: The receiver at login, and desktop notifications
+        env:
+          FLANNER_OS_INTEGRATION: "1"
+        run: pytest -m os_integration -v
+      # Whether a notification was actually drawn is only visible on the
+      # screen, so keep a picture of it.
+      - name: The desktop after the notifications
+        if: always() && runner.os == 'macOS'
+        run: screencapture -x macos-desktop.png
+      - uses: actions/upload-artifact@v4
+        if: always() && runner.os == 'macOS'
+        with:
+          name: macos-desktop
+          path: macos-desktop.png
           retention-days: 7
           if-no-files-found: ignore
 

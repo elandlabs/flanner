@@ -133,6 +133,14 @@ def _windows_command() -> str:
     return f'"{_pythonw()}" -c "{script}"'
 
 
+#: How macOS and Linux start the receiver. Not `-m flanner`: systemd starts a
+#: user service in the home directory, and `-m` puts that first on the
+#: import path, where a folder named `flanner` (a checkout) was imported
+#: instead of the package and the receiver never started. The empty entry
+#: goes before flanner is imported, as in the agent hooks.
+_MAIN = "import sys;sys.path[:]=[p for p in sys.path if p];from flanner.cli import main;main()"
+
+
 def _plist_path() -> Path:
     return Path.home() / "Library" / "LaunchAgents" / f"io.flanner.{name()}.plist"
 
@@ -162,7 +170,7 @@ def enable() -> str:
             plistlib.dumps(
                 {
                     "Label": f"io.flanner.{name()}",
-                    "ProgramArguments": [sys.executable, "-m", "flanner", "peer", "serve"],
+                    "ProgramArguments": [sys.executable, "-c", _MAIN, "peer", "serve"],
                     "EnvironmentVariables": {"FLANNER_HOME": str(_home())},
                     "RunAtLoad": True,
                     "KeepAlive": {"SuccessfulExit": False},
@@ -179,7 +187,7 @@ def enable() -> str:
         "[Unit]\nDescription=flanner: receive messages from teammates\n\n"
         "[Service]\n"
         f'Environment="FLANNER_HOME={_home()}"\n'
-        f'ExecStart="{sys.executable}" -m flanner peer serve\n'
+        f'ExecStart="{sys.executable}" -c "{_MAIN}" peer serve\n'
         "Restart=on-failure\n\n"
         "[Install]\nWantedBy=default.target\n",
         encoding="utf-8",

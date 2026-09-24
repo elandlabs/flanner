@@ -265,6 +265,23 @@ ROSTER = "roster"
 APPROVAL = "approval"
 
 
+#: What a display name may not carry to a screen: control characters, since a
+#: terminal runs escape sequences, and the bidirectional controls that make
+#: text show in a different order from how it is stored.
+_UNSHOWN = dict.fromkeys(
+    [*range(0x20), 0x7F, *range(0x80, 0xA0), *range(0x202A, 0x202F), *range(0x2066, 0x206A)]
+)
+
+
+def displayable(name: str) -> str:
+    """A name a teammate chose, without what would act on the screen showing it.
+
+    The control plane signs the roster, but each member types their own
+    name, so the signature proves who listed it, not that it is harmless.
+    """
+    return name.translate(_UNSHOWN)
+
+
 @dataclass(frozen=True)
 class Member:
     """One person in a workspace roster, and the devices that sign for them."""
@@ -361,7 +378,7 @@ def verify_roster(
                         role=str(m["role"]),
                         devices=tuple(str(d) for d in m.get("devices") or ()),
                         handle=str(m.get("handle") or ""),
-                        name=str(m.get("name") or ""),
+                        name=displayable(str(m.get("name") or "")),
                     )
                     for m in members
                 )
