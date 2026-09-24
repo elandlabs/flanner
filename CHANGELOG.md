@@ -35,7 +35,9 @@ versioning follows [SemVer](https://semver.org/).
     30, and reported failed after a day. Delivery is shown per person.
   - `flanner peer serve` also shows a desktop notification naming the
     sender (never the message), except during quiet hours or from someone
-    you muted. `FLANNER_DESKTOP_NOTIFICATIONS=off` turns them off.
+    you muted. `flanner messages notifications off` turns them off, a
+    receiver started at login included; `FLANNER_DESKTOP_NOTIFICATIONS=off`
+    turns them off for a process started with it.
   - Messages are plain text up to 4 KB, to up to 20 people or one
     workspace, and are deleted after the period your organization's admin
     sets in the console: 30, 90 (the default), 180 or 365 days.

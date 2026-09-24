@@ -1215,7 +1215,17 @@ def settings() -> dict[str, Any]:
     except (OSError, ValueError):
         data = {}
     interrupt = data.get("interrupt")
-    return {"interrupt": interrupt if interrupt in INTERRUPT_CHOICES else "tool"}
+    return {
+        "interrupt": interrupt if interrupt in INTERRUPT_CHOICES else "tool",
+        "notifications": "off" if data.get("notifications") == "off" else "on",
+    }
+
+
+def _save_setting(key: str, value: str) -> dict[str, Any]:
+    path = identity.flanner_home() / SETTINGS_FILENAME
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({**settings(), key: value}), encoding="utf-8")
+    return settings()
 
 
 def set_interrupt(choice: str) -> dict[str, Any]:
@@ -1225,10 +1235,18 @@ def set_interrupt(choice: str) -> dict[str, Any]:
         raise MessageError(
             refusals.MALFORMED, "Choose channel, tool or prompt.", fields=["interrupt"]
         )
-    path = identity.flanner_home() / SETTINGS_FILENAME
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({**settings(), "interrupt": choice}), encoding="utf-8")
-    return settings()
+    return _save_setting("interrupt", choice)
+
+
+def set_notifications(choice: str) -> dict[str, Any]:
+    """Desktop notifications for new messages on this device: `on` or `off`.
+
+    A setting and not only an environment variable, because a receiver
+    started at login never sees a variable exported in somebody's shell.
+    """
+    if choice not in ("on", "off"):
+        raise MessageError(refusals.MALFORMED, "Choose on or off.", fields=["notifications"])
+    return _save_setting("notifications", choice)
 
 
 def _hook_state() -> dict[str, Any]:

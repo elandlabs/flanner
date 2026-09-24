@@ -7,6 +7,50 @@ import subprocess
 from flanner import notify
 
 
+def test_the_setting_turns_them_off_where_the_variable_cannot_reach(monkeypatch):
+    """A receiver started at login never sees a shell's variables; it reads this."""
+    from flanner import mesh_messages
+
+    monkeypatch.delenv(notify.ENV, raising=False)
+    assert notify.enabled()
+
+    mesh_messages.set_notifications("off")
+    assert not notify.enabled()
+
+    mesh_messages.set_notifications("on")
+    assert notify.enabled()
+
+
+def test_the_variable_still_turns_them_off(monkeypatch):
+    monkeypatch.setenv(notify.ENV, "off")
+    assert not notify.enabled()
+
+
+def test_one_messaging_setting_keeps_the_other(monkeypatch):
+    from flanner import mesh_messages
+
+    mesh_messages.set_notifications("off")
+    mesh_messages.set_interrupt("prompt")
+
+    assert mesh_messages.settings() == {"interrupt": "prompt", "notifications": "off"}
+
+
+def test_the_command_shows_and_sets_notifications(monkeypatch):
+    from click.testing import CliRunner
+
+    from flanner.cli import cli
+
+    monkeypatch.delenv(notify.ENV, raising=False)
+    shown = CliRunner().invoke(cli, ["messages", "notifications"])
+    assert shown.exit_code == 0, shown.output
+    assert "Desktop notifications are on" in shown.output
+
+    turned = CliRunner().invoke(cli, ["messages", "notifications", "off"])
+    assert turned.exit_code == 0, turned.output
+    assert "are off" in turned.output
+    assert not notify.enabled()
+
+
 def test_off_means_nothing_is_run(monkeypatch):
     ran = []
     monkeypatch.setattr(subprocess, "run", lambda *a, **k: ran.append(a))

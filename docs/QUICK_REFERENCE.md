@@ -150,6 +150,7 @@ flanner messages mute chen --off
 flanner messages quiet-hours              # show them
 flanner messages quiet-hours 22:00-07:00  # every day, local time
 flanner messages quiet-hours off
+flanner messages notifications off        # no desktop notifications
 
 # How agents show new messages
 flanner messages interrupt                # show the current choice
@@ -175,9 +176,8 @@ organization's admin sets how long they are kept: 30, 90 (the default),
 warns when nothing on this device is receiving.
 
 Desktop notifications name the sender, never the message. They are on by
-default; `FLANNER_DESKTOP_NOTIFICATIONS=off` turns them off. Set it where
-the receiver runs: one started at login does not see variables set in
-your shell.
+default; `flanner messages notifications off` turns them off on this
+device.
 
 ## Common Workflows
 

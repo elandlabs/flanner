@@ -728,6 +728,15 @@ OPERATIONS: tuple[Operation, ...] = (
     ),
     _op(
         "mesh",
+        "Turn desktop notifications for messages on or off",
+        "write",
+        cli=("messages notifications",),
+        why="Whether this person is interrupted is theirs to decide, not an agent's.",
+        why_web="A per-device preference, set on the device that shows them.",
+        since="0.15.0",
+    ),
+    _op(
+        "mesh",
         "Start receiving messages when you log in",
         "admin",
         cli=("peer autostart",),

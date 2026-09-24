@@ -8759,6 +8759,20 @@ def mesh_interrupt(choice: str | None) -> None:
     (tui.ok if choice else console.print)(f"Agents show new messages {said}")
 
 
+@messages.command("notifications")
+@click.argument("choice", required=False, type=click.Choice(["on", "off"]))
+def mesh_notifications(choice: str | None) -> None:
+    """Desktop notifications for new messages on this device: on or off"""
+    from . import mesh_messages, notify
+
+    if choice:
+        mesh_messages.set_notifications(choice)
+    state = mesh_messages.settings()["notifications"]
+    (tui.ok if choice else console.print)(f"Desktop notifications are {state} on this device")
+    if state == "on" and not notify.enabled():
+        console.print(f"  {notify.ENV}=off turns them off for this process.", style="muted")
+
+
 # --- history, diff and why ------------------------------------------------------
 #
 # Three commands the mockups show. They read what is already recorded - the
@@ -9380,6 +9394,10 @@ EXAMPLES: dict[str, tuple[str, ...]] = {
     "messages interrupt": (
         "flanner messages interrupt       show the current choice",
         "flanner messages interrupt prompt",
+    ),
+    "messages notifications": (
+        "flanner messages notifications       show whether they are on",
+        "flanner messages notifications off",
     ),
 }
 
