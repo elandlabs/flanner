@@ -682,8 +682,9 @@ OPERATIONS: tuple[Operation, ...] = (
             "POST /mesh/messages/{thread_id}/reply",
         ),
         note=(
-            "The agent is told to preview first and send only on a plain yes. "
-            "In the CLI, a workspace message always asks."
+            "A send must bring back the token of a preview of the same message. "
+            "The agent is told to send only on a plain yes; in the CLI, a "
+            "workspace message always asks."
         ),
         note_since="0.15.0",
         since="0.15.0",

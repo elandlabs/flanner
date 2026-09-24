@@ -275,8 +275,8 @@ covers the meantime. `flanner status` warns when nothing is receiving.
 | Tool | What it does |
 |------|--------------|
 | `messages_inbox(thread="", all=False)` | Unread threads, or one whole thread by id. Opening a thread marks it read. |
-| `messages_send(body, to=[...] or workspace="...", confirm=False)` | Message teammates by handle, or everyone in a workspace. |
-| `messages_reply(thread, body, confirm=False)` | Answer everyone on a thread. |
+| `messages_send(body, to=[...] or workspace="...", confirm=False, preview_token="")` | Message teammates by handle, or everyone in a workspace. |
+| `messages_reply(thread, body, confirm=False, preview_token="")` | Answer everyone on a thread. |
 | `messages_mute(handle, until="", off=False)` | Mute a teammate on this device: `until` like `8h`, `1d` or an ISO time; empty means until unmuted; `off=True` unmutes. |
 | `messages_quiet_hours(set="")` | Empty reports quiet hours; `"22:00-07:00"` sets them; `"off"` clears them. |
 | `mesh_status()` | Who this device is signed in as, its workspaces and peers. Read-only and offline. |
@@ -284,14 +284,15 @@ covers the meantime. `flanner status` warns when nothing is receiving.
 A **handle** is a teammate's short name, like `ben`. It comes from their
 email and cannot be changed.
 
-**The agent is told to preview first.** `messages_send` and
-`messages_reply` with `confirm=False` send nothing; they return who the
-message would go to. The agent is told to show you that, and to send with
-`confirm=True` only after you say yes. Nothing in flanner checks that a
-preview was shown, so a call with `confirm=True` sends at once. Delivery is
-reported per person: delivered, queued (their device is not receiving
-right now) or failed, with the reason. `flanner actions list` shows every
-message an agent sent.
+**Every send is previewed first.** `messages_send` and `messages_reply`
+with `confirm=False` send nothing; they return who the message would go to,
+and a `preview_token`. The agent is told to show you that, and to send with
+`confirm=True` and the token only after you say yes. flanner refuses a send
+without a token from a preview of the same message and recipients, or one
+older than 15 minutes. It cannot tell whether you said yes: that is your
+agent's own tool approval. Delivery is reported per person: delivered,
+queued (their device is not receiving right now) or failed, with the
+reason. `flanner actions list` shows every message an agent sent.
 
 `messages_mute` and `messages_quiet_hours` need no preview: they change only a
 setting on your own device. The agent is told to use them only when you

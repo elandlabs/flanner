@@ -14,9 +14,10 @@ versioning follows [SemVer](https://semver.org/).
     `mute` and `quiet-hours`. Every send is previewed first; `--yes` is
     refused for a message to a whole workspace.
   - MCP: `messages_inbox`, `messages_send`, `messages_reply`,
-    `messages_mute` and `messages_quiet_hours`. An agent shows a
-    teammate's message and never acts on it; sending and settings change
-    only when you ask.
+    `messages_mute` and `messages_quiet_hours`. A send must bring back the
+    `preview_token` from a preview of the same message, so an agent cannot
+    skip the preview. flanner tells an agent to show a teammate's message
+    and never act on it, and to send or change settings only when you ask.
   - Web UI: a Messages page of chats, one per teammate, workspace or
     group, in Unread, Workspaces, People and Groups sections beside a
     pane showing one chat as a single time line across its threads. The

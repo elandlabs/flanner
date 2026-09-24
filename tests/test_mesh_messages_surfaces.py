@@ -167,6 +167,71 @@ def test_every_refusal_carries_a_code(signed_in):
     }
 
 
+# --- the MCP tools an agent calls --------------------------------------------------
+
+
+def _offline(monkeypatch):
+    from flanner import mesh_delivery, peer
+
+    def unreachable(device_id, workspace_id, held):
+        raise peer.PeerError(f"could not reach {device_id}")
+
+    monkeypatch.setattr(mesh_delivery, "dial_device", unreachable)
+
+
+def test_an_agent_cannot_send_without_a_preview(signed_in, monkeypatch):
+    from flanner import server
+
+    _offline(monkeypatch)
+    refused = server.messages_send(body="hi", to=["bob"], confirm=True)
+
+    assert refused["error"] is True
+    assert refused["message"].startswith("Preview first")
+    assert get_session().query(MeshMessageModel).count() == 0
+
+
+def test_a_preview_token_sends_only_what_was_previewed(signed_in, monkeypatch):
+    from flanner import server
+
+    _offline(monkeypatch)
+    token = server.messages_send(body="hi", to=["bob"])["preview_token"]
+
+    switched = server.messages_send(
+        body="something else", to=["bob"], confirm=True, preview_token=token
+    )
+    assert switched["error"] is True
+    assert get_session().query(MeshMessageModel).count() == 0
+
+    sent = server.messages_send(body="hi", to=["bob"], confirm=True, preview_token=token)
+    assert [d["state"] for d in sent["delivery"]] == ["queued"]
+
+
+def test_a_preview_token_runs_out(signed_in, monkeypatch):
+    from flanner import server
+
+    _offline(monkeypatch)
+    monkeypatch.setattr(server, "PREVIEW_SECONDS", -1)
+    token = server.messages_send(body="hi", to=["bob"])["preview_token"]
+
+    assert server.messages_send(body="hi", to=["bob"], confirm=True, preview_token=token)["error"]
+    assert get_session().query(MeshMessageModel).count() == 0
+
+
+def test_a_reply_needs_its_own_preview(signed_in, monkeypatch):
+    from flanner import server
+
+    _offline(monkeypatch)
+    first = server.messages_send(body="hi", to=["bob"])
+    thread = server.messages_send(
+        body="hi", to=["bob"], confirm=True, preview_token=first["preview_token"]
+    )["thread_id"]
+
+    assert server.messages_reply(thread=thread, body="and?", confirm=True)["error"] is True
+    token = server.messages_reply(thread=thread, body="and?")["preview_token"]
+    replied = server.messages_reply(thread=thread, body="and?", confirm=True, preview_token=token)
+    assert replied["thread_id"] == thread
+
+
 def test_messaging_off_is_said_plainly(db, monkeypatch):
     monkeypatch.setenv("FLANNER_HOME", str(db.parent))
     me = identity.device_id()
