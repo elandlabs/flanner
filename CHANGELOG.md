@@ -11,8 +11,9 @@ versioning follows [SemVer](https://semver.org/).
   the web UI or your agent, and it goes straight to their devices, never
   through a server.
   - CLI: `flanner messages inbox`, `read`, `send`, `broadcast`, `reply`,
-    `mute` and `quiet-hours`. Every send is previewed first; `--yes` is
-    refused for a message to a whole workspace.
+    `mute` and `quiet-hours`. Every send is previewed first, on stderr
+    with `--json` so stdout stays JSON; `--yes` is refused for a message to
+    a whole workspace.
   - MCP: `messages_inbox`, `messages_send`, `messages_reply`,
     `messages_mute` and `messages_quiet_hours`. A send must bring back the
     `preview_token` from a preview of the same message, so an agent cannot

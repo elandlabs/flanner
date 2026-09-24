@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple, NoReturn
 from uuid import UUID
 
 import click
+from rich.console import Console
 from rich.text import Text
 
 from . import tui
@@ -8337,10 +8338,10 @@ def _local_time(stamp: str) -> str:
     return datetime.fromisoformat(stamp.replace("Z", "+00:00")).astimezone().strftime("%H:%M")
 
 
-def _quoted(body: str) -> None:
+def _quoted(body: str, out: Console | None = None) -> None:
     for line in body.splitlines() or [""]:
         # Plain text only: markup in a teammate's message is shown, never obeyed.
-        console.print(Text(f"  {tui.BAR} " + tui.printable(line)))
+        (out or console).print(Text(f"  {tui.BAR} " + tui.printable(line)))
 
 
 def _print_delivery(delivery: list[dict[str, Any]]) -> None:
@@ -8360,22 +8361,25 @@ def _print_delivery(delivery: list[dict[str, Any]]) -> None:
 
 def _preview_then_send(op: str, args: dict[str, Any], *, yes: bool, as_json: bool) -> None:
     preview = _message_call(op, {**args, "confirm": False}, record=False)
-    if not as_json:
+    # --json keeps stdout for the answer, so a preview somebody is asked to
+    # approve goes to stderr, with the question. With --yes nobody is asked.
+    out = tui.notices if as_json else console
+    if not as_json or not yes:
         if preview.get("workspace"):
             count = preview["count"]
             noun = "person" if count == 1 else "people"
             to = f"everyone in {preview['workspace']} ({count} {noun})"
         else:
             to = ", ".join(_named(p) for p in preview["to"])
-        console.print(f"  To       {to}")
-        console.print(f"  Thread   {'new' if not preview.get('thread_id') else 'reply'}")
-        _quoted(preview["body"])
-        console.print()
+        out.print(f"  To       {to}")
+        out.print(f"  Thread   {'new' if not preview.get('thread_id') else 'reply'}")
+        _quoted(preview["body"], out)
+        out.print()
     if preview.get("workspace") and yes:
         tui.bad("--yes is refused for a workspace message: it interrupts everybody.")
         raise SystemExit(1)
-    if not yes and not click.confirm("  Send it?", default=False):
-        console.print("Not sent.", style="dim")
+    if not yes and not click.confirm("  Send it?", default=False, err=as_json):
+        out.print("Not sent.", style="dim")
         return
     result = _message_call(op, {**args, "confirm": True}, record=True)
     if as_json:

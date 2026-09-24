@@ -103,6 +103,19 @@ def test_send_on_yes_queues_for_an_offline_teammate(signed_in, monkeypatch):
     assert get_session().query(MeshDeliveryModel).one().state == "queued"
 
 
+def test_json_shows_the_preview_on_stderr_before_asking(signed_in):
+    """A person asked to approve a send sees it, and stdout stays JSON only."""
+    result = run("messages", "send", "bob", "drop the old column?", "--json", input="n\n")
+
+    assert result.exit_code == 0, result.output
+    assert "@bob (Bob)" in result.stderr
+    assert "drop the old column?" in result.stderr
+    assert "Send it?" in result.stderr
+    # CliRunner echoes the typed answer to stdout; a terminal would not.
+    assert result.stdout.strip() == "n"
+    assert get_session().query(MeshMessageModel).count() == 0
+
+
 def test_an_unknown_handle_is_refused(signed_in):
     result = run("messages", "send", "bobb", "hi", "--yes")
     assert result.exit_code == 1
