@@ -189,6 +189,27 @@ def test_none_registers_nothing_and_so_does_the_old_flag(runner, repo_with_plans
         assert not _nudge_written(), args
 
 
+def test_the_messages_hook_follows_the_same_choice(
+    runner, repo_with_plans, desktop_config, monkeypatch
+):
+    """init hands the agents it registers to the messaging step, not every agent."""
+    import flanner.cli as cli_module
+
+    seen: list[tuple[str, ...]] = []
+    monkeypatch.setattr(cli_module, "_wire_messaging_agents", seen.append)
+    for args, expected in (
+        (["--skip-claude"], ()),
+        (["--setup", "none"], ()),
+        (["--setup", "codex"], (cli_module.CODEX,)),
+        ([], cli_module.AGENTS),
+    ):
+        result = runner.invoke(
+            cli, ["init", *args, "--project-root", str(repo_with_plans)], input="proj\n"
+        )
+        assert result.exit_code == 0, result.output
+        assert seen.pop() == expected, args
+
+
 def test_an_unknown_agent_is_refused_rather_than_ignored(runner, repo_with_plans):
     """Silently registering nothing for a typo would be the worst outcome:
     the machine looks set up and no agent can reach it."""

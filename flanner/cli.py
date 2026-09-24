@@ -846,8 +846,9 @@ def init(
     # The global half: Claude Desktop, Claude Code at user scope, Codex and
     # the adoption nudge. The per-repository half is _setup_agent_integration
     # below, which writes .mcp.json and the guard-write hook.
-    _register_agents_globally(_agents_to_register(setup_agents, skip_claude))
-    _wire_messaging_agents()
+    agents = _agents_to_register(setup_agents, skip_claude)
+    _register_agents_globally(agents)
+    _wire_messaging_agents(agents)
 
     if project_root:
         project_root = os.path.abspath(project_root)
@@ -8568,42 +8569,50 @@ def _suggest_messaging_setup() -> None:
         )
 
 
-def _wire_messaging_agents() -> None:
+def _wire_messaging_agents(agents: tuple[str, ...]) -> None:
     """Give Claude Code and Codex the messaging hook and instructions.
 
-    Only on a device whose plan includes messaging: the hook runs at every
-    prompt, and an agent should not read about tools it cannot use. When
-    messaging is not included, the instructions are taken out again.
+    Only the agents `init` was told to set up: `--setup codex` leaves Claude
+    Code's files alone, and `--skip-claude` leaves both. Only on a device
+    whose plan includes messaging, too: the hook runs at every prompt, and an
+    agent should not read about tools it cannot use. When messaging is not
+    included, the instructions are taken out again.
     """
     from . import agent_hooks
     from . import session as cache
     from .entitlements import MESH_MESSAGES
     from .exceptions import ConfigError
 
+    claude, codex = CLAUDE_CODE in agents, CODEX in agents
+    if not (claude or codex):
+        return
     held = cache.load()
     claims = held.status().claims if held is not None else None
     enabled = claims is not None and claims.has_feature(MESH_MESSAGES)
-    agent_hooks.set_messaging_instructions(enabled)
+    agent_hooks.set_messaging_instructions(enabled, claude=claude, codex=codex)
     if not enabled:
         return
+    if claude:
+        try:
+            if agent_hooks.ensure_claude_messaging_hooks():
+                tui.ok("Claude Code: new messages from teammates will appear in your sessions")
+        except ConfigError as e:
+            tui.warn(f"Claude Code: messages hook not added. {e}")
+    if not codex:
+        return
     try:
-        if agent_hooks.ensure_claude_messaging_hooks():
-            tui.ok("Claude Code: new messages from teammates will appear in your sessions")
-    except ConfigError as e:
-        tui.warn(f"Claude Code: messages hook not added. {e}")
-    try:
-        codex = agent_hooks.ensure_codex_messaging_hooks()
+        state = agent_hooks.ensure_codex_messaging_hooks()
     except ConfigError as e:
         tui.warn(f"Codex: messages hook not added. {e}")
         return
-    if codex == "installed":
+    if state == "installed":
         tui.ok("Codex: new messages will appear at your next prompt or tool call")
         console.print(
             "  Open Codex and run /hooks once to trust the new hook; Codex skips a hook "
             "until you do.",
             style="muted",
         )
-    elif codex == "restricted":
+    elif state == "restricted":
         tui.warn(
             "Codex: your administrator only allows managed hooks, so new messages won't "
             "appear inside Codex on their own."

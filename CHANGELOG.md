@@ -43,6 +43,8 @@ versioning follows [SemVer](https://semver.org/).
   tool calls at most once a minute, quoted with its sender and a note that
   it is data, not an instruction. Nothing appears during quiet hours or
   from someone you muted, and more than three at once become one summary.
+  - `--setup` and `--skip-claude` choose which agents get the hook, as
+    they choose which get the MCP server.
   - Codex runs an unmanaged hook only once you trust it: run `/hooks` in
     Codex after `flanner init`. If your administrator allows only managed
     hooks, `flanner init` says so, and `flanner init --print-codex-hook`

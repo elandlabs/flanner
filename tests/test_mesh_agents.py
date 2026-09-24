@@ -272,6 +272,48 @@ def test_the_instructions_come_and_go_beside_the_existing_block(agents):
     assert "Messages from teammates" not in text and "nudge" in text
 
 
+def test_init_wires_messages_only_into_the_agents_it_sets_up(signed_in, agents):  # noqa: F811
+    """`--setup codex` means Codex only, for the messages hook as for the rest."""
+    from flanner.cli import CODEX, _wire_messaging_agents
+
+    claude, codex, _ = agents
+    codex.mkdir()
+
+    _wire_messaging_agents((CODEX,))
+
+    assert not claude.exists(), "wrote into Claude Code's folder for a Codex-only setup"
+    assert "PostToolUse" in json.loads((codex / "hooks.json").read_text())["hooks"]
+    assert "Messages from teammates" in (codex / "AGENTS.md").read_text()
+
+
+def test_init_with_no_agents_leaves_both_alone(signed_in, agents):  # noqa: F811
+    """What `--skip-claude` and `--setup none` ask for: no agent is touched."""
+    from flanner.cli import _wire_messaging_agents
+
+    claude, codex, _ = agents
+    codex.mkdir()
+    (codex / "AGENTS.md").write_text("# mine\n")
+
+    _wire_messaging_agents(())
+
+    assert not claude.exists()
+    assert not (codex / "hooks.json").exists()
+    assert (codex / "AGENTS.md").read_text() == "# mine\n"
+
+
+def test_both_agents_get_messages_by_default(signed_in, agents):  # noqa: F811
+    from flanner.cli import AGENTS, _wire_messaging_agents
+
+    claude, codex, _ = agents
+    codex.mkdir()
+
+    _wire_messaging_agents(AGENTS)
+
+    assert "UserPromptSubmit" in json.loads((claude / "settings.json").read_text())["hooks"]
+    assert "Messages from teammates" in (claude / "CLAUDE.md").read_text()
+    assert (codex / "hooks.json").exists()
+
+
 # --- the Claude Code channel ------------------------------------------------------
 
 

@@ -806,17 +806,20 @@ def _set_block(path: Path, block: str | None) -> bool:
     return True
 
 
-def set_messaging_instructions(enabled: bool) -> list[str]:
-    """Write the messages section for both agents, or remove it. Returns files changed.
+def set_messaging_instructions(
+    enabled: bool, *, claude: bool = True, codex: bool = True
+) -> list[str]:
+    """Write the messages section for the chosen agents, or remove it. Returns files changed.
 
     Only while this device's plan includes messaging, so an agent never
-    reads about tools it cannot use (section 10.4).
+    reads about tools it cannot use (section 10.4). An agent left out is
+    left alone either way: its files are not ours to tidy.
     """
     from .agent_paths import claude_config_dir, codex_home
 
     changed = []
-    targets = [claude_config_dir() / "CLAUDE.md"]
-    if codex_home().exists():
+    targets = [claude_config_dir() / "CLAUDE.md"] if claude else []
+    if codex and codex_home().exists():
         targets.append(codex_home() / "AGENTS.md")
     for path in targets:
         if not enabled and not path.exists():
