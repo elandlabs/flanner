@@ -62,16 +62,9 @@ _MAC = (
 
 
 def enabled() -> bool:
-    """Whether to show one. The setting or the variable can turn them off.
-
-    `flanner messages notifications off` reaches a receiver started at
-    login; the variable reaches only processes started where it was set.
-    """
-    if os.environ.get(ENV, "on").strip().lower() in ("0", "off", "false", "no"):
-        return False
-    from .mesh_messages import settings
-
-    return bool(settings()["notifications"] != "off")
+    """The variable's say. The device's own setting is read by the caller
+    (`mesh_messages.notifies`), so this module stays standard library only."""
+    return os.environ.get(ENV, "on").strip().lower() not in ("0", "off", "false", "no")
 
 
 def desktop(title: str, text: str, url: str = "") -> bool:

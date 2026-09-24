@@ -966,3 +966,24 @@ def test_a_chat_nobody_has_is_not_found(team):
     with pytest.raises(MessageError):
         mesh_messages.chat_key_for(alice.session, "sha256:nothing", "alice")
     assert mesh_messages.mark_chat_read(alice.session, "dm-nobody", me="alice") == 0
+
+
+def test_the_notifications_setting_silences_the_desktop(db):
+    """A receiver started at login never sees a shell's variables; it reads this."""
+    from flanner.database import get_session
+
+    session = get_session()
+    assert mesh_messages.notifies(session, "bob")
+
+    mesh_messages.set_notifications("off")
+    assert not mesh_messages.notifies(session, "bob")
+
+    mesh_messages.set_notifications("on")
+    assert mesh_messages.notifies(session, "bob")
+
+
+def test_one_messaging_setting_keeps_the_other(db):
+    mesh_messages.set_notifications("off")
+    mesh_messages.set_interrupt("prompt")
+
+    assert mesh_messages.settings() == {"interrupt": "prompt", "notifications": "off"}

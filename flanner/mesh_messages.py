@@ -372,6 +372,16 @@ def interrupts(session: Session, sender: str, *, now: datetime | None = None) ->
     return sender not in muted(session, now=now)
 
 
+def notifies(session: Session, sender: str, *, now: datetime | None = None) -> bool:
+    """Whether a message from `sender` shows a desktop notification now.
+
+    Only when it may interrupt, and while this device's notifications
+    setting is on (`flanner messages notifications`), which a receiver
+    started at login reads as well as one started from a shell.
+    """
+    return settings()["notifications"] != "off" and interrupts(session, sender, now=now)
+
+
 def check_may_send(role: str | None) -> None:
     """Whether a role in the workspace may send messages there (section 5.2)."""
     if role is None or not push.may_send(artifacts.MESH_MESSAGE, role):
