@@ -2398,12 +2398,13 @@ async def _run_stdio_with_channel() -> None:
     options = server.create_initialization_options(
         experimental_capabilities={"claude/channel": {}}
     )
+    # This server's own record of what it pushed to its client. What was
+    # already unread when it started is the hook's to show. Taken before the
+    # client can say hello, so nothing that arrives afterwards is counted.
+    pushed = await anyio.to_thread.run_sync(_channel_start)
     async with stdio_server() as (read_stream, write_stream):
 
         async def push() -> None:
-            # This server's own record of what it pushed to its client. What
-            # was already unread when it started is the hook's to show.
-            pushed = await anyio.to_thread.run_sync(_channel_start)
             await anyio.sleep(CHANNEL_START_SECONDS)
             while True:
                 for content, meta in await anyio.to_thread.run_sync(_channel_batch, pushed):
