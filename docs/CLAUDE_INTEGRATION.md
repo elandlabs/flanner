@@ -266,9 +266,8 @@ plan includes messaging, and takes the block out again when it does not.
 `flanner init`.
 
 A message only arrives while something on your device is receiving.
-`flanner peer autostart on` starts that at login: at once on macOS and
-Linux, and from your next login on Windows, where `flanner peer start`
-covers the meantime. `flanner status` warns when nothing is receiving.
+`flanner peer autostart on` starts that now, and again at every login.
+`flanner status` warns when nothing is receiving.
 
 ### MCP tools
 

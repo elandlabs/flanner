@@ -7767,7 +7767,7 @@ def peer_autostart(choice: str | None) -> None:
 
     if choice == "on":
         where = autostart.enable()
-        tui.ok("This device will start receiving messages when you log in")
+        tui.ok("This device receives messages now, and whenever you log in")
         console.print(f"  Registered at {tui.code(where)}", style="muted")
         console.print(f"  Undo with {tui.command('flanner peer autostart off')}", style="muted")
         return
@@ -7814,7 +7814,7 @@ def _offer_autostart() -> None:
     # there (an empty pipe, a script) is a no, never a yes.
     if _ask_yes_no("  Start receiving messages when you log in?", default=True, unattended=False):
         where = autostart.enable()
-        tui.ok("This device will start receiving messages when you log in")
+        tui.ok("This device receives messages now, and whenever you log in")
         console.print(f"  Registered at {tui.code(where)}", style="muted")
     else:
         autostart.decline()

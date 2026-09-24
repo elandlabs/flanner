@@ -7,7 +7,8 @@ reboot, and each platform's own per-user mechanism does that without admin
 rights:
 
 - Windows: a value under `HKCU\\...\\CurrentVersion\\Run`, which runs
-  `flanner peer start` at login with no console window.
+  `flanner peer start` at login with no console window. The same command
+  also runs once when it is registered, as launchctl and systemctl do.
 - macOS: a LaunchAgent in `~/Library/LaunchAgents`.
 - Linux: a systemd user service in `~/.config/systemd/user`.
 
@@ -94,6 +95,14 @@ def _registry_has() -> bool:
     return found
 
 
+def _launch_now(command: str) -> None:
+    """Start the receiver now, with the command the Run entry uses at login."""
+    if sys.platform == "win32":
+        flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+        # Our own interpreter, and a command this module wrote.
+        subprocess.Popen(command, creationflags=flags, close_fds=True)  # noqa: S603
+
+
 def _home() -> Path:
     return identity.flanner_home()
 
@@ -161,7 +170,12 @@ def enable() -> str:
     """Register the receiver to start at login. Returns where it was registered."""
     (_home() / DECLINED).unlink(missing_ok=True)
     if _platform() == "win32":
-        _registry_set(_windows_command())
+        command = _windows_command()
+        _registry_set(command)
+        # launchctl and systemctl start the receiver as they register it; the
+        # Run entry only runs at the next login, so start it now as well.
+        if not receiving():
+            _launch_now(command)
         return rf"HKCU\{_RUN_KEY}\{name()}"
     if _platform() == "darwin":
         path = _plist_path()

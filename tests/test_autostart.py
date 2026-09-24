@@ -91,6 +91,31 @@ def test_the_windows_login_command_is_valid_python_for_this_home():
     assert "'peer','start'" in script
 
 
+def test_windows_registers_the_run_entry_and_starts_receiving_now(home, monkeypatch):
+    """macOS and Linux start the receiver as they register it; so does Windows."""
+    monkeypatch.setattr(autostart, "_platform", lambda: "win32")
+    written: list[str] = []
+    launched: list[str] = []
+    monkeypatch.setattr(autostart, "_registry_set", written.append)
+    monkeypatch.setattr(autostart, "_launch_now", launched.append)
+
+    autostart.enable()
+
+    assert written == launched == [autostart._windows_command()]
+
+
+def test_windows_leaves_a_running_receiver_alone(home, monkeypatch):
+    monkeypatch.setattr(autostart, "_platform", lambda: "win32")
+    launched: list[str] = []
+    monkeypatch.setattr(autostart, "_registry_set", lambda command: None)
+    monkeypatch.setattr(autostart, "_launch_now", launched.append)
+    autostart.beat()
+
+    autostart.enable()
+
+    assert launched == []
+
+
 def test_turning_it_on_forgets_an_earlier_no(home, monkeypatch):
     monkeypatch.setattr(autostart, "_platform", lambda: "linux")
     autostart.decline()
