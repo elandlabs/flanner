@@ -162,23 +162,30 @@ def path_with_first(value: str, folder: str) -> str:
 
 
 def _read_user_path() -> tuple[str, int]:
-    import winreg  # type: ignore[import-not-found,unused-ignore]  # Windows only
+    # A statement, not an early return, so mypy checks this on Windows and
+    # skips it elsewhere, where winreg does not exist.
+    if sys.platform == "win32":
+        import winreg
 
-    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment") as key:
-        try:
-            value, kind = winreg.QueryValueEx(key, "Path")
-        except FileNotFoundError:
-            return "", winreg.REG_EXPAND_SZ
-    return str(value), int(kind)
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment") as key:
+            try:
+                value, kind = winreg.QueryValueEx(key, "Path")
+            except FileNotFoundError:
+                return "", winreg.REG_EXPAND_SZ
+        return str(value), int(kind)
+    raise OSError("the user PATH is in the Windows registry")
 
 
 def _write_user_path(value: str, kind: int) -> None:
-    import winreg  # type: ignore[import-not-found,unused-ignore]  # Windows only
+    if sys.platform == "win32":
+        import winreg
 
-    if kind not in (winreg.REG_SZ, winreg.REG_EXPAND_SZ):
-        kind = winreg.REG_EXPAND_SZ
-    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment", 0, winreg.KEY_SET_VALUE) as key:
-        winreg.SetValueEx(key, "Path", 0, kind, value)
+        if kind not in (winreg.REG_SZ, winreg.REG_EXPAND_SZ):
+            kind = winreg.REG_EXPAND_SZ
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER, "Environment", 0, winreg.KEY_SET_VALUE
+        ) as key:
+            winreg.SetValueEx(key, "Path", 0, kind, value)
 
 
 def _announce_environment_change() -> None:
