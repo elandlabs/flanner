@@ -631,6 +631,11 @@ def _join(proj, *flags, workspace="ws_core"):
     from flanner.database import get_db_path
 
     home = str(Path(get_db_path()).parent)
+    # A relative path would copy the signed-in session below into the
+    # working directory. It happened: SQLAlchemy 2.1 percent-encoded the
+    # path get_db_path() returned, its parent became ".", and a fake login
+    # landed in the repository root as session.json.
+    assert Path(home).is_absolute(), home
 
     # Joining now needs the cached entitlement, and the fixtures save it
     # under the autouse FLANNER_HOME rather than beside the database. Carry
