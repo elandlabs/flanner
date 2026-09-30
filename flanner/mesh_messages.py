@@ -1148,6 +1148,10 @@ def chat(
         previous = row
     session.commit()
 
+    # Muted only when someone wrote here and every one of them is muted. A
+    # chat of only my own messages has no senders, and an empty set is a
+    # subset of any mute list, which read as "muted" after a first send.
+    senders = {r.author_user_id for r in rows if not r.outgoing}
     newest = max(threads, key=lambda thread: thread[-1].sent_at, default=None)
     reply_to = None
     if newest is not None and moment - newest[-1].sent_at < REPLY_WINDOW:
@@ -1168,7 +1172,7 @@ def chat(
         ],
         "muted": (people[0] in silenced)
         if kind == "dm"
-        else bool(rows) and {r.author_user_id for r in rows if not r.outgoing} <= set(silenced),
+        else bool(senders) and senders <= set(silenced),
         "unread": sum(1 for r in rows if not r.outgoing and r.read_at is None),
         "messages": items,
         "reply_to": reply_to,

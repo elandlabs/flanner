@@ -1048,3 +1048,12 @@ def test_a_recipient_with_no_device_is_reported_not_left_out(team, issuer_key):
     assert by_person["carol"]["state"] == "failed"
     assert by_person["carol"]["code"] == refusals.NO_DEVICES
     assert by_person["bob"]["state"] == "queued"
+
+
+def test_a_group_chat_of_only_my_messages_is_not_muted(team):
+    alice, _ = team
+    held(alice.session, "cccc3333", author="alice", to=["bob", "carol"], outgoing=True)
+    mesh_messages.mute(alice.session, "bob")
+    digest = hashlib.sha256(b"bob,carol").hexdigest()[:12]
+
+    assert chat_of(alice, f"grp-{digest}")["muted"] is False
