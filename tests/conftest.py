@@ -43,6 +43,12 @@ def _isolated_flanner_home(tmp_path, monkeypatch):
     monkeypatch.setenv("HOMEDRIVE", fake_home.drive or "")
     monkeypatch.setenv("HOMEPATH", str(fake_home)[len(fake_home.drive) :])
 
+    # One console width for every run. Without a terminal rich falls back to
+    # 80 columns, and a message naming a temp path then wraps mid-phrase
+    # wherever that path is long: under xdist, whose worker directory makes
+    # it longer, but not in a plain run. rich reads COLUMNS on every print.
+    monkeypatch.setenv("COLUMNS", "250")
+
 
 @pytest.fixture
 def db(tmp_path):
