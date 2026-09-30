@@ -178,7 +178,12 @@ def test_an_agent_reaches_the_tools_through_the_launcher(
             await session.initialize()
             tools = {tool.name for tool in (await session.list_tools()).tools}
             answer = await session.call_tool("list_projects", {})
-            return tools, bool(answer.isError)
+            # This client is whatever `pip install mcp` gives, not the
+            # bundle's pin: mcp 2 renamed isError to is_error.
+            failed = getattr(answer, "is_error", None)
+            if failed is None:
+                failed = answer.isError
+            return tools, bool(failed)
 
     tools, failed = asyncio.run(asyncio.wait_for(ask(), timeout=120))
     assert "create_plan_file_tool" in tools
