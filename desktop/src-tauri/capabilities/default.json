@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "flanner-web",
+  "description": "flanner's own web UI, served by the app's sidecar on this machine, may open the native folder dialog and nothing else.",
+  "windows": ["main"],
+  "remote": {
+    "urls": ["http://127.0.0.1:*/*"]
+  },
+  "permissions": ["dialog:allow-open"]
+}

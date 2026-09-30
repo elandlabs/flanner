@@ -23,7 +23,7 @@ import click
 from rich.console import Console
 from rich.text import Text
 
-from . import tui
+from . import release, tui
 from .exceptions import DatabaseError, FlannerError, StorageError
 
 if TYPE_CHECKING:  # annotations only; `from __future__` makes them strings
@@ -274,7 +274,10 @@ class Sectioned(click.Group):
 
 
 @click.group(cls=Sectioned)
-@click.version_option(package_name="flanner")
+@click.version_option(
+    package_name="flanner",
+    message="%(prog)s, version %(version)s" + (" (desktop)" if release.is_desktop() else ""),
+)
 @click.option("--verbose", is_flag=True, help="Show debug output")
 @click.option("--quiet", is_flag=True, help="Only show errors")
 def cli(verbose: bool, quiet: bool) -> None:
@@ -335,6 +338,11 @@ def _say_what_changed() -> None:
     tui.ok(f"Updated: {previous} {tui.ARROW} {__version__}", to=tui.notices)
     if where:
         tui.hint(f"  What changed: {where}", to=tui.notices)
+    if release.tell_about_desktop_app():
+        tui.hint(
+            f"  New: a desktop app, with nothing to install first. {release.DESKTOP_DOWNLOAD}",
+            to=tui.notices,
+        )
     tui.notices.print()
 
 
@@ -7839,6 +7847,45 @@ def peer_stop() -> None:
     _stop_pid(get_peer_pid_file(), "Peer server")
 
 
+@cli.command("desktop-link", hidden=True)
+def desktop_link() -> None:
+    """Point the launchers in FLANNER_HOME/bin at this flanner.
+
+    Run by the desktop app after it installs or updates flanner. Not for
+    people: a pip flanner run by hand would take the launchers over.
+    """
+    from . import desktop
+
+    for path in desktop.link():
+        console.print(str(path))
+
+
+@cli.command("desktop-probe", hidden=True)
+def desktop_probe() -> None:
+    """Print, as JSON, what the desktop app's setup screen shows.
+
+    Where each agent's config lives, and any other flanner on PATH.
+    """
+    from . import desktop
+
+    click.echo(json.dumps(desktop.probe()))
+
+
+@cli.command("desktop-connect", hidden=True)
+def desktop_connect() -> None:
+    """Put the launchers on PATH and register flanner with every agent.
+
+    What the desktop app runs when "Connect to Claude and Codex" is left
+    ticked. Registration is `flanner setup`'s, unchanged. PATH comes first
+    because Claude Code and Codex start the bare `flanner-mcp`.
+    """
+    from . import desktop
+
+    for change in desktop.add_to_path():
+        tui.ok(change)
+    _register_agents_globally()
+
+
 @cli.command("updates")
 @click.argument("choice", required=False, type=click.Choice(["on", "off"]))
 def updates(choice: str | None) -> None:
@@ -7850,6 +7897,11 @@ def updates(choice: str | None) -> None:
     """
     from . import __version__, release
 
+    if release.is_desktop():
+        console.print()
+        tui.ok("The flanner desktop app keeps flanner up to date. Nothing to set here.")
+        console.print()
+        return
     if choice is not None:
         release.set_update_check_consent(choice == "on")
     allowed = release.update_check_consent()
@@ -8471,7 +8523,7 @@ def mesh_read(thread_id: str, as_json: bool) -> None:
 @click.option("--yes", is_flag=True, help="Send without asking (not for workspace messages)")
 @click.option("--json", "as_json", is_flag=True, help="Print the answer as JSON")
 def mesh_send(words: tuple[str, ...], yes: bool, as_json: bool) -> None:
-    """Message one or more teammates: flanner messages send ben chen "text\""""
+    """Message one or more teammates: flanner messages send ben chen "text\" """
     if len(words) < 2:
         raise click.UsageError("name at least one teammate, then the message in quotes")
     _preview_then_send(

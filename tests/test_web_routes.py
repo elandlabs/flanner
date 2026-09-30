@@ -1160,3 +1160,18 @@ def test_no_template_types_a_glyph_the_font_cannot_draw():
         + "\n  ".join(sorted(set(offenders))[:12])
         + "\nDraw it with _icon.html, or measure the font and add it to TYPEABLE."
     )
+
+
+# --- what the desktop app polls ------------------------------------------------
+
+
+def test_waiting_counts_start_at_nothing(client):
+    """The desktop app notifies when one of these rises; an empty store has none."""
+    response = client.get("/nav/waiting")
+
+    assert response.status_code == 200
+    assert response.json() == {"requests": 0, "memories": 0, "review": 0}
+
+
+def test_waiting_counts_are_refused_to_other_sites(client):
+    assert client.get("/nav/waiting", headers={"Host": "evil.example"}).status_code == 403

@@ -217,3 +217,52 @@ def test_turning_it_off_silences_a_notice_already_cached(home):
     assert release.known_newer("0.11.0") == "99.0.0"
     release.set_update_check_consent(False)
     assert release.known_newer("0.11.0") is None
+
+
+# --- the desktop app ------------------------------------------------------------
+
+
+@pytest.fixture
+def desktop(tmp_path, monkeypatch):
+    """The desktop app's flanner: its bundled Python carries the marker file."""
+    prefix = tmp_path / "runtime"
+    prefix.mkdir()
+    (prefix / release.DESKTOP_MARKER).write_text("", encoding="utf-8")
+    monkeypatch.setattr(release.sys, "prefix", str(prefix))
+
+
+def test_an_ordinary_python_is_not_the_desktop_app(tmp_path, monkeypatch):
+    monkeypatch.setattr(release.sys, "prefix", str(tmp_path))
+    assert release.is_desktop() is False
+
+
+def test_the_desktop_app_never_asks_pypi_even_after_a_yes(home, desktop, monkeypatch):
+    """The app updates itself. A pip notice there names a Python nobody chose."""
+    release.set_update_check_consent(True)
+    _seed(latest="99.0.0")
+    monkeypatch.setattr(release, "_spawn_check", lambda: pytest.fail("checked PyPI"))
+
+    assert release.update_check_consent() is False
+    assert release.known_newer("0.11.0") is None
+    assert release.refresh_in_background() is False
+
+
+def test_the_updates_command_sends_desktop_users_to_the_app(home, desktop):
+    from click.testing import CliRunner
+
+    from flanner.cli import cli
+
+    result = CliRunner().invoke(cli, ["updates", "on"])
+    assert result.exit_code == 0
+    assert "desktop app keeps flanner up to date" in result.output
+    assert "update_check" not in release.read_state()
+
+
+def test_the_desktop_app_is_mentioned_once(home):
+    """A pip user hears about the app on one upgrade, not on every one after."""
+    assert release.tell_about_desktop_app() is True
+    assert release.tell_about_desktop_app() is False
+
+
+def test_the_desktop_app_is_never_mentioned_inside_it(home, desktop):
+    assert release.tell_about_desktop_app() is False

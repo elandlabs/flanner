@@ -616,3 +616,11 @@ def test_turning_them_on_in_a_build_with_no_address_changes_nothing(monkeypatch)
     assert on.exit_code == 0
     assert "not available in this build" in on.output
     assert not crash.asked()
+
+
+def test_the_desktop_app_is_its_own_install_kind(tmp_path, monkeypatch):
+    """Crash reports have to say which install broke, and the app is one."""
+    (tmp_path / release.DESKTOP_MARKER).write_text("", encoding="utf-8")
+    monkeypatch.setattr(release.sys, "prefix", str(tmp_path))
+    assert crash.install_kind() == "desktop"
+    assert "desktop" in crash.INSTALL_KINDS

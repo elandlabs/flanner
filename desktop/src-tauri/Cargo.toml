@@ -1,0 +1,28 @@
+[package]
+name = "flanner-desktop"
+version = "0.14.0"
+description = "The flanner desktop app: a window over flanner's own web UI"
+license = "MIT"
+edition = "2021"
+publish = false
+
+[build-dependencies]
+tauri-build = { version = "2.6.3", features = [] }
+
+[dependencies]
+tauri = { version = "2.11.6", features = ["tray-icon"] }
+tauri-plugin-dialog = "2.7.3"
+tauri-plugin-single-instance = "2.4.5"
+tauri-plugin-autostart = "2.5.1"
+tauri-plugin-notification = "2.4.0"
+tauri-plugin-updater = "2.12.0"
+serde_json = "1.0.151"
+
+[target.'cfg(windows)'.dependencies]
+win32job = "2.0.3"
+
+[profile.release]
+# A small shell: all the weight is the Python runtime beside it.
+lto = true
+opt-level = "s"
+strip = true

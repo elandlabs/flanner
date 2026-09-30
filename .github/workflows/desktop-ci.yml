@@ -1,0 +1,131 @@
+name: Desktop
+
+# The desktop app's runtime: python-build-standalone with flanner installed,
+# and the launchers the app points agents at. It runs only when something the
+# runtime depends on changes, so flanner's own CI stays as it was.
+on:
+  pull_request:
+    branches: [main, development]
+    paths: &paths
+      - "desktop/**"
+      - "flanner/desktop.py"
+      - "flanner/release.py"
+      - "flanner/claude_integration.py"
+      - "flanner/cli.py"
+      - "flanner/server.py"
+      - "flanner/web/**"
+      - "pyproject.toml"
+      - ".github/workflows/desktop-ci.yml"
+  push:
+    branches: [main]
+    paths: *paths
+  workflow_dispatch:
+
+jobs:
+  runtime:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # One failing platform must not cancel the others: the point of
+      # running three is to learn which one broke.
+      fail-fast: false
+      matrix:
+        # macos-latest is Apple silicon, the only Mac the app ships for.
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Lint
+        if: runner.os == 'Linux'
+        run: |
+          pip install ruff
+          ruff check desktop/
+          ruff format --check desktop/
+      # Solved from the committed lock, not from nothing: uv keeps its pins,
+      # so this fails only when pyproject.toml needs something the lock does
+      # not give it, never because some dependency published a release.
+      - name: The runtime lock covers what pyproject declares
+        if: runner.os == 'Linux'
+        run: |
+          pip install uv
+          cp desktop/bundle/runtime.lock /tmp/expected.lock
+          uv pip compile pyproject.toml --universal --generate-hashes --python-version 3.12 --no-header -o /tmp/expected.lock --quiet
+          diff -u desktop/bundle/runtime.lock /tmp/expected.lock || {
+            echo "::error::desktop/bundle/runtime.lock is behind pyproject.toml. Regenerate it:"
+            echo "  uv pip compile pyproject.toml --universal --generate-hashes --python-version 3.12 --no-header -o desktop/bundle/runtime.lock"
+            exit 1
+          }
+      # The python-build-standalone archive is pinned by checksum in the
+      # builder, so a cache keyed on the builder cannot serve a stale one.
+      - uses: actions/cache@v4
+        with:
+          path: build/cache
+          key: pbs-${{ runner.os }}-${{ hashFiles('desktop/bundle/build_runtime.py') }}
+      - name: Build this commit's wheel
+        run: |
+          pip install build
+          python -m build --wheel -o build/dist
+      - name: Build the runtime
+        shell: bash
+        run: python desktop/bundle/build_runtime.py --flanner build/dist/flanner-*.whl
+      - name: Smoke-test the runtime
+        shell: bash
+        run: |
+          pip install pytest mcp
+          FLANNER_RUNTIME=build/runtime pytest desktop/tests/smoke -v -p no:cacheprovider
+      # The app itself. Windows drives its window through WebView2's DevTools
+      # port; Linux through tauri-driver on a virtual display; macOS has no
+      # WebDriver for its webview, so it builds and runs the Rust tests, and
+      # its native parts are on the manual release checklist.
+      - name: Install the Linux webview and its WebDriver
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+            librsvg2-dev patchelf webkit2gtk-driver xvfb
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+      - name: Check and build the app
+        shell: bash
+        working-directory: desktop/src-tauri
+        run: |
+          rustup component add rustfmt clippy
+          cargo fmt --check
+          cargo clippy --all-targets -- -D warnings
+          cargo test
+          cargo build
+      - name: Test the app's window (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          pip install playwright
+          FLANNER_DESKTOP_APP=desktop/src-tauri/target/debug/flanner-desktop.exe \
+            FLANNER_RUNTIME=build/runtime pytest desktop/tests/e2e -v -p no:cacheprovider
+      # A test build: the throwaway key from update_signing.py and an update
+      # address on this runner, so a tampered download can be refused and a
+      # signed one installed. Release builds never carry either.
+      - name: Test updates (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          pip install cryptography
+          (cd desktop/src-tauri && TAURI_CONFIG="$(python ../tests/e2e/update_signing.py)" cargo build)
+          FLANNER_DESKTOP_UPDATE_APP=desktop/src-tauri/target/debug/flanner-desktop.exe \
+            FLANNER_RUNTIME=build/runtime pytest desktop/tests/e2e/test_updates_windows.py -v -p no:cacheprovider
+      - name: Test the app's window (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          cargo install tauri-driver --locked
+          pip install selenium
+          # Exported before tauri-driver starts: it hands its environment to the app.
+          export FLANNER_DESKTOP_APP=$PWD/desktop/src-tauri/target/debug/flanner-desktop
+          export FLANNER_DESKTOP_RUNTIME=$PWD/build/runtime FLANNER_NO_KEYCHAIN=1
+          export FLANNER_HOME=$(mktemp -d) FLANNER_DESKTOP_DATA=$(mktemp -d)
+          xvfb-run --auto-servernum bash -c '
+            tauri-driver & driver=$!
+            sleep 3
+            pytest desktop/tests/e2e -v -p no:cacheprovider; status=$?
+            kill $driver
+            exit $status'

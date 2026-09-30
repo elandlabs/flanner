@@ -79,6 +79,27 @@ versioning follows [SemVer](https://semver.org/).
   the signed roster, so a teammate cannot choose what they are shown as. A
   roster from an older control plane carries no handles or names; people
   on it then show as `@` and the first eight characters of their user id.
+- **A desktop app for Windows, macOS and Linux.** The same flanner, with
+  nothing to install first: it bundles its own Python, shows the web UI in
+  a window, and puts `flanner` and `flanner-mcp` on your PATH.
+  - The first start asks whether to connect flanner to Claude and Codex.
+    It is ticked, and the screen lists exactly what connecting changes:
+    your PATH, Claude Desktop's config, Claude Code's user registration,
+    `~/.claude/CLAUDE.md`, and Codex's config, each only when present.
+  - Already installed with pip? The app asks which flanner to use. Keep
+    yours and the app only shows its window.
+  - A tray icon: background sync (runs `flanner peer serve` and restarts
+    it), start at login, and "Restart to update" when a signed update is
+    ready. Updates are checked daily and verified before anything runs.
+  - A notice when an agent request, a memory suggestion or a Review item
+    starts waiting on you.
+  - Browse opens the system's own folder dialog.
+  - Windows 10 and 11 (x64), macOS 12 or later on Apple silicon, and
+    Linux (x64, AppImage or .deb). Download from flanner.io/download.
+- `GET /nav/waiting` in the web UI: the "Needs you" counts as JSON.
+- Pip users are told once, on the upgrade that brings it, that the
+  desktop app exists.
+
 ### Changed
 - **The web UI draws the wordmark and favicon from the brand kit.** The
   rail and the footer showed the name typed in Geist beside a CSS dot; they
@@ -100,6 +121,12 @@ versioning follows [SemVer](https://semver.org/).
   folder that holds a folder named `flanner`, such as a home directory with
   a checkout in it: it imported that folder instead of the package. It now
   starts from the flanner home.
+- **A flanner left running across an upgrade no longer writes to the
+  upgraded database.** The `flanner-mcp` that Claude or Codex started, a
+  peer server, or the web UI checked the database version only when it
+  started. After an upgrade migrated the database, it went on saving rows
+  the new version did not expect. It now refuses the write and says to
+  restart it; nothing is saved.
 
 ## [0.14.0] - 2026-09-18
 

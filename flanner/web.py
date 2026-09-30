@@ -1040,6 +1040,25 @@ async def nav_attention(request: Request) -> dict[str, int]:
     return {"count": await run_in_threadpool(_attention_count, session)}
 
 
+@app.get("/nav/waiting")
+async def nav_waiting() -> dict[str, int]:
+    """What is waiting on this person, as numbers.
+
+    The same counts as the dashboard's "Needs you" card, without the page
+    around them. The desktop app polls this and says so when one rises.
+    Messages are not here: `flanner peer serve` already announces those.
+    """
+    from .assurance import count_review_subjects
+
+    ensure_db()
+    session = get_session()
+    return {
+        "requests": len(actions.recent(session, limit=0, state=actions.PENDING)),
+        "memories": count_memories(session, status="proposed"),
+        "review": count_review_subjects(session),
+    }
+
+
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request) -> HTMLResponse:
     """What is waiting on you, then your projects and what changed lately.

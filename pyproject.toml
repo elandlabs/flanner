@@ -124,6 +124,9 @@ ignore_missing_imports = true
 [tool.ruff]
 line-length = 99
 target-version = "py310"
+# The desktop shell's Rust build output holds a copy of the bundled Python
+# runtime, CPython's own library included. Never ours to lint or format.
+extend-exclude = ["desktop/src-tauri/target"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "S"]
@@ -131,6 +134,7 @@ select = ["E", "F", "W", "I", "B", "UP", "S"]
 # assert, hardcoded tmp paths, and a 0.0.0.0 bind literal (to test the
 # non-local-bind warning) are fine in tests and benchmarks
 "tests/*" = ["S101", "S104", "S105", "S107", "S108", "S603", "S607"]
+"desktop/tests/*" = ["S101", "S603", "S607"]
 # A test suite that happens to be packaged, so adapter authors can run it.
 "flanner/mesh_conformance.py" = ["S101"]
 "benchmarks/*" = ["S101", "S603", "S607"]

@@ -6,6 +6,7 @@ Handles automatic registration of MCP server with Claude Code.
 
 import json
 import logging
+import os
 import platform
 import sys
 from pathlib import Path
@@ -108,11 +109,25 @@ def write_claude_config(config: dict[str, Any]) -> bool:
         return False
 
 
+def mcp_launcher() -> Path | None:
+    """The desktop app's fixed `flanner-mcp` launcher, if it installed one.
+
+    The app keeps each version's Python in its own folder and repoints this
+    launcher on every update, so a config that names the launcher survives
+    updates. One that named the interpreter would break on the first one.
+    """
+    home = Path(os.environ.get("FLANNER_HOME", Path.home() / ".flanner"))
+    name = "flanner-mcp.exe" if sys.platform == "win32" else "flanner-mcp"
+    path = home / "bin" / name
+    return path if path.is_file() else None
+
+
 def get_local_server_config() -> dict[str, Any]:
     """
     Get the configuration for the local MCP server.
 
-    Uses the absolute path of the interpreter that ran `flanner init`
+    The desktop app's launcher when there is one (`mcp_launcher`). Otherwise
+    the absolute path of the interpreter that ran `flanner init`
     (``sys.executable``) with ``-m flanner.server``. That interpreter is the one
     flanner is installed into, so the invocation is independent of the client
     app's PATH and can't hit a "module not found" from a stray `python`. Bare
@@ -123,6 +138,9 @@ def get_local_server_config() -> dict[str, Any]:
     Returns:
         Server configuration dictionary
     """
+    launcher = mcp_launcher()
+    if launcher is not None:
+        return {"command": str(launcher), "args": [], "env": {}}
     return {
         "command": sys.executable,
         "args": ["-m", "flanner.server"],

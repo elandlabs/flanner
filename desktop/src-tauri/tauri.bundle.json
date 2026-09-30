@@ -1,0 +1,28 @@
+{
+  "bundle": {
+    "active": true,
+    "createUpdaterArtifacts": true,
+    "publisher": "Eland Labs",
+    "homepage": "https://flanner.io",
+    "copyright": "MIT licensed",
+    "category": "DeveloperTool",
+    "shortDescription": "Plan files and memory for your AI agents",
+    "longDescription": "The flanner desktop app: flanner's web UI in a window, the flanner command line, and the MCP server Claude and Codex use, with background sync and updates.",
+    "resources": {
+      "../../build/runtime/": "runtime/"
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    },
+    "macOS": {
+      "minimumSystemVersion": "12.0"
+    },
+    "linux": {
+      "appimage": {
+        "bundleMediaFramework": false
+      }
+    }
+  }
+}

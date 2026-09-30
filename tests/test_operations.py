@@ -21,6 +21,7 @@ from flanner import operations
 PLUMBING = {
     "GET /projects/freshness-mix",
     "GET /nav/attention",
+    "GET /nav/waiting",
     "GET /events",
     "GET /plans/{plan_id}/revision",
     "GET /freshness/stream",

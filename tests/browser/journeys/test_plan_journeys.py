@@ -6,6 +6,7 @@ drives the same controls a person does; nothing posts to a route directly.
 
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 import uuid
@@ -59,6 +60,53 @@ def test_a_repository_can_be_adopted_through_the_text_input(page: Page, empty_re
 
     expect(page).to_have_url(re.compile(r"/projects/[0-9a-f-]{36}$"))
     expect(page.get_by_role("heading", name="ledger-", exact=False)).to_be_visible()
+
+
+def _as_the_desktop_app(page: Page, answer: str | None) -> None:
+    """Give the page the object Tauri injects, with a dialog that answers `answer`.
+
+    The server's Tk dialog is never reached, which is what makes the Browse
+    buttons safe to press on a runner. Calls land in `window.__dialogCalls`.
+    """
+    page.add_init_script(
+        "window.__dialogCalls = [];"
+        "window.__TAURI__ = { dialog: { open: async (options) => {"
+        " window.__dialogCalls.push(options); return " + json.dumps(answer) + "; } } };"
+    )
+
+
+def test_inside_the_desktop_app_browse_uses_the_apps_folder_dialog(
+    page: Page, empty_repo: Path
+) -> None:
+    """The app's native dialog fills both fields; the plan directory relative."""
+    plans = empty_repo / "docs" / "plans"
+    plans.mkdir(parents=True)
+    _as_the_desktop_app(page, str(empty_repo))
+    form = NewProjectPage(page)
+    form.open()
+
+    page.get_by_role("button", name="Browse for the project root").click()
+    expect(page.get_by_role("textbox", name="Project root")).to_have_value(
+        str(empty_repo.resolve())
+    )
+    calls = page.evaluate("window.__dialogCalls")
+    assert calls[0]["directory"] is True
+
+    page.evaluate("p => { window.__TAURI__.dialog.open = async () => p; }", str(plans))
+    page.get_by_role("button", name="Browse for the plan directory").click()
+    expect(page.get_by_role("textbox", name="Plan directory")).to_have_value("docs/plans")
+
+
+def test_cancelling_the_desktop_apps_dialog_changes_nothing(page: Page) -> None:
+    _as_the_desktop_app(page, None)
+    form = NewProjectPage(page)
+    form.open()
+    page.get_by_role("textbox", name="Project root").fill("~/kept")
+
+    page.get_by_role("button", name="Browse for the project root").click()
+
+    expect(page.get_by_role("textbox", name="Project root")).to_have_value("~/kept")
+    expect(page.locator("dialog[open]")).to_have_count(0)
 
 
 def test_a_folder_that_is_not_a_repository_is_refused_with_what_was_typed(
