@@ -1382,7 +1382,8 @@ def get_db_path() -> str | None:
     """Get the current database path"""
     if _engine is None:
         return None
-    return str(_engine.url).replace("sqlite:///", "")
+    # The parsed path, not str(url): SQLAlchemy 2.1 percent-encodes it there.
+    return _engine.url.database
 
 
 # CRUD Operations
