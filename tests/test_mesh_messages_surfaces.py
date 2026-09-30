@@ -111,8 +111,9 @@ def test_json_shows_the_preview_on_stderr_before_asking(signed_in):
     assert "@bob (Bob)" in result.stderr
     assert "drop the old column?" in result.stderr
     assert "Send it?" in result.stderr
-    # CliRunner echoes the typed answer to stdout; a terminal would not.
-    assert result.stdout.strip() == "n"
+    # CliRunner echoes the typed answer: to stdout before click 8.5, to the
+    # prompt's stream (stderr) from 8.5. Either way no preview on stdout.
+    assert result.stdout.strip() in ("", "n")
     assert get_session().query(MeshMessageModel).count() == 0
 
 
