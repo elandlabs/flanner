@@ -134,6 +134,10 @@ AMBIGUOUS_ID: Final = "ambiguous_id"
 #: answered "unknown operation". Retrying cannot help until it upgrades.
 PEER_OUTDATED: Final = "peer_outdated"
 
+#: The recipient is on the team but has no enrolled device, so nothing
+#: can take the message. Retrying cannot help until they enrol one.
+NO_DEVICES: Final = "no_devices"
+
 #: Never sent. What a client uses for a code it does not recognise, so that
 #: "an old client met a new server" is a case with a name rather than a
 #: KeyError.
@@ -171,6 +175,7 @@ KNOWN: Final = frozenset(
         MESSAGE_EXPIRED,
         AMBIGUOUS_ID,
         PEER_OUTDATED,
+        NO_DEVICES,
     }
 )
 

@@ -41,7 +41,7 @@ def a_roster(issuer_key, people, *, retention=None, expires=timedelta(hours=1)):
                 {
                     "user_id": p.user,
                     "role": p.role,
-                    "devices": [p.device_id],
+                    "devices": [p.device_id] if p.device_id else [],
                     "handle": p.user,
                     "name": p.user.title(),
                 }
@@ -1028,3 +1028,23 @@ def test_a_send_waits_one_deadline_not_one_per_device(team):
     release.set()
     assert elapsed < 2, f"took {elapsed:.1f}s for a 0.3s deadline"
     assert all(r.state == mesh_messages.QUEUED for r in rows), "unanswered stays queued"
+
+
+def test_a_recipient_with_no_device_is_reported_not_left_out(team, issuer_key):
+    from types import SimpleNamespace
+
+    alice, bob = team
+    carol = SimpleNamespace(user="carol", role=EDITOR, device_id=None)
+    alice.join([alice, bob], roster=a_roster(issuer_key, [alice, bob, carol]))
+
+    sent = alice.send(
+        to=["bob", "carol"],
+        body="standup at 10",
+        dial=lambda *a: (_ for _ in ()).throw(peer.PeerError("offline")),
+    )
+
+    by_person = {d["user_id"]: d for d in sent["delivery"]}
+    assert set(by_person) == {"bob", "carol"}, "the preview named carol, so must the report"
+    assert by_person["carol"]["state"] == "failed"
+    assert by_person["carol"]["code"] == refusals.NO_DEVICES
+    assert by_person["bob"]["state"] == "queued"

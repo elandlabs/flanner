@@ -224,6 +224,23 @@ def record_outgoing(
     moment = now or now_utc()
     row = _store(session, envelope, json.loads(payload), payload, outgoing=True)
     for user_id, device_ids in devices.items():
+        if not device_ids:
+            # On the roster with no enrolled device: nothing can take it. A
+            # failed row still says so, where no row left the person out of
+            # the delivery report entirely, as if they were never addressed.
+            # The device id is per person, so two such people cannot collide.
+            session.add(
+                MeshDeliveryModel(
+                    message_id=envelope.artifact_id,
+                    user_id=user_id,
+                    device_id=f"no-device:{user_id}",
+                    state=FAILED,
+                    queued_at=moment,
+                    next_attempt_at=None,
+                    code=refusals.NO_DEVICES,
+                    detail="They have no device enrolled, so nothing can receive it yet.",
+                )
+            )
         for device_id in device_ids:
             session.add(
                 MeshDeliveryModel(
