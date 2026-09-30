@@ -987,3 +987,44 @@ def test_one_messaging_setting_keeps_the_other(db):
     mesh_messages.set_interrupt("prompt")
 
     assert mesh_messages.settings() == {"interrupt": "prompt", "notifications": "off"}
+
+
+# --- review findings: deadline, people without devices, muted with no senders ---
+
+
+def test_a_send_waits_one_deadline_not_one_per_device(team):
+    """Twenty unreachable devices used to cost up to twenty waits in turn."""
+    import threading
+    import time
+
+    alice, _ = team
+    sent = alice.send(
+        to=["bob"], body="hello", dial=lambda *a: (_ for _ in ()).throw(peer.PeerError("offline"))
+    )
+    message = sent["message_id"]
+    rows = []
+    for n in range(20):
+        row = MeshDeliveryModel(
+            message_id=message,
+            user_id="bob",
+            device_id=f"dev_slow_{n}",
+            state=mesh_messages.QUEUED,
+            queued_at=NOW,
+            next_attempt_at=NOW,
+        )
+        alice.session.add(row)
+        rows.append(row)
+    alice.session.commit()
+    release = threading.Event()
+
+    class Hangs:
+        def _post(self, operation, body):
+            release.wait(5)
+
+    started = time.monotonic()
+    with alice.active():
+        mesh_delivery.attempt(alice.session, rows, dial=lambda *a: Hangs(), wait=0.3)
+    elapsed = time.monotonic() - started
+    release.set()
+    assert elapsed < 2, f"took {elapsed:.1f}s for a 0.3s deadline"
+    assert all(r.state == mesh_messages.QUEUED for r in rows), "unanswered stays queued"

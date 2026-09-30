@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 from collections.abc import Callable
 from datetime import timedelta
 from typing import Any
@@ -240,8 +241,12 @@ def attempt(
     threads = [threading.Thread(target=run, args=job, daemon=True) for job in work]
     for thread in threads:
         thread.start()
+    # One deadline for the whole send. A timeout per join added up: each
+    # blocked dial, and each one queued behind the semaphore, could spend
+    # another full `wait`, so a send to many unreachable devices took minutes.
+    deadline = time.monotonic() + wait
     for thread in threads:
-        thread.join(timeout=wait)
+        thread.join(timeout=max(0.0, deadline - time.monotonic()))
 
     with lock:
         finished = dict(outcomes)
