@@ -84,8 +84,10 @@ def test_a_first_start_asks_with_connect_already_ticked(driver: Any) -> None:
     from selenium.webdriver.common.by import By
 
     _until(
-        lambda: driver.find_elements(By.ID, "connect")
-        and driver.find_element(By.ID, "setup").is_displayed()
+        lambda: (
+            driver.find_elements(By.ID, "connect")
+            and driver.find_element(By.ID, "setup").is_displayed()
+        )
     )
     assert driver.find_element(By.ID, "connect").is_selected()
     assert "PATH" in driver.find_element(By.ID, "changes").text
