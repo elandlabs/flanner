@@ -3,6 +3,7 @@
 
 use std::fs;
 use std::io::Write;
+use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
 
@@ -88,6 +89,8 @@ pub async fn install(app: &AppHandle) {
         }
         Err(error) => {
             note(app, &format!("refused: {error}"));
+            // The tray still offers it, so keep it there to try again.
+            put_back(&app.state::<crate::State>().update, update);
             crate::notify(
                 app,
                 "The update was not installed",
@@ -95,6 +98,12 @@ pub async fn install(app: &AppHandle) {
             );
         }
     }
+}
+
+/// Return an update that did not install, so "Restart to update" works
+/// again, unless a newer check has offered another one meanwhile.
+fn put_back<T>(slot: &Mutex<Option<T>>, update: T) {
+    slot.lock().expect("update lock").get_or_insert(update);
 }
 
 /// One line per event in logs/updates.log: what the tests and a bug report read.
@@ -110,5 +119,24 @@ fn note(app: &AppHandle, line: &str) {
         .open(logs.join("updates.log"))
     {
         let _ = writeln!(file, "{line}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_failed_update_is_offered_again() {
+        let slot = Mutex::new(None);
+        put_back(&slot, "1.2.0");
+        assert_eq!(*slot.lock().unwrap(), Some("1.2.0"));
+    }
+
+    #[test]
+    fn a_newer_offer_is_not_replaced_by_the_failed_one() {
+        let slot = Mutex::new(Some("1.3.0"));
+        put_back(&slot, "1.2.0");
+        assert_eq!(*slot.lock().unwrap(), Some("1.3.0"));
     }
 }
