@@ -333,10 +333,18 @@ fn start_sync(app: &AppHandle) {
         chosen,
         data.clone(),
         data.join("logs").join("sync.log"),
-        move |reason| {
-            set_sync_ticked(&handle, false);
-            remember(&handle, "sync", json!(false));
-            notify(&handle, "Background sync stopped", &reason);
+        move |reason, generation| {
+            // On the main thread, where the tray toggle starts sync, so the
+            // check and the writes cannot interleave with a new start.
+            let app = handle.clone();
+            let _ = handle.run_on_main_thread(move || {
+                if !app.state::<State>().sync.still_given_up(generation) {
+                    return; // started again since: this report is stale
+                }
+                set_sync_ticked(&app, false);
+                remember(&app, "sync", json!(false));
+                notify(&app, "Background sync stopped", &reason);
+            });
         },
     );
 }

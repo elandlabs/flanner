@@ -30,13 +30,15 @@ pub struct Sync {
 
 impl Sync {
     /// Start `peer serve` and restart it whenever it stops, until `stop`.
-    /// `gave_up` receives the last line peer serve logged.
+    /// `gave_up` receives the last line peer serve logged, and the generation
+    /// that gave up: the caller rechecks it with `still_given_up` where it
+    /// applies the report, since a new start can land after `retire`.
     pub fn start(
         self: &Arc<Self>,
         flanner: Flanner,
         cwd: PathBuf,
         log: PathBuf,
-        gave_up: impl Fn(String) + Send + 'static,
+        gave_up: impl Fn(String, u64) + Send + 'static,
     ) {
         if self.wanted.swap(true, Ordering::SeqCst) {
             return; // already running
@@ -65,7 +67,7 @@ impl Sync {
                     }
                     Err(error) => {
                         if this.retire(mine) {
-                            gave_up(error.to_string());
+                            gave_up(error.to_string(), mine);
                         }
                         return;
                     }
@@ -81,7 +83,7 @@ impl Sync {
                 };
                 if quick_stops >= GIVE_UP_AFTER {
                     if this.retire(mine) {
-                        gave_up(last_line(&log));
+                        gave_up(last_line(&log), mine);
                     }
                     return;
                 }
@@ -106,6 +108,14 @@ impl Sync {
         }
         self.wanted.store(false, Ordering::SeqCst);
         true
+    }
+
+    /// Whether `generation` gave up and nothing has started or stopped
+    /// since. A give-up report is applied only while this holds, checked on
+    /// the thread that starts sync, so a stale report cannot untick the tray
+    /// or save `sync: false` over a supervisor started after it.
+    pub fn still_given_up(&self, generation: u64) -> bool {
+        !self.wanted.load(Ordering::SeqCst) && self.generation.load(Ordering::SeqCst) == generation
     }
 
     /// Polls, so `stop` can take the child from under it. A superseded
@@ -193,5 +203,10 @@ mod tests {
 
         assert!(sync.retire(second));
         assert!(!sync.wanted.load(Ordering::SeqCst));
+        assert!(sync.still_given_up(second));
+        // Started again before the report was applied: it must be dropped.
+        sync.wanted.store(true, Ordering::SeqCst);
+        sync.generation.fetch_add(1, Ordering::SeqCst);
+        assert!(!sync.still_given_up(second));
     }
 }
