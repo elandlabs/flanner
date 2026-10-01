@@ -64,8 +64,9 @@ impl Sync {
                         }
                     }
                     Err(error) => {
-                        this.wanted.store(false, Ordering::SeqCst);
-                        gave_up(error.to_string());
+                        if this.retire(mine) {
+                            gave_up(error.to_string());
+                        }
                         return;
                     }
                 }
@@ -79,8 +80,9 @@ impl Sync {
                     0
                 };
                 if quick_stops >= GIVE_UP_AFTER {
-                    this.wanted.store(false, Ordering::SeqCst);
-                    gave_up(last_line(&log));
+                    if this.retire(mine) {
+                        gave_up(last_line(&log));
+                    }
                     return;
                 }
                 thread::sleep(Duration::from_secs(5 * u64::from(quick_stops)));
@@ -90,6 +92,20 @@ impl Sync {
 
     fn current(&self, generation: u64) -> bool {
         self.wanted.load(Ordering::SeqCst) && self.generation.load(Ordering::SeqCst) == generation
+    }
+
+    /// Gives up on sync for `generation`, and says whether it may report so.
+    /// Only the current supervisor may: a superseded one that clears
+    /// `wanted` would switch off the newer one and the user's preference.
+    /// Held under the lock `stop` takes, and `start` cannot begin a new
+    /// generation while `wanted` is still set, so nothing slips in between.
+    fn retire(&self, generation: u64) -> bool {
+        let _slot = self.child.lock().expect("sync lock");
+        if !self.current(generation) {
+            return false;
+        }
+        self.wanted.store(false, Ordering::SeqCst);
+        true
     }
 
     /// Polls, so `stop` can take the child from under it. A superseded
@@ -158,5 +174,24 @@ mod tests {
             "the old one must not carry on beside the new one"
         );
         assert!(sync.current(second));
+    }
+
+    #[test]
+    fn only_the_current_supervisor_may_give_up() {
+        let sync = Sync::default();
+        sync.wanted.store(true, Ordering::SeqCst);
+        let first = sync.generation.fetch_add(1, Ordering::SeqCst) + 1;
+        sync.stop();
+        sync.wanted.store(true, Ordering::SeqCst);
+        let second = sync.generation.fetch_add(1, Ordering::SeqCst) + 1;
+
+        assert!(
+            !sync.retire(first),
+            "a superseded supervisor must not report"
+        );
+        assert!(sync.current(second), "nor switch off the newer one");
+
+        assert!(sync.retire(second));
+        assert!(!sync.wanted.load(Ordering::SeqCst));
     }
 }
