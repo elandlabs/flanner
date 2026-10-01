@@ -7793,6 +7793,11 @@ def peer_autostart(choice: str | None) -> None:
             tui.ok("Removed. This device no longer starts receiving at login.")
         else:
             console.print("Nothing was registered for this device.", style="dim")
+        # launchctl and systemctl stop the service as they remove it. The
+        # Windows Run entry only names a command, so the receiver `on`
+        # started for this session keeps running until it is stopped here.
+        if sys.platform == "win32" and _running_pid(get_peer_pid_file()) is not None:
+            _stop_pid(get_peer_pid_file(), "Receiving")
         autostart.decline()
         return
     state = "on" if autostart.enabled() else "off"

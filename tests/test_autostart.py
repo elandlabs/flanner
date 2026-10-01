@@ -172,6 +172,25 @@ def test_linux_keeps_the_unit_when_systemd_refuses_to_disable_it(home, monkeypat
     assert autostart.enabled()
 
 
+def test_off_on_windows_stops_the_receiver_on_started(home, monkeypatch, tmp_path):
+    """The Run entry only names a command; `on` also started a receiver now."""
+    from click.testing import CliRunner
+
+    from flanner import cli
+
+    monkeypatch.setattr(cli.sys, "platform", "win32")
+    monkeypatch.setattr(autostart, "disable", lambda: True)
+    monkeypatch.setattr(autostart, "decline", lambda: None)
+    monkeypatch.setattr(cli, "_running_pid", lambda path: 4242)
+    stopped = []
+    monkeypatch.setattr(cli, "_stop_pid", lambda path, what: stopped.append(path))
+
+    result = CliRunner().invoke(cli.cli, ["peer", "autostart", "off"])
+
+    assert result.exit_code == 0, result.output
+    assert stopped == [cli.get_peer_pid_file()]
+
+
 def test_off_says_so_when_the_login_service_cannot_be_removed(home, monkeypatch):
     from click.testing import CliRunner
 
