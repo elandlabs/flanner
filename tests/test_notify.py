@@ -46,7 +46,7 @@ def test_the_text_travels_in_the_environment_not_the_command(monkeypatch):
         return subprocess.CompletedProcess(command, 0)
 
     monkeypatch.setenv(notify.ENV, "on")
-    monkeypatch.setattr(notify.shutil, "which", lambda _: "/usr/bin/notify-send")
+    monkeypatch.setattr(notify.shutil, "which", lambda _, path=None: "/usr/bin/notify-send")
     monkeypatch.setattr(subprocess, "run", run)
 
     hostile = '"; rm -rf ~; echo "'
@@ -88,7 +88,7 @@ def test_the_link_travels_in_the_environment_too(monkeypatch):
         return subprocess.CompletedProcess(command, 0)
 
     monkeypatch.setenv(notify.ENV, "on")
-    monkeypatch.setattr(notify.shutil, "which", lambda _: "/usr/bin/notify-send")
+    monkeypatch.setattr(notify.shutil, "which", lambda _, path=None: "/usr/bin/notify-send")
     monkeypatch.setattr(subprocess, "run", run)
     notify.desktop("flanner", "hi", "http://127.0.0.1:8080/mesh/messages/abcd")
     assert seen["env"]["FLANNER_NOTE_URL"].endswith("/abcd")
