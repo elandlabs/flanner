@@ -199,7 +199,10 @@ def enable() -> str:
             )
         )
         if not _run("launchctl", "load", "-w", str(path)):
-            disable()
+            # Not `disable()`: it keeps an agent launchctl will not let go of,
+            # and this one never took. Undo it best-effort, then report.
+            _run("launchctl", "unload", "-w", str(path))
+            path.unlink(missing_ok=True)
             raise AutostartError(
                 "launchctl could not load the login agent, so nothing starts at login. "
                 f"{_MEANWHILE}"
@@ -240,7 +243,12 @@ def disable() -> bool:
         path = _plist_path()
         if not path.exists():
             return False
-        _run("launchctl", "unload", "-w", str(path))
+        # Keep the agent when launchctl refuses, as for systemd below.
+        if not _run("launchctl", "unload", "-w", str(path)):
+            raise AutostartError(
+                "launchctl could not unload the login agent, so it is still registered. "
+                f"Check `launchctl list io.flanner.{name()}` and try again."
+            )
         path.unlink()
         return True
     path = _unit_path()

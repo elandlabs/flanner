@@ -191,6 +191,17 @@ def test_off_on_windows_stops_the_receiver_on_started(home, monkeypatch, tmp_pat
     assert stopped == [cli.get_peer_pid_file()]
 
 
+def test_macos_keeps_the_agent_when_launchctl_refuses_to_unload_it(home, monkeypatch):
+    monkeypatch.setattr(autostart, "_platform", lambda: "darwin")
+    where = autostart.enable()
+    monkeypatch.setattr(autostart, "_run", lambda *argv: "unload" not in argv)
+
+    with pytest.raises(autostart.AutostartError, match="launchctl could not unload"):
+        autostart.disable()
+    assert Path(where).exists(), "kept, so the next `off` can retry"
+    assert autostart.enabled()
+
+
 def test_off_says_so_when_the_login_service_cannot_be_removed(home, monkeypatch):
     from click.testing import CliRunner
 
