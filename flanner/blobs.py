@@ -27,6 +27,7 @@ import hashlib
 import os
 import shutil
 import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -41,6 +42,10 @@ BLOB_DIR = Path("blobs") / "sha256"
 
 #: How many leading hex characters name the shard directory.
 SHARD = 2
+
+#: A `.part` this old was left by an attach that died; a live one is
+#: younger. Generous, so a slow attach of a large file is never cut off.
+PARTIAL_MAX_AGE_SECONDS = 24 * 60 * 60
 
 #: What a file's first bytes say it is.
 #:
@@ -244,19 +249,28 @@ def collect(home: Path, *, keep: set[str]) -> tuple[int, int]:
 
     removed = 0
     freed = 0
+
+    def remove(blob: Path) -> None:
+        nonlocal removed, freed
+        try:
+            size = blob.stat().st_size
+            blob.unlink()
+        except OSError as e:  # pragma: no cover - reported, never fatal
+            raise StorageError(f"could not remove {blob}: {e}") from None
+        removed += 1
+        freed += size
+
+    # `store` writes its temporary `.part` at the root, beside the shards.
+    stale = time.time() - PARTIAL_MAX_AGE_SECONDS
     for shard in sorted(root.iterdir()):
         if not shard.is_dir():
+            if shard.suffix == ".part" and _modified(shard) < stale:
+                remove(shard)
             continue
         for blob in sorted(shard.iterdir()):
             if blob.name in keep or blob.suffix == ".part":
                 continue
-            try:
-                size = blob.stat().st_size
-                blob.unlink()
-            except OSError as e:  # pragma: no cover - reported, never fatal
-                raise StorageError(f"could not remove {blob}: {e}") from None
-            removed += 1
-            freed += size
+            remove(blob)
         with_nothing_left = not any(shard.iterdir())
         if with_nothing_left:
             shard.rmdir()
@@ -269,12 +283,29 @@ def total_size(home: Path) -> int:
     if not root.is_dir():
         return 0
     return sum(
-        blob.stat().st_size
-        for shard in root.iterdir()
-        if shard.is_dir()
-        for blob in shard.iterdir()
+        _size(blob)
+        for entry in root.iterdir()
+        for blob in (entry.iterdir() if entry.is_dir() else [entry])
         if blob.is_file()
     )
+
+
+# A `.part` at the root can vanish between listing and stat: its attach
+# finished and renamed it into a shard.
+
+
+def _modified(path: Path) -> float:
+    try:
+        return path.stat().st_mtime
+    except FileNotFoundError:
+        return time.time()
+
+
+def _size(path: Path) -> int:
+    try:
+        return path.stat().st_size
+    except FileNotFoundError:
+        return 0
 
 
 def export(digest: str, *, home: Path, destination: Path) -> Path:

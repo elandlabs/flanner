@@ -7,7 +7,9 @@ the memory it was offered to.
 
 from __future__ import annotations
 
+import os
 import subprocess
+import time
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -351,6 +353,21 @@ def test_collecting_keeps_what_something_still_points_at(store, files):
 
     assert outcome["removed"] == 0
     assert blobs.path_for(home, first["digest"]).is_file()
+
+
+def test_collecting_removes_a_partial_an_attach_left_behind(tmp_path):
+    """A killed attach leaves its `.part` at the root; a running one is kept."""
+    root = blobs.blob_root(tmp_path)
+    root.mkdir(parents=True)
+    old, fresh = root / "old.part", root / "fresh.part"
+    old.write_bytes(b"x" * 10)
+    fresh.write_bytes(b"y" * 7)
+    a_day_ago = time.time() - blobs.PARTIAL_MAX_AGE_SECONDS - 60
+    os.utime(old, (a_day_ago, a_day_ago))
+
+    assert blobs.collect(tmp_path, keep=set()) == (1, 10)
+    assert not old.exists() and fresh.exists()
+    assert blobs.total_size(tmp_path) == 7
 
 
 def test_purging_a_memory_leaves_its_blob_for_the_collector(store, files):
