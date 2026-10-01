@@ -48,7 +48,11 @@ def data() -> Path:
 @pytest.fixture(scope="module")
 def driver() -> Iterator[Any]:
     webdriver = pytest.importorskip("selenium.webdriver")
-    options = webdriver.common.options.ArgOptions()
+    # Imported by name: newer selenium loads its submodules lazily, so
+    # `webdriver.common.options` is no longer there as an attribute.
+    from selenium.webdriver.common.options import ArgOptions
+
+    options = ArgOptions()
     options.set_capability("browserName", "wry")
     options.set_capability("tauri:options", {"application": str(Path(str(APP)).resolve())})
     session = webdriver.Remote(command_executor=DRIVER, options=options)
