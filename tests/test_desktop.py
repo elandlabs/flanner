@@ -6,9 +6,11 @@ launchers there and never into the developer's own ~/.flanner/bin.
 
 import json
 import os
+import shlex
+import shutil
 import subprocess
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import pytest
 from click.testing import CliRunner
@@ -128,7 +130,40 @@ def test_shell_profiles_get_one_line_each():
     bashrc = (home / ".bashrc").read_text(encoding="utf-8")
     assert bashrc.startswith("alias ll='ls -l'\n")
     assert bashrc.count(desktop.PROFILE_MARK) == 1
-    assert f'export PATH="{folder}:$PATH"' in bashrc
+    assert f'export PATH={shlex.quote(str(folder))}:"$PATH"' in bashrc
+
+
+def test_a_line_from_an_older_version_is_not_added_twice():
+    home = Path.home()
+    home.mkdir(parents=True)
+    old = f'export PATH="/home/me/.flanner/bin:$PATH"  {desktop.PROFILE_MARK}\n'
+    (home / ".profile").write_text(old, encoding="utf-8")
+
+    desktop._add_to_profiles(Path("/home/me/.flanner/bin"))
+
+    assert (home / ".profile").read_text(encoding="utf-8") == old
+
+
+@pytest.mark.skipif(shutil.which("sh") is None, reason="needs a POSIX shell")
+def test_the_profile_line_names_the_folder_literally():
+    """`$`, backticks and quotes in the path are not expanded by the shell."""
+    home = Path.home()
+    home.mkdir(parents=True)
+    folder = '/home/me/$HOME/`id`/it\'s "odd"/bin'
+
+    desktop._add_to_profiles(PurePosixPath(folder))  # type: ignore[arg-type]
+
+    script = (home / ".profile").read_text(encoding="utf-8") + 'printf %s "$PATH"\n'
+    shown = subprocess.run(  # noqa: S603 - a shell running our own profile line
+        [shutil.which("sh") or "sh"],
+        input=script,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert shown.returncode == 0, shown.stderr
+    assert shown.stdout.startswith(f"{folder}:")
 
 
 def _fake_flanner(folder: Path, version: str) -> None:

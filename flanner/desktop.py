@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -206,7 +207,10 @@ def _add_to_profiles(folder: Path) -> list[Path]:
     profiles += [p for p in (home / ".bashrc", home / ".bash_profile") if p.is_file()]
     if sys.platform == "darwin" or (home / ".zshenv").is_file() or (home / ".zshrc").is_file():
         profiles.append(home / ".zshenv")
-    line = f'export PATH="{folder}:$PATH"  {PROFILE_MARK}\n'
+    # shlex.quote, not double quotes: inside those the shell still expands
+    # `$`, backticks and backslashes, so a home such as `/home/$me` would
+    # name some other folder. Lines in the older format carry the same mark.
+    line = f'export PATH={shlex.quote(str(folder))}:"$PATH"  {PROFILE_MARK}\n'
     changed = []
     for profile in profiles:
         text = profile.read_text(encoding="utf-8") if profile.is_file() else ""
