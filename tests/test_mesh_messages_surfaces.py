@@ -220,6 +220,29 @@ def test_a_preview_token_sends_only_what_was_previewed(signed_in, monkeypatch):
     assert [d["state"] for d in sent["delivery"]] == ["queued"]
 
 
+def test_a_preview_token_sends_once_and_a_retry_gets_the_same_answer(signed_in, monkeypatch):
+    """A retry after a lost response, or a second submit, must not send it again."""
+    from flanner import server
+
+    _offline(monkeypatch)
+    token = server.messages_send(body="hi", to=["bob"])["preview_token"]
+
+    sent = server.messages_send(body="hi", to=["bob"], confirm=True, preview_token=token)
+    again = server.messages_send(body="hi", to=["bob"], confirm=True, preview_token=token)
+
+    assert again == sent
+    assert get_session().query(MeshMessageModel).count() == 1
+
+    thread = sent["thread_id"]
+    token = server.messages_reply(thread=thread, body="and?")["preview_token"]
+    replied = server.messages_reply(thread=thread, body="and?", confirm=True, preview_token=token)
+    assert (
+        server.messages_reply(thread=thread, body="and?", confirm=True, preview_token=token)
+        == replied
+    )
+    assert get_session().query(MeshMessageModel).count() == 2
+
+
 def test_a_preview_token_runs_out(signed_in, monkeypatch):
     from flanner import server
 

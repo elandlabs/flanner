@@ -9,6 +9,7 @@ import hashlib
 import hmac
 import json
 import secrets
+import threading
 import time
 from collections.abc import Callable
 from typing import Any, TypeVar, cast
@@ -1129,7 +1130,8 @@ NOT_PREVIEWED: dict[str, Any] = {
         "Preview first: call with confirm=False, show the person who it goes to, and "
         "send with confirm=True and the preview_token it returned once they say yes. "
         "A token is refused when the message or its recipients changed, and after "
-        f"{PREVIEW_SECONDS // 60} minutes."
+        f"{PREVIEW_SECONDS // 60} minutes. A token sends once: using it again returns "
+        "that first send's result."
     ),
 }
 
@@ -1164,6 +1166,31 @@ def _previewed(token: str, shown: dict[str, Any], refs: Any = None) -> bool:
     return hmac.compare_digest(mac, _preview_mac(int(expires), shown, refs))
 
 
+#: What each preview token's send returned. A retry after a lost response,
+#: or a second submit, gets that answer back instead of sending again.
+_SENT: dict[str, dict[str, Any]] = {}
+_SENT_LOCK = threading.Lock()
+
+
+def _send_once(token: str, send: Callable[[], dict[str, Any]]) -> dict[str, Any]:
+    """Run `send` once per previewed token; a repeat returns the first result.
+
+    A refused send is not kept, so it can be tried again with the same token.
+    ponytail: one lock, held while the send runs, so a duplicate arriving
+    mid-send waits and replays; per-token locks if sends need to overlap.
+    """
+    with _SENT_LOCK:
+        now = time.time()
+        for old in [t for t in _SENT if int(t.partition(".")[0]) < now]:
+            del _SENT[old]  # past expiry `_previewed` refuses them anyway
+        if token not in _SENT:
+            result = send()
+            if result.get("error"):
+                return result
+            _SENT[token] = result
+        return dict(_SENT[token])
+
+
 @mcp.tool()
 def messages_send(
     body: str,
@@ -1192,7 +1219,7 @@ def messages_send(
     if not _previewed(preview_token, shown, refs):
         return dict(NOT_PREVIEWED)
     args: dict[str, Any] = {"body": body, "to": to, "workspace": workspace, "refs": refs}
-    return dispatch("mesh_send", {**args, "confirm": True})
+    return _send_once(preview_token, lambda: dispatch("mesh_send", {**args, "confirm": True}))
 
 
 @mcp.tool()
@@ -1211,7 +1238,10 @@ def messages_reply(
         return _with_preview_token(shown)
     if not _previewed(preview_token, shown):
         return dict(NOT_PREVIEWED)
-    return dispatch("mesh_reply", {"thread": thread, "body": body, "confirm": True})
+    return _send_once(
+        preview_token,
+        lambda: dispatch("mesh_reply", {"thread": thread, "body": body, "confirm": True}),
+    )
 
 
 @mcp.tool()
