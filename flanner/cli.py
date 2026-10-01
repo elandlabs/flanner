@@ -7796,7 +7796,9 @@ def peer_autostart(choice: str | None) -> None:
         # launchctl and systemctl stop the service as they remove it. The
         # Windows Run entry only names a command, so the receiver `on`
         # started for this session keeps running until it is stopped here.
-        if sys.platform == "win32" and _running_pid(get_peer_pid_file()) is not None:
+        # Only when an entry was removed: otherwise the receiver is one the
+        # user started by hand with `peer start`, and it is not ours to stop.
+        if removed and sys.platform == "win32" and _running_pid(get_peer_pid_file()) is not None:
             _stop_pid(get_peer_pid_file(), "Receiving")
         autostart.decline()
         return

@@ -173,7 +173,10 @@ def test_linux_keeps_the_unit_when_systemd_refuses_to_disable_it(home, monkeypat
 
 
 def test_off_on_windows_stops_the_receiver_on_started(home, monkeypatch, tmp_path):
-    """The Run entry only names a command; `on` also started a receiver now."""
+    """The Run entry only names a command; `on` also started a receiver now.
+
+    `disable()` returning True is what allows the stop: an entry was removed.
+    """
     from click.testing import CliRunner
 
     from flanner import cli
@@ -189,6 +192,25 @@ def test_off_on_windows_stops_the_receiver_on_started(home, monkeypatch, tmp_pat
 
     assert result.exit_code == 0, result.output
     assert stopped == [cli.get_peer_pid_file()]
+
+
+def test_off_on_windows_leaves_a_hand_started_receiver_alone(home, monkeypatch):
+    """Nothing was registered, so the running receiver came from `peer start`."""
+    from click.testing import CliRunner
+
+    from flanner import cli
+
+    monkeypatch.setattr(cli.sys, "platform", "win32")
+    monkeypatch.setattr(autostart, "disable", lambda: False)
+    monkeypatch.setattr(autostart, "decline", lambda: None)
+    monkeypatch.setattr(cli, "_running_pid", lambda path: 4242)
+    stopped = []
+    monkeypatch.setattr(cli, "_stop_pid", lambda path, what: stopped.append(path))
+
+    result = CliRunner().invoke(cli.cli, ["peer", "autostart", "off"])
+
+    assert result.exit_code == 0, result.output
+    assert stopped == []
 
 
 def test_macos_keeps_the_agent_when_launchctl_refuses_to_unload_it(home, monkeypatch):
