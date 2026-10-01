@@ -38,7 +38,7 @@ import traceback
 import uuid
 from collections.abc import Iterator
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from types import TracebackType
 from typing import Any
 
@@ -159,16 +159,21 @@ def _relative_path(filename: str) -> str:
     `site-packages/…`. The standard library becomes `stdlib/<file>`, and
     anything else is reduced to its file name.
     """
-    try:
-        return Path(filename).resolve().relative_to(_package_root()).as_posix()
-    except (ValueError, OSError):
-        pass
+    # A Windows path is not a path on a Mac or Linux machine: resolving it
+    # there joins it to the working directory as one long file name, and
+    # `relative_to` then hands it back whole, user name and all.
+    local = os.name == "nt" or not PureWindowsPath(filename).drive
+    if local:
+        try:
+            return Path(filename).resolve().relative_to(_package_root()).as_posix()
+        except (ValueError, OSError):
+            pass
     normalised = filename.replace("\\", "/")
     for marker in ("/site-packages/", "/dist-packages/"):
         if marker in normalised:
             return "site-packages/" + normalised.split(marker, 1)[1]
     name = normalised.rsplit("/", 1)[-1]
-    for base in {sys.base_prefix, sys.prefix}:
+    for base in {sys.base_prefix, sys.prefix} if local else ():
         try:
             Path(filename).resolve().relative_to(Path(base).resolve())
         except (ValueError, OSError):
