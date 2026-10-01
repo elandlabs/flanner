@@ -12,6 +12,7 @@ from __future__ import annotations
 import html
 import re
 import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 from urllib.parse import unquote
@@ -147,6 +148,9 @@ def test_registering_claude_desktop_from_the_page_leaves_the_bytes_register_leav
     assert by_web.read_bytes() == by_cli.read_bytes()
 
 
+# On 3.10, with no TOML reader, both surfaces leave a non-empty Codex
+# config alone, so there is no written file to compare.
+@pytest.mark.skipif(sys.version_info < (3, 11), reason="Python 3.10 has no tomllib")
 def test_registering_codex_from_the_page_writes_what_setup_writes(repo, tmp_path, monkeypatch):
     existing = 'model = "o3"\n'
     by_cli, by_web = tmp_path / "cli.toml", tmp_path / "web.toml"

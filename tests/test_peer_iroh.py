@@ -17,6 +17,7 @@ reason, not three failures that read as their change having broken sync.
 
 import asyncio
 import base64
+import sys
 import threading
 
 import pytest
@@ -622,6 +623,9 @@ def test_asking_for_a_device_id_refuses_rather_than_crashing(without_iroh, alice
         peer_iroh.peer_for(bob.device_id, WORKSPACE, alice.held)
 
 
+# A check on pyproject.toml, which does not change with the Python reading
+# it; the 3.11+ jobs run it.
+@pytest.mark.skipif(sys.version_info < (3, 11), reason="Python 3.10 has no tomllib")
 def test_every_declared_iroh_marker_matches_a_published_wheel():
     """The dependency must never become unconditional again by accident.
 

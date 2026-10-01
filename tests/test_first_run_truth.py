@@ -28,6 +28,12 @@ import flanner.claude_integration as ci
 from flanner import cli as cli_module
 from flanner.cli import cli
 
+# Python 3.10 has no TOML reader, so there Codex registration only appends
+# to an empty file and recognises the header form; any other file is left
+# alone and the lines are shown (see `test_without_a_toml_reader_...`).
+# These tests check what a parsing Python does.
+needs_toml = pytest.mark.skipif(sys.version_info < (3, 11), reason="Python 3.10 has no tomllib")
+
 
 @pytest.fixture
 def runner() -> CliRunner:
@@ -169,6 +175,7 @@ def test_setup_prints_the_codex_lines_when_codex_is_not_installed(runner, deskto
     assert _collapsed(str(codex)) in _collapsed(result.output)
 
 
+@needs_toml
 def test_setup_registers_codex_by_appending_its_own_table(runner, desktop, codex) -> None:
     """The one edit that cannot clobber anything: append, parse, then replace."""
     import tomllib
@@ -199,6 +206,7 @@ def test_registering_codex_twice_changes_nothing(runner, desktop, codex) -> None
     assert "Codex: already registered" in result.output
 
 
+@needs_toml
 def test_a_codex_config_that_does_not_parse_is_left_exactly_as_it_was(
     runner, desktop, codex
 ) -> None:
@@ -214,6 +222,7 @@ def test_a_codex_config_that_does_not_parse_is_left_exactly_as_it_was(
     assert "[mcp_servers.flanner]" in result.output, "left the user without the lines to add"
 
 
+@needs_toml
 def test_a_flanner_entry_written_another_way_counts_as_registered(runner, desktop, codex) -> None:
     """An inline table is as much a registration as a header."""
     codex.parent.mkdir(parents=True)
@@ -227,6 +236,7 @@ def test_a_flanner_entry_written_another_way_counts_as_registered(runner, deskto
     assert ci.codex_registration() is True
 
 
+@needs_toml
 def test_an_empty_codex_config_is_filled_not_refused(runner, desktop, codex) -> None:
     import tomllib
 
@@ -238,6 +248,22 @@ def test_an_empty_codex_config_is_filled_not_refused(runner, desktop, codex) -> 
     assert tomllib.loads(codex.read_text(encoding="utf-8"))["mcp_servers"]["flanner"] == {
         "command": "flanner-mcp"
     }
+
+
+def test_without_a_toml_reader_a_codex_config_is_left_alone(
+    runner, desktop, codex, monkeypatch
+) -> None:
+    """What Python 3.10 does, checked on every version."""
+    monkeypatch.setattr(ci, "_toml_loads", lambda: None)
+    codex.parent.mkdir(parents=True)
+    mine = 'model = "gpt-5"\n'
+    codex.write_text(mine, encoding="utf-8")
+
+    result = runner.invoke(cli, ["setup"])
+
+    assert codex.read_text(encoding="utf-8") == mine
+    assert "cannot check a TOML file" in result.output
+    assert "[mcp_servers.flanner]" in result.output, "left the user without the lines to add"
 
 
 def test_a_registration_file_that_is_not_json_reads_as_not_registered(desktop, tmp_path) -> None:
