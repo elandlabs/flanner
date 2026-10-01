@@ -23,6 +23,7 @@ import socket
 import subprocess
 import sys
 import time
+import urllib.request
 from collections.abc import Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -77,6 +78,43 @@ class App:
         self.data = data
 
 
+def _what_the_app_said(output: Path, data: Path) -> str:
+    """The app's own console output and the logs it wrote, for a failure message."""
+    said = [f"--- {output.name} ---\n{output.read_text(errors='replace')[-4000:]}"]
+    for log in sorted((data / "logs").glob("*.log")):
+        said.append(f"--- {log.name} ---\n{log.read_text(errors='replace')[-2000:]}")
+    return "\n".join(said)
+
+
+def _wait_for_devtools(
+    process: subprocess.Popen[bytes], port: int, output: Path, data: Path
+) -> None:
+    """Block until WebView2's DevTools port answers, or fail saying why it did not.
+
+    The port only exists once the app has built its window. An app that
+    exited, or never got that far, used to surface as a bare ECONNREFUSED
+    from Playwright a minute later, with nothing from the app itself.
+    """
+    deadline = time.monotonic() + 120
+    while True:
+        if process.poll() is not None:
+            pytest.fail(
+                f"the app exited with {process.returncode} before its DevTools port opened\n"
+                + _what_the_app_said(output, data)
+            )
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}/json/version", timeout=2):
+                return
+        except OSError:
+            pass
+        if time.monotonic() > deadline:
+            pytest.fail(
+                f"the app is running but WebView2's DevTools port {port} never opened\n"
+                + _what_the_app_said(output, data)
+            )
+        time.sleep(0.5)
+
+
 @pytest.fixture(scope="module")
 def app(tmp_path_factory: pytest.TempPathFactory) -> Iterator[App]:
     devtools = _free_port()
@@ -88,9 +126,17 @@ def app(tmp_path_factory: pytest.TempPathFactory) -> Iterator[App]:
         "FLANNER_DESKTOP_RUNTIME": str(Path(str(RUNTIME)).resolve()),
         "FLANNER_DESKTOP_DATA": str(data),
         "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS": f"--remote-debugging-port={devtools}",
+        "RUST_BACKTRACE": "1",
     }
-    process = subprocess.Popen([str(Path(str(APP)).resolve())], env=env)
+    # To a file: left on the inherited console, a panic at start never
+    # reached the job log.
+    output = tmp_path_factory.mktemp("app-output") / "app-console.log"
+    with output.open("wb") as console:
+        process = subprocess.Popen(
+            [str(Path(str(APP)).resolve())], env=env, stdout=console, stderr=subprocess.STDOUT
+        )
     try:
+        _wait_for_devtools(process, devtools, output, data)
         yield App(process, devtools, data)
     finally:
         if process.poll() is None:
