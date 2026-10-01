@@ -3,7 +3,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Child;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -19,6 +19,12 @@ const QUICK: Duration = Duration::from_secs(60);
 #[derive(Default)]
 pub struct Sync {
     wanted: AtomicBool,
+    /// Bumped by every `start` and `stop`. A supervisor runs only while the
+    /// value it started with is current, so after a quick off/on the old one
+    /// stops instead of running beside the new one: two would each spawn
+    /// `peer serve`, and the one whose child was replaced in `child` would
+    /// leave a receiver that Stop and Quit could no longer kill.
+    generation: AtomicU64,
     child: Mutex<Option<Child>>,
 }
 
@@ -35,14 +41,27 @@ impl Sync {
         if self.wanted.swap(true, Ordering::SeqCst) {
             return; // already running
         }
+        let mine = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
         let this = Arc::clone(self);
         thread::spawn(move || {
             let mut quick_stops = 0;
-            while this.wanted.load(Ordering::SeqCst) {
+            while this.current(mine) {
                 let started = Instant::now();
                 match flanner.spawn(&["peer", "serve"], &cwd, &log) {
-                    Ok(child) => {
-                        this.child.lock().expect("sync lock").replace(child);
+                    Ok(mut child) => {
+                        let mut slot = this.child.lock().expect("sync lock");
+                        // Checked under the lock `stop` takes, so a stop or a
+                        // newer start cannot slip between this check and the
+                        // child being recorded where they can reach it.
+                        if !this.current(mine) {
+                            let _ = child.kill();
+                            let _ = child.wait();
+                            return;
+                        }
+                        if let Some(mut older) = slot.replace(child) {
+                            let _ = older.kill();
+                            let _ = older.wait();
+                        }
                     }
                     Err(error) => {
                         this.wanted.store(false, Ordering::SeqCst);
@@ -50,8 +69,8 @@ impl Sync {
                         return;
                     }
                 }
-                this.wait_for_exit();
-                if !this.wanted.load(Ordering::SeqCst) {
+                this.wait_for_exit(mine);
+                if !this.current(mine) {
                     return;
                 }
                 quick_stops = if started.elapsed() < QUICK {
@@ -69,11 +88,20 @@ impl Sync {
         });
     }
 
-    /// Polls, so `stop` can take the child from under it.
-    fn wait_for_exit(&self) {
+    fn current(&self, generation: u64) -> bool {
+        self.wanted.load(Ordering::SeqCst) && self.generation.load(Ordering::SeqCst) == generation
+    }
+
+    /// Polls, so `stop` can take the child from under it. A superseded
+    /// supervisor leaves at once, so it never waits on, or takes, the child
+    /// a newer one recorded.
+    fn wait_for_exit(&self, generation: u64) {
         loop {
             thread::sleep(Duration::from_millis(500));
             let mut guard = self.child.lock().expect("sync lock");
+            if self.generation.load(Ordering::SeqCst) != generation {
+                return;
+            }
             match guard.as_mut() {
                 None => return,
                 Some(child) => {
@@ -87,8 +115,10 @@ impl Sync {
     }
 
     pub fn stop(&self) {
+        let mut slot = self.child.lock().expect("sync lock");
         self.wanted.store(false, Ordering::SeqCst);
-        if let Some(mut child) = self.child.lock().expect("sync lock").take() {
+        self.generation.fetch_add(1, Ordering::SeqCst);
+        if let Some(mut child) = slot.take() {
             let _ = child.kill();
             let _ = child.wait();
         }
@@ -105,4 +135,28 @@ fn last_line(log: &Path) -> String {
                 .map(|line| line.trim().to_string())
         })
         .unwrap_or_else(|| format!("See {}", log.display()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_quick_stop_and_start_retires_the_older_supervisor() {
+        let sync = Sync::default();
+        sync.wanted.store(true, Ordering::SeqCst);
+        let first = sync.generation.fetch_add(1, Ordering::SeqCst) + 1;
+        assert!(sync.current(first));
+
+        sync.stop();
+        // `start` again, before the first supervisor has looked.
+        sync.wanted.store(true, Ordering::SeqCst);
+        let second = sync.generation.fetch_add(1, Ordering::SeqCst) + 1;
+
+        assert!(
+            !sync.current(first),
+            "the old one must not carry on beside the new one"
+        );
+        assert!(sync.current(second));
+    }
 }
