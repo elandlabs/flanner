@@ -127,7 +127,14 @@ def _isolated_keychain(monkeypatch):
     A fake rather than disabling the keychain outright, so the keychain path
     is the one actually exercised. Disabling it would leave the code that
     matters covered only by the tests that opt back in.
+
+    A flanner a test starts as a subprocess cannot see the fake, so it is
+    told there is no keychain and takes the 0600 file. Left to find the real
+    one, it wrote test keys there too, and on a macOS runner, whose HOME
+    this file points at an empty folder, every keychain call blocked until
+    the test timed out: `whoami` past 60 seconds, the benchmarks past 300.
     """
+    monkeypatch.setenv("PYTHON_KEYRING_BACKEND", "keyring.backends.fail.Keyring")
     try:
         import keyring
         from keyring.backend import KeyringBackend
