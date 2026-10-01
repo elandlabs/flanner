@@ -146,6 +146,11 @@ trees — to a version *and* a hash, and CI installs from it with
 uv pip compile pyproject.toml --extra dev --generate-hashes --universal --python-version 3.12 -o requirements-dev.lock
 ```
 
+That keeps every pin that still satisfies `pyproject.toml`, and CI checks
+exactly that: the lock matches what pyproject declares, not that it is the
+newest. Moving the pins forward is a deliberate act: the same command with
+`--upgrade`.
+
 `--universal` matters: a lock made without it is specific to the machine that
 made it, and one made on Windows pins `pywin32`, which cannot install on a
 Linux runner.
