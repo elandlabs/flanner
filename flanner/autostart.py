@@ -220,7 +220,11 @@ def enable() -> str:
         _run("systemctl", "--user", "daemon-reload")
         and _run("systemctl", "--user", "enable", "--now", f"{name()}.service")
     ):
-        disable()
+        # Not `disable()`: it keeps a unit systemd will not let go of, and
+        # this one never took. Undo it best-effort, then report the failure.
+        _run("systemctl", "--user", "disable", "--now", f"{name()}.service")
+        path.unlink(missing_ok=True)
+        _run("systemctl", "--user", "daemon-reload")
         raise AutostartError(
             "systemctl --user could not start the service; it needs a systemd user "
             f"session. {_MEANWHILE}"
@@ -242,7 +246,14 @@ def disable() -> bool:
     path = _unit_path()
     if not path.exists():
         return False
-    _run("systemctl", "--user", "disable", "--now", f"{name()}.service")
+    # Keep the unit when systemd refuses: deleting it would report success
+    # while the service may still run and start at login, and leave nothing
+    # for a second `off` to retry with.
+    if not _run("systemctl", "--user", "disable", "--now", f"{name()}.service"):
+        raise AutostartError(
+            "systemctl --user could not stop and disable the service, so it is still "
+            f"registered. Check `systemctl --user status {name()}` and try again."
+        )
     path.unlink()
     _run("systemctl", "--user", "daemon-reload")
     return True

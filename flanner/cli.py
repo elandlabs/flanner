@@ -7784,7 +7784,12 @@ def peer_autostart(choice: str | None) -> None:
         console.print(f"  Undo with {tui.command('flanner peer autostart off')}", style="muted")
         return
     if choice == "off":
-        if autostart.disable():
+        try:
+            removed = autostart.disable()
+        except autostart.AutostartError as e:
+            tui.bad(str(e))
+            raise SystemExit(1) from None
+        if removed:
             tui.ok("Removed. This device no longer starts receiving at login.")
         else:
             console.print("Nothing was registered for this device.", style="dim")

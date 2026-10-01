@@ -158,3 +158,30 @@ def test_receiving_means_a_heartbeat_in_the_last_90_seconds():
     autostart.beat()
     assert autostart.receiving() is True
     assert autostart.receiving(now=time.time() + 91) is False
+
+
+def test_linux_keeps_the_unit_when_systemd_refuses_to_disable_it(home, monkeypatch):
+    """Deleting it anyway would report success with the service still set to start."""
+    monkeypatch.setattr(autostart, "_platform", lambda: "linux")
+    where = autostart.enable()
+    monkeypatch.setattr(autostart, "_run", lambda *argv: "disable" not in argv)
+
+    with pytest.raises(autostart.AutostartError):
+        autostart.disable()
+    assert Path(where).exists(), "kept, so the next `off` can retry"
+    assert autostart.enabled()
+
+
+def test_off_says_so_when_the_login_service_cannot_be_removed(home, monkeypatch):
+    from click.testing import CliRunner
+
+    from flanner import cli
+
+    def refuse():
+        raise autostart.AutostartError("systemctl --user could not stop and disable it")
+
+    monkeypatch.setattr(autostart, "disable", refuse)
+    result = CliRunner().invoke(cli.cli, ["peer", "autostart", "off"])
+
+    assert result.exit_code == 1
+    assert "could not stop and disable" in result.output
