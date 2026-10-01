@@ -144,7 +144,10 @@ def _windows_command() -> str:
         f"log=open({str(_log())!r},'a',encoding='utf-8');sys.stdout=sys.stderr=log;"
         "from flanner.cli import main;sys.argv=['flanner','peer','start'];main()"
     )
-    return f'"{_pythonw()}" -c "{script}"'
+    # Quoted as an argv, not pasted into quotes: repr() picks double quotes
+    # for a path holding `'` (C:\Users\O'Brien), which closed a hand-quoted
+    # `-c "..."` argument early.
+    return subprocess.list2cmdline([_pythonw(), "-c", script])
 
 
 #: How macOS and Linux start the receiver. Not `-m flanner`: systemd starts a

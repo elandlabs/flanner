@@ -83,9 +83,63 @@ def test_macos_and_linux_start_the_package_whatever_folder_they_start_in(tmp_pat
     assert "not signed in" in shown.stdout
 
 
-def test_the_windows_login_command_is_valid_python_for_this_home():
+def _windows_argv(command: str) -> list[str]:
+    """Split a command line as the Microsoft C runtime does, on any platform."""
+    args: list[str] = []
+    arg, quoted, slashes, started = "", False, 0, False
+    for char in command:
+        if char == "\\":
+            slashes += 1
+            continue
+        if char == '"':
+            arg += "\\" * (slashes // 2)
+            if slashes % 2:
+                arg += '"'
+            else:
+                quoted = not quoted
+            slashes, started = 0, True
+            continue
+        arg += "\\" * slashes
+        slashes = 0
+        if char in " 	" and not quoted:
+            if started:
+                args.append(arg)
+            arg, started = "", False
+        else:
+            arg, started = arg + char, True
+    arg += "\\" * slashes
+    if started:
+        args.append(arg)
+    return args
+
+
+def _windows_argv_from_the_os(command: str) -> list[str]:
+    import ctypes
+    from ctypes import wintypes
+
+    shell32 = ctypes.windll.shell32  # type: ignore[attr-defined]
+    shell32.CommandLineToArgvW.restype = ctypes.POINTER(wintypes.LPWSTR)
+    count = ctypes.c_int()
+    argv = shell32.CommandLineToArgvW(command, ctypes.byref(count))
+    try:
+        return [argv[i] for i in range(count.value)]
+    finally:
+        ctypes.windll.kernel32.LocalFree(argv)  # type: ignore[attr-defined]
+
+
+@pytest.mark.parametrize("folder", ["flanner", "O'Brien's files", 'odd "quoted" \\ end\\'])
+def test_the_windows_login_command_is_valid_python_for_this_home(tmp_path, monkeypatch, folder):
+    """Any valid home survives, including one whose repr() uses double quotes."""
+    monkeypatch.setenv("FLANNER_HOME", str(tmp_path / folder))
     command = autostart._windows_command()
-    script = command.split(' -c "', 1)[1].rstrip('"')
+
+    argv = _windows_argv(command)
+    if sys.platform == "win32" and '"' not in folder:
+        assert _windows_argv_from_the_os(command) == argv
+    assert argv[0] == autostart._pythonw()
+    assert argv[1] == "-c"
+    assert len(argv) == 3
+    script = argv[2]
     ast.parse(script)
     assert repr(str(autostart._home())) in script
     assert "'peer','start'" in script
