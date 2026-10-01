@@ -1136,9 +1136,9 @@ NOT_PREVIEWED: dict[str, Any] = {
 }
 
 
-def _preview_mac(expires: int, shown: dict[str, Any], refs: Any) -> str:
+def _preview_mac(expires: int, nonce: str, shown: dict[str, Any], refs: Any) -> str:
     what = [shown.get(key) for key in ("to", "workspace", "thread_id", "body")] + [refs]
-    signed = f"{expires}\n{json.dumps(what, sort_keys=True, default=str)}".encode()
+    signed = f"{expires}\n{nonce}\n{json.dumps(what, sort_keys=True, default=str)}".encode()
     return hmac.new(_PREVIEW_KEY, signed, hashlib.sha256).hexdigest()[:32]
 
 
@@ -1147,7 +1147,12 @@ def _with_preview_token(shown: dict[str, Any], refs: Any = None) -> dict[str, An
     if shown.get("error"):
         return shown
     expires = int(time.time()) + PREVIEW_SECONDS
-    return {**shown, "preview_token": f"{expires}.{_preview_mac(expires, shown, refs)}"}
+    # A nonce per preview: two previews of the same message in the same
+    # second would otherwise share a token, and `_send_once` would answer
+    # the second approval with the first send instead of sending it.
+    nonce = secrets.token_hex(8)
+    mac = _preview_mac(expires, nonce, shown, refs)
+    return {**shown, "preview_token": f"{expires}.{nonce}.{mac}"}
 
 
 def _previewed(token: str, shown: dict[str, Any], refs: Any = None) -> bool:
@@ -1160,10 +1165,11 @@ def _previewed(token: str, shown: dict[str, Any], refs: Any = None) -> bool:
     approval. MCP elicitation could ask the person directly, once agents
     support it widely.
     """
-    expires, _, mac = token.partition(".")
-    if not expires.isdigit() or int(expires) < time.time():
+    expires, _, rest = token.partition(".")
+    nonce, _, mac = rest.partition(".")
+    if not expires.isdigit() or int(expires) < time.time() or not nonce or not mac:
         return False
-    return hmac.compare_digest(mac, _preview_mac(int(expires), shown, refs))
+    return hmac.compare_digest(mac, _preview_mac(int(expires), nonce, shown, refs))
 
 
 #: What each preview token's send returned. A retry after a lost response,

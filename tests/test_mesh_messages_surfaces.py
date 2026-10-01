@@ -243,6 +243,21 @@ def test_a_preview_token_sends_once_and_a_retry_gets_the_same_answer(signed_in, 
     assert get_session().query(MeshMessageModel).count() == 2
 
 
+def test_two_previews_of_the_same_message_send_twice(signed_in, monkeypatch):
+    """Same text, same second: each approval is its own send, not a replay."""
+    from flanner import server
+
+    _offline(monkeypatch)
+    monkeypatch.setattr(server.time, "time", lambda: 1_790_000_000.0)
+    first = server.messages_send(body="hi", to=["bob"])["preview_token"]
+    second = server.messages_send(body="hi", to=["bob"])["preview_token"]
+    assert first != second
+
+    server.messages_send(body="hi", to=["bob"], confirm=True, preview_token=first)
+    server.messages_send(body="hi", to=["bob"], confirm=True, preview_token=second)
+    assert get_session().query(MeshMessageModel).count() == 2
+
+
 def test_a_preview_token_runs_out(signed_in, monkeypatch):
     from flanner import server
 
