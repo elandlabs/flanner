@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from flanner import curb_wire, identity, refusals
+from flanner import curb_attribution, curb_sshsig, curb_wire, identity, refusals
 from flanner.artifacts import canonical_bytes
 from flanner.entitlements import CURB_ALERTS, CURB_ATTRIBUTION, CURB_FLEET, CURB_POLICY, Claims
 
@@ -121,3 +121,16 @@ def test_a_feature_needs_both_the_entitlement_and_the_server():
     assert not curb_wire.usable(CURB_FLEET, claims(CURB_FLEET), offered)
     assert not curb_wire.usable(CURB_POLICY, None, offered)  # not signed in
 
+
+def test_the_attribution_proof_signs_to_its_vector():
+    found = vectors()
+    proof, key = found["proof"], found["keys"]["attribution"]
+    fields = proof["fields"]
+    canonical = curb_attribution.proof_bytes(
+        fields["device_id"], fields["public_key"], fields["nonce"], fields["replaces"]
+    )
+    assert canonical.decode("utf-8") == proof["canonical"]
+    attribution = private(key["seed"])
+    assert base64.b64encode(attribution.sign(canonical)).decode("ascii") == proof["signature"]
+    assert curb_sshsig.fingerprint(attribution.public_key()) == key["fingerprint"]
+    assert identity.public_key_b64(attribution.public_key()) == key["public_key"]

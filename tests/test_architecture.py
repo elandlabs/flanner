@@ -367,6 +367,23 @@ ALLOWED = {
     "curb_sarif": set(),
     "curb_ci": {"curb_sarif"},
     "curb_app": {"curb_sarif"},
+    # Curb commit attribution (R7). The broker is git's signing program and
+    # reaches nothing but the keychain, the action log and the files git
+    # gives it.
+    "curb_sshsig": set(),
+    "curb_attribution": {
+        "agent_paths",
+        "artifacts",
+        "curb_context",
+        "curb_fix",
+        "curb_observe",
+        "curb_sshsig",
+        "curb_store",
+        "curb_tighten",
+        "curb_wire",
+        "identity",
+    },
+    "curb_signer": {"curb_attribution", "curb_log", "curb_sshsig"},
     # The list of every operation and the surfaces that offer it. Data only,
     # imported by the tests that check it against the CLI, web app and MCP
     # server, and by nothing that would make it a dependency.
@@ -694,6 +711,8 @@ def test_no_read_path_can_reach_the_network():
         "curb_team",
         "curb_ci",
         "curb_app",
+        "curb_signer",
+        "curb_attribution",
     ):
         assert "account" not in closure(module), (
             f"{module} can reach the network through account; "

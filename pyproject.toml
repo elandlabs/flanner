@@ -97,6 +97,8 @@ dev = [
 [project.scripts]
 flanner = "flanner.cli:main"
 flanner-mcp = "flanner.server:main"
+# git's signing program for agent commits (Curb commit attribution)
+flanner-curb-sign = "flanner.curb_signer:main"
 
 [project.urls]
 Homepage = "https://flanner.io"
