@@ -277,6 +277,8 @@ ALLOWED = {
     },
     # Approvals: the OS confirms a person, grants live in memory.
     "curb_approval": {"curb_store", "notify"},
+    # The tighten-only test: the resolver and reach rules, before and after.
+    "curb_tighten": {"curb_context", "curb_credentials", "curb_reach", "curb_settings"},
     # The list of every operation and the surfaces that offer it. Data only,
     # imported by the tests that check it against the CLI, web app and MCP
     # server, and by nothing that would make it a dependency.

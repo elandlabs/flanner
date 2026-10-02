@@ -16,11 +16,13 @@ docs, and the Codex config reference, as cited in the PRD (E11-E17, E47).
 
 from __future__ import annotations
 
+import contextlib
 import importlib
 import json
 import os
 import sys
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -111,6 +113,9 @@ class ClaudeSettings:
     assumed: list[str]
     #: Values taken from an agent's documented default rather than a file.
     defaults: list[str] = field(default_factory=list)
+    #: The admin's MCP lists as they apply: None means no allowlist at all.
+    mcp_allowlist: list[Mapping[str, Any]] | None = None
+    mcp_denylist: list[Mapping[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -158,7 +163,34 @@ def _toml_loads() -> Callable[[str], dict[str, Any]] | None:
     return loads
 
 
+#: Files to resolve as if they held other data, for the tighten-only test.
+_REPLACED: ContextVar[dict[str, Mapping[str, Any] | None] | None] = ContextVar(
+    "curb_replaced", default=None
+)
+
+
+@contextlib.contextmanager
+def replaced(files: Mapping[Path, Mapping[str, Any] | None]) -> Iterator[None]:
+    """Resolve as if these files held this data, or were absent for None. Writes nothing."""
+    token = _REPLACED.set({norm_key(path): data for path, data in files.items()})
+    try:
+        yield
+    finally:
+        _REPLACED.reset(token)
+
+
+def _replacement(path: Path) -> tuple[bool, dict[str, Any], str | None] | None:
+    table = _REPLACED.get()
+    if table is None or norm_key(path) not in table:
+        return None
+    data = table[norm_key(path)]
+    return (False, {}, None) if data is None else (True, dict(data), None)
+
+
 def _read_json(path: Path) -> tuple[bool, dict[str, Any], str | None]:
+    held = _replacement(path)
+    if held is not None:
+        return held
     if not path.is_file():
         return False, {}, None
     try:
@@ -171,6 +203,9 @@ def _read_json(path: Path) -> tuple[bool, dict[str, Any], str | None]:
 
 
 def _read_toml(path: Path) -> tuple[bool, dict[str, Any], str | None]:
+    held = _replacement(path)
+    if held is not None:
+        return held
     if not path.is_file():
         return False, {}, None
     loads = _toml_loads()
@@ -450,6 +485,7 @@ def resolve_claude(
 
     mcp, mcp_notes = _claude_mcp(context, layers, managed, platform, root)
     not_checked += mcp_notes
+    mcp_allowed, mcp_denied = mcp_lists(usable, managed)
     hooks = [] if (context.bare or context.safe_mode) else _hooks(usable)
 
     return ClaudeSettings(
@@ -476,6 +512,8 @@ def resolve_claude(
         hooks=hooks,
         not_checked=not_checked,
         assumed=assumed,
+        mcp_allowlist=mcp_allowed,
+        mcp_denylist=mcp_denied,
     )
 
 
@@ -566,23 +604,39 @@ def _claude_mcp(
     # One server per name, the highest-precedence definition winning: the
     # list above runs from user scope up to the admin's provided servers.
     servers = list({server.name: server for server in servers}.values())
+    allowed, denied = mcp_lists(usable, managed)
+    kept = [server for server in servers if admits(server, allowed, denied)]
+    return kept, notes
+
+
+def mcp_lists(
+    usable: list[Layer], managed: Layer
+) -> tuple[list[Mapping[str, Any]] | None, list[Mapping[str, Any]]]:
+    """The MCP allowlist (None when there is none) and denylist that apply (E14).
+
+    Without allowManagedMcpServersOnly, allowlists from every scope merge.
+    """
     denied = [entry for layer in usable for entry in _list(layer.data, "deniedMcpServers")]
-    managed_allow_only = bool(managed.data.get("allowManagedMcpServersOnly"))
+    managed_only = bool(managed.data.get("allowManagedMcpServersOnly"))
     allowed: list[Mapping[str, Any]] | None = None
     for layer in usable:
-        if managed_allow_only and layer.name != "managed":
+        if managed_only and layer.name != "managed":
             continue
         entries = layer.data.get("allowedMcpServers")
         if isinstance(entries, list):
             allowed = (allowed or []) + [e for e in entries if isinstance(e, Mapping)]
-    kept = []
-    for server in servers:
-        if any(_matches(server, entry) for entry in denied):
-            continue
-        if allowed is not None and server.controller != ADMIN and not _allowed(server, allowed):
-            continue
-        kept.append(server)
-    return kept, notes
+    return allowed, denied
+
+
+def admits(
+    server: McpServer,
+    allowed: list[Mapping[str, Any]] | None,
+    denied: list[Mapping[str, Any]],
+) -> bool:
+    """Whether the admin's lists let a server load. An admin's own server always may."""
+    if any(_matches(server, entry) for entry in denied):
+        return False
+    return allowed is None or server.controller == ADMIN or _allowed(server, allowed)
 
 
 def _config_servers(context: LaunchContext) -> list[McpServer]:
