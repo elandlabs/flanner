@@ -870,6 +870,22 @@ OPERATIONS: tuple[Operation, ...] = (
     ),
     _op(
         "curb",
+        "Turn Curb's action log on or off, or check it",
+        "write",
+        cli=("curb log",),
+        why="Turning it on or off changes agent settings, so it needs a person's yes.",
+        since="0.16.0",
+    ),
+    _op(
+        "curb",
+        "See what each agent has been seen using",
+        "read",
+        cli=("curb observed",),
+        why="Usage patterns tell an injected agent what goes unwatched, so they stay local.",
+        since="0.16.0",
+    ),
+    _op(
+        "curb",
         "Delete what Curb keeps on this machine",
         "destructive",
         cli=("curb forget",),

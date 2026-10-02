@@ -112,6 +112,10 @@ def forget() -> list[str]:
     if proofs.is_file():
         proofs.unlink()
         removed.append("the tester's proofs")
+    actions = curb_dir() / "actions.jsonl"
+    if actions.is_file():
+        actions.unlink()
+        removed.append("the action log")
     store = identity._keychain()
     gone = False
     if store is not None:

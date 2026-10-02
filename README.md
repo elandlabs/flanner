@@ -108,6 +108,8 @@ flanner curb fix [--dry-run|--undo]                     # close what agents reac
 flanner curb test                                       # prove each block with decoys (costs tokens)
 flanner curb decoys [--renew|--remove]                  # the decoys the tester planted
 flanner curb scrub FILE [--dry-run]                     # replace rotated secrets in a file (no undo)
+flanner curb log [--enable|--disable|--verify]          # each tool call's metadata, hash-chained and signed
+flanner curb observed                                   # what each agent has been seen using
 flanner register [--force] / flanner unregister         # MCP registration with Claude Desktop
 flanner claude-info                                     # integration status
 ```

@@ -33,7 +33,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
-from . import curb_store, notify
+from . import curb_log, curb_store, notify
 
 GRANT_SECONDS = 120
 DENIALS, DENIAL_WINDOW, PAUSE = 3, 600, 3600
@@ -337,9 +337,11 @@ class Broker:
             yes = False
         if not yes:
             self._record_denial()
+            curb_log.record_approval(summary, "refused")
             return None
         grant = Grant(change, self.presence.name, self.clock())
         self._live[id(grant)] = grant
+        curb_log.record_approval(summary, "granted")
         return grant
 
     def redeem(self, grant: Grant | None, change: str) -> None:

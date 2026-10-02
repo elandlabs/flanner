@@ -2143,6 +2143,15 @@ def guard_write() -> None:
         click.echo(output)
 
 
+@hook.command("curb-record")
+@click.option("--agent", type=click.Choice(["claude", "codex"]), required=True)
+def curb_record_hook(agent: str) -> None:
+    """PreToolUse, PostToolUse, PermissionDenied: one metadata record in Curb's action log."""
+    from .curb_log import record_hook
+
+    record_hook(agent, sys.stdin.read())  # fails open by design
+
+
 @hook.command("skill-use")
 def skill_use() -> None:
     """PostToolUse: record that a skill was invoked, if this repo opted in."""
@@ -9371,6 +9380,11 @@ EXAMPLES: dict[str, tuple[str, ...]] = {
         "flanner curb scrub FILE --dry-run  check a file can be scrubbed",
         "flanner curb scrub FILE            replace its secrets, after rotating them",
     ),
+    "curb log": (
+        "flanner curb log --enable         log each tool call's metadata (asks first)",
+        "flanner curb log --verify         check no record was changed",
+    ),
+    "curb observed": ("flanner curb observed            what each agent has been seen using",),
     "curb decoys": (
         "flanner curb decoys               how many decoys, and when they expire",
         "flanner curb decoys --remove      delete them all",
@@ -10057,6 +10071,99 @@ def curb_scrub_command(path: Path, dry_run: bool) -> None:
         tui.bad(f"Not scrubbed: {failure}. The file is unchanged.")
         raise SystemExit(1) from None
     tui.ok(f"Replaced {planned.secrets} secret(s); no copy of them was kept.")
+
+
+@curb.command("log")
+@click.option("--enable", is_flag=True, help="Install the hooks that log each tool call")
+@click.option("--disable", is_flag=True, help="Remove those hooks")
+@click.option("--verify", is_flag=True, help="Check no record was changed, removed or reordered")
+@click.option("--agent", type=click.Choice(["claude", "codex"]), default=None)
+def curb_log_command(enable: bool, disable: bool, verify: bool, agent: str | None) -> None:
+    """Curb's action log: each tool call's metadata, hash-chained and signed
+
+    Records the agent, session, tool, channel, a redacted target and the
+    decision, never content. Turning it on or off changes agent settings, so
+    your operating system asks you first.
+    """
+    from . import curb_approval, curb_fix, curb_log, curb_observe
+
+    agents = [agent] if agent else ["claude", "codex"]
+    if enable or disable:
+        plan = curb_observe.hook_plan(agents, enable=enable)
+        for line in plan.guided:
+            tui.note(line)
+        if not plan.edits:
+            tui.note("Already " + ("on." if enable else "off."))
+            return
+        broker, grant = _curb_grant(plan.summary(), plan.change())
+        try:
+            curb_fix.apply(plan, broker, grant)
+        except (curb_fix.FixFailed, curb_approval.NoGrant) as failure:
+            tui.bad(f"Nothing changed: {failure}.")
+            raise SystemExit(1) from None
+        tui.ok(
+            ("Logging " if enable else "Stopped logging ") + ", ".join(e.where for e in plan.edits)
+        )
+        return
+    curb_log.prune()
+    if verify:
+        ok, said = curb_log.verify()
+        (tui.ok if ok else tui.bad)(said[0].upper() + said[1:] + ".")
+        if not ok:
+            raise SystemExit(1)
+        return
+    held = curb_log.records()
+    for name in agents:
+        state = "on" if curb_observe.hooks_on(name) else "off"
+        count = sum(1 for r in held if r.get("agent") == name)
+        console.print(f"  {name}: logging {state}, {count} record(s)")
+    from collections import Counter
+
+    approvals = Counter(str(r.get("decision")) for r in held if r.get("kind") == "approval")
+    if approvals:
+        console.print(
+            "  approvals: " + ", ".join(f"{k} {v}" for k, v in sorted(approvals.items()))
+        )
+
+
+@curb.command("observed")
+@click.option("--agent", type=click.Choice(["claude", "codex"]), default=None)
+@click.option("--json", "as_json", is_flag=True, help="Machine-readable, redacted the same")
+def curb_observed_command(agent: str | None, as_json: bool) -> None:
+    """What each agent has been seen using, and what could not be seen
+
+    Needs the action log on for at least 14 days and 20 sessions. Not seen
+    is reported as not seen, never as not needed, and any idea for closing
+    a channel is only a suggestion for you to review.
+    """
+    from . import curb_observe
+
+    _, contexts, _ = _curb_contexts(None, agent, None, ())
+    reports = {
+        r.context.agent: r for r in _curb_assess([c for c in contexts if c.source == "default"])
+    }
+    views = [
+        curb_observe.view(curb_observe.observe(name, reports.get(name)))
+        for name in ([agent] if agent else ["claude", "codex"])
+    ]
+    if as_json:
+        click.echo(json.dumps(views, indent=2))
+        return
+    for item in views:
+        console.print()
+        console.print(
+            f"[bold]{item['label']}[/]  {item['state']}"
+            f" ({item['days']} days, {item['sessions']} sessions)"
+        )
+        for channel in item["channels"]:
+            seen = f"seen {channel['seen']} time(s)" if channel["seen"] else "not seen"
+            note = "" if channel["covered"] else " (the hooks cannot see this)"
+            console.print(f"  {channel['channel']}: {seen}{note}")
+        for line in item["gaps"]:
+            console.print(f"  Not observed: {line}.", style="muted")
+        for line in item["ideas"]:
+            console.print(f"  To review: {line}.")
+    console.print()
 
 
 @curb.command("decoys")

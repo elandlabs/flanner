@@ -88,6 +88,20 @@ The tester's classifier reads Claude Code's `stream-json` and Codex's
 both real agents, and the exact denial wording each returns, is still to
 check by hand.
 
+## Action log and observed use (R4)
+
+| Gate | How it is checked | At this commit |
+|---|---|---|
+| Tamper detection | `tests/test_curb_log.py` edits, removes, reorders and re-signs records | Each fails `curb log --verify`, naming the record |
+| Both agents share one record format | Claude Code and Codex hook payloads in `tests/test_curb_log.py` | Same fields; Codex's `bash -lc` commands read for the program inside |
+| Gap flags | Sessions without the hooks, a short window, channels the hooks cannot see | "partial evidence", "no evidence", and per-channel coverage |
+| No restriction for an uncovered channel | `tests/test_curb_log.py` | None suggested |
+
+Codex's hooks are taken to cover shell commands and patches only; web
+search, MCP and apps count as unseen by them. The hook payload fields were
+read from each agent's documentation and have not yet been checked against
+live hooks.
+
 ## Scan time
 
 Inventory plus reach now must take under 10 seconds at the 95th percentile

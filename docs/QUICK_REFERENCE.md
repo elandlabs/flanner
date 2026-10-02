@@ -88,6 +88,11 @@ flanner curb test                 # states the token cost and asks first
 flanner curb decoys               # how many, and when they expire
 flanner curb decoys --remove
 
+# Log each tool call's metadata (agent, tool, channel, decision), signed
+flanner curb log --enable         # installs the agents' hooks, after your OS says yes
+flanner curb log --verify         # did anyone change a record?
+flanner curb observed             # seen in use, per channel, after 14 days and 20 sessions
+
 # After rotating a secret, replace it in a file the sweep found (no backup, no undo)
 flanner curb scrub FILE --dry-run
 flanner curb scrub FILE

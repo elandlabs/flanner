@@ -276,7 +276,18 @@ ALLOWED = {
         "skills_adapters",
     },
     # Approvals: the OS confirms a person, grants live in memory.
-    "curb_approval": {"curb_store", "notify"},
+    "curb_approval": {"curb_log", "curb_store", "notify"},
+    # The action log: light, since a hook runs it on every tool call.
+    "curb_log": {"curb_store", "identity", "storage"},
+    # Observed use, and the hooks that feed the log.
+    "curb_observe": {
+        "agent_paths",
+        "curb_context",
+        "curb_fix",
+        "curb_log",
+        "curb_reach",
+        "curb_tighten",
+    },
     # The tighten-only test: the resolver and reach rules, before and after.
     "curb_tighten": {"curb_context", "curb_credentials", "curb_reach", "curb_settings"},
     # The tester: decoys, headless agent runs, and proofs kept as digests.
@@ -526,6 +537,8 @@ ALLOWED = {
         "curb_fix",
         "curb_inventory",
         "curb_kingfisher",
+        "curb_log",
+        "curb_observe",
         "curb_reach",
         "curb_report",
         "curb_scrub",

@@ -121,9 +121,20 @@ reach page at `/curb`.
 
 ## R4: action log and observed use
 
+Client work is done. Commands: `flanner curb log [--enable|--disable|--verify]`,
+`flanner curb observed [--json]`; the hidden hook `flanner hook curb-record`.
+
 **flanner-landing** (gated on `SHIPS_IN.curbObserve`):
 
-- [ ] Docs and FAQ entries.
+- [ ] Docs: what a record holds (metadata, never content), the hash chain
+      and device signature, 30-day retention, the three evidence states, the
+      14-day and 20-session window, what the hooks cannot see.
+- [ ] CLI rows for `curb log` and `curb observed`.
+- [ ] `lib/operations.json` regenerated: "Turn Curb's action log on or off,
+      or check it" (write) and "See what each agent has been seen using"
+      (read).
+- [ ] FAQ: why "not seen" is not "not needed"; does the log hold my prompts
+      (no); what happens if a hook fails (the agent carries on).
 
 **flanner-cloud:** none. **flanner-meshlab:** none.
 

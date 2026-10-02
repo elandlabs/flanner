@@ -169,6 +169,9 @@ Curb reads; the only files it writes are its own redacted reports and digest key
 | Settings change after a test | The channel goes back to "configured" | A proof holds only for the settings it ran against |
 | A scrubbed line would no longer parse, a secret also appears escaped, or the file changed since it was read | `curb scrub` says why and exits 1 | The file is left exactly as it was |
 | A scrub succeeds | The secrets are placeholders | There is no undo: no copy of the secret is kept anywhere |
+| The action log cannot be written (locked, full disk, no key) | Nothing; the hook exits quietly | The tool call goes ahead unlogged, and observed use counts that session as unlogged |
+| A record is edited, removed or reordered | `curb log --verify` names the record and exits 1 | The log can no longer be trusted from that record on |
+| Sessions ran without the hooks | `curb observed` says "partial evidence" and how many | Their tool calls are unknown |
 
 ## Known gaps
 

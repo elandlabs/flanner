@@ -71,6 +71,19 @@ versioning follows [SemVer](https://semver.org/).
     must not have changed since it was read, or it is left exactly as it
     was. No backup is kept, because a backup would be another copy of the
     secret, so it asks your operating system for a yes per file.
+  - `flanner curb log --enable` installs hooks that log each tool call's
+    metadata, from Claude Code and Codex alike: agent, session, tool,
+    channel, a redacted target, the program a shell command ran, and the
+    decision; never content. Approvals are logged too. Each record is
+    hash-chained to the one before and signed with the device key, so
+    `--verify` catches an edited, removed or reordered record. Records are
+    kept 30 days. The hooks fail open.
+  - `flanner curb observed` says what each agent has been seen using, per
+    channel, once the log covers 14 days and 20 sessions: "no evidence",
+    "partial evidence" when some sessions ran without the hooks, or
+    "observed use". Not seen is reported as not seen, never as not needed,
+    and ideas for closing a channel are suggestions to review, never for a
+    channel the hooks cannot see.
   - The web UI has an Agent reach page: the same redacted report as
     `flanner curb map`, the last sweep's counts, a button that opens the
     desktop window, and a Fix button behind the same approval.
