@@ -42,21 +42,31 @@ LIBRARIES = (
     "mcp",
 )
 #: Call names, by their last parts, that send a request to a model.
-_CALLS = (
-    ("chat", "completions", "create"),
-    ("responses", "create"),
-    ("messages", "create"),
-    ("models", "generate_content"),
-    ("litellm", "completion"),
-    ("litellm", "acompletion"),
-    ("invoke",),
-    ("ainvoke",),
-    ("run_sync",),
-    ("call_tool",),
-    ("create_react_agent",),
-    ("AgentExecutor",),
-    ("compile",),
+_LANGCHAIN = (
+    "langchain",
+    "langchain_core",
+    "langchain_openai",
+    "langchain_anthropic",
+    "langgraph",
 )
+#: Call names, by their last parts, that send a request to a model, and the
+#: libraries that define each: a file must import one for its call to count,
+#: so click's `CliRunner().invoke` is not mistaken for LangChain's.
+_CALLS = {
+    ("chat", "completions", "create"): ("openai",),
+    ("responses", "create"): ("openai",),
+    ("messages", "create"): ("anthropic",),
+    ("models", "generate_content"): ("google.genai",),
+    ("litellm", "completion"): ("litellm",),
+    ("litellm", "acompletion"): ("litellm",),
+    ("invoke",): _LANGCHAIN,
+    ("ainvoke",): _LANGCHAIN,
+    ("run_sync",): ("pydantic_ai",),
+    ("call_tool",): ("mcp",),
+    ("create_react_agent",): ("langgraph",),
+    ("AgentExecutor",): ("langchain",),
+    ("compile",): ("langgraph",),
+}
 _AGENTS = {"create_react_agent", "AgentExecutor", "run_sync", "compile"}
 _TOOL_WORDS = {"tools", "functions", "tool_choice"}
 _SOURCES = {
@@ -177,23 +187,24 @@ def _shape(call: ast.Call, parts: tuple[str, ...], looped: bool) -> str:
 
 def _audit_scope(scope: ast.AST, path: str, libraries: Sequence[str]) -> list[Call]:
     nodes = list(_own_nodes(scope))
-    calls: list[tuple[ast.Call, tuple[str, ...], bool]] = []
+    calls: list[tuple[ast.Call, tuple[str, ...], bool, str]] = []
     untrusted = False
     for node, looped in nodes:
         if isinstance(node, ast.Call):
             parts = _parts(node.func)
-            if any(_ends(parts, tail) for tail in _CALLS):
-                # A graph's compile() builds a langgraph agent; re.compile does not.
-                if parts[-1] != "compile" or ("langgraph" in libraries and parts[0] != "re"):
-                    calls.append((node, parts, looped))
+            owners = [lib for tail, libs in _CALLS.items() if _ends(parts, tail) for lib in libs]
+            library = next((lib for lib in libraries if lib in owners), None)
+            # A graph's compile() builds a langgraph agent; re.compile does not.
+            if library and not (parts[-1] == "compile" and parts[0] == "re"):
+                calls.append((node, parts, looped, library))
             if parts and parts[-1] == "input" and len(parts) == 1:
                 untrusted = True
         if isinstance(node, ast.Attribute | ast.Call) and _matches(_parts(node), _SOURCES):
             untrusted = True
     found = []
-    for call, parts, looped in calls:
+    for call, parts, looped, library in calls:
         shape = _shape(call, parts, looped)
-        result = Call(path, call.lineno, libraries[0], ".".join(parts), shape)
+        result = Call(path, call.lineno, library, ".".join(parts), shape)
         result.untrusted_input = untrusted and shape != SINGLE
         result.unchecked_output = _sinks_reached(call, nodes)
         found.append(result)

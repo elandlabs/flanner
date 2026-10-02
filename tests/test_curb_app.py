@@ -80,3 +80,12 @@ def test_the_command_prints_shapes_and_writes_sarif(tmp_path):
     assert levels["APP-O1"] == "error" and levels["APP-T1"] == "warning"
     rows = json.loads(CliRunner().invoke(cli, ["curb", "app", str(DATA / "app"), "--json"]).output)
     assert len(rows) == 9
+
+
+def test_a_method_name_counts_only_with_the_library_that_defines_it(tmp_path):
+    (tmp_path / "test_cli.py").write_text(
+        "import mcp\nfrom click.testing import CliRunner\n\n\n"
+        "def test_it(cli):\n    CliRunner().invoke(cli, ['x'])\n",
+        encoding="utf-8",
+    )
+    assert curb_app.audit(tmp_path) == ([], [])
