@@ -231,11 +231,34 @@ against client code.
 
 ## R6: CI check, app audit and the skill
 
+Client work is done. Commands: `flanner curb ci [PATH] [--sarif FILE]
+[--fail-on LEVEL] [--fix] [--json]`, `flanner curb app [PATH] [--sarif FILE]
+[--json]`. The GitHub Action is `actions/curb-ci/` in this repo, used as
+`elandlabs/flanner/actions/curb-ci@<tag>`, with its own CI job. `flanner init`
+installs the `agent-blast-radius` skill.
+
+**flanner (release day):** the action is used by tag, so the release tag
+that ships R6 is what users pin. Pushing it needs the owner's go-ahead, like
+every tag.
+
 **flanner-landing** (gated on `SHIPS_IN.curbCi`):
 
-- [ ] The action in `app/docs/integrations/page.tsx`.
-- [ ] The skill in `app/docs/skills/page.tsx` and `app/docs/agents/page.tsx`.
-- [ ] FAQ entries.
+- [ ] `SHIPS_IN.curbCi`.
+- [ ] `app/docs/integrations/page.tsx`: the action, with the workflow from
+      `actions/curb-ci/README.md` (checkout without persisted credentials,
+      the action, then `github/codeql-action/upload-sarif`), its inputs, the
+      `ci-r1` table, and what `fix: true` changes.
+- [ ] CLI rows for `curb ci` and `curb app`.
+- [ ] Docs for `curb app`: the libraries it reads, the three shapes, the two
+      flags, and that every result is assumed (Python only).
+- [ ] `app/docs/skills/page.tsx` and `app/docs/agents/page.tsx`: the
+      `agent-blast-radius` skill, its commands, and why it never sees names
+      or locations.
+- [ ] `lib/operations.json` regenerated: "Check the agent steps in a
+      repository's CI workflows" (write) and "Find the LLM calls in an
+      application's code, and their shapes" (read).
+- [ ] FAQ entries: why an issue-triggered agent step rates High; what the
+      fixes change; why the app audit says "assumed".
 
 **flanner-cloud:** none. **flanner-meshlab:** none.
 

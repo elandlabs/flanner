@@ -389,6 +389,11 @@ person runs `flanner curb show` (with `--sweep` for the sweep), which opens
 a window on their screen and prints nothing from it. No command ever
 prints a secret's value.
 
+`flanner init` installs the `agent-blast-radius` skill for Claude Code and
+Codex, which is how an agent is meant to use Curb: it runs `flanner curb
+map`, `inventory`, `sweep` and `observed` in the shell, where you see and
+approve each command, and asks you to run `flanner curb show` for detail.
+
 
 ### Issue: "Could not find Claude Desktop configuration path"
 

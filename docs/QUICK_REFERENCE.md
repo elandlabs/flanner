@@ -110,7 +110,19 @@ flanner curb policy --export mdm  # admin-owned settings files for device manage
 
 # Admins: every device, each report checked against its own key
 flanner curb fleet
+
+# Agent steps in this repository's GitHub Actions workflows
+flanner curb ci                   # who can start each, what reaches it, what it holds
+flanner curb ci --sarif curb.sarif --fail-on high
+flanner curb ci --fix             # the one-line fixes that are safe to make blind
+
+# LLM calls in an application's Python code: single call, tool-using or loop
+flanner curb app --sarif app.sarif
 ```
+
+In CI, use the action: `uses: elandlabs/flanner/actions/curb-ci@<tag>`
+(see `actions/curb-ci/README.md`). `flanner init` also installs the
+`agent-blast-radius` skill, which runs the redacted commands for an agent.
 
 The terminal never shows a credential's name or location, for anyone.
 Without an account nothing leaves the machine. With Flanner Mesh, devices

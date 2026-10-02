@@ -126,6 +126,22 @@ Not checked:
 - Team checks read each agent's launch from the home folder, so a
   project's own settings are not part of drift, the fleet view or alerts.
 
+## CI check, app audit and the skill (R6)
+
+| Gate | How it is checked | At this commit |
+|---|---|---|
+| Fixtures modelled on E1, E2 and E6 are flagged | `tests/test_curb_ci.py`, and the `curb-ci-action` CI job running the action itself | All three High; a workflow with none of their weaknesses Low |
+| The fixture app's shapes are labelled correctly | `tests/test_curb_app.py` against `tests/data/curb_app/expected.json` | 9 calls: every shape and flag as expected |
+| Skill transcripts are free of locations | `tests/test_curb_skill.py`, the skill's commands over planted secrets | No planted value or location in any output; `curb show` gives back only a notice |
+
+Not checked:
+
+- Agent steps other than Claude Code's, Codex's and Gemini CLI's actions
+  and commands; CI other than GitHub Actions.
+- JavaScript and TypeScript apps, and model calls through wrappers or
+  libraries outside the list.
+- A real agent running the skill: by hand, before each release.
+
 ## Scan time
 
 Inventory plus reach now must take under 10 seconds at the 95th percentile

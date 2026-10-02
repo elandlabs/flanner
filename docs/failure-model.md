@@ -184,6 +184,9 @@ Curb reads; the only files it writes are its own redacted reports and digest key
 | The control plane refuses a fleet report as replayed (`stale_sequence`) | Nothing | The report is dropped: it could never be accepted |
 | The audit collector refuses records or is down | `curb policy --check-in` says the records wait | They stay in the action log; past 10,000 waiting, the oldest are skipped and counted as dropped |
 | flanner is older than a Curb endpoint's minimum | "update flanner to X or later" | Nothing else changes |
+| A workflow file will not parse | `curb ci` lists it | The other workflows are still checked |
+| `curb ci --fix` would leave a workflow that does not parse | That file is left as it was | Make the change by hand |
+| An app file will not parse, or calls a model through a wrapper Curb does not know | `curb app` lists the file; the call is not found | Every app result is assumed; Semgrep or CodeQL go further |
 
 ## Known gaps
 

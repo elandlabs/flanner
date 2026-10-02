@@ -123,6 +123,25 @@ versioning follows [SemVer](https://semver.org/).
     [docs/curb-wire-contract.md](docs/curb-wire-contract.md). A control
     plane without Curb turns all of this off, and a client below an
     endpoint's minimum is told which version to update to.
+  - `flanner curb ci` judges each agent step in a repository's GitHub
+    Actions workflows (Claude Code, Codex, Gemini CLI) like an agent launch:
+    whether issue, comment or pull request text reaches it, who can start
+    it, the secrets and tools it holds, and whether Harden-Runner blocks its
+    egress. It rates each with `ci-r1`, writes SARIF for code scanning, and
+    with `--fix` makes the one-line fixes that are safe to make blind.
+    Workflows modelled on PromptPwnd, Clinejection and Comment and Control
+    all rate High. The same check is a GitHub Action,
+    `elandlabs/flanner/actions/curb-ci`.
+  - `flanner curb app` finds an application's own LLM calls in its Python
+    code (openai, anthropic, google.genai, langchain, langgraph, litellm,
+    pydantic_ai, mcp), labels each a single call, tool-using or a loop, and
+    flags untrusted input beside tool-using calls and model output that
+    reaches eval, a shell or SQL. Every result is assumed, and the SARIF it
+    writes hands deeper analysis to Semgrep or CodeQL.
+  - `flanner init` installs the `agent-blast-radius` skill for Claude Code
+    and Codex. An agent runs the redacted Curb commands in its shell, and is
+    told to ask the person to open `flanner curb show` for names and
+    locations, which never come back to it.
 - **Messages between teammates.** Ask a teammate something from the CLI,
   the web UI or your agent, and it goes straight to their devices, never
   through a server.
