@@ -139,6 +139,11 @@ class CodexSettings:
     env_keep_secret_names: bool = True
     env_filters: dict[str, str] = field(default_factory=dict)
     env_include_only: list[str] = field(default_factory=list)
+    #: A permissions profile in use: the built-in it extends, its filesystem
+    #: entries as (key, access, under workspace roots), and the roots.
+    profile_base: str = ""
+    profile_entries: list[tuple[str, str, bool]] = field(default_factory=list)
+    workspace_roots: list[Path] = field(default_factory=list)
 
 
 # --- reading files -------------------------------------------------------------
@@ -758,16 +763,26 @@ def resolve_codex(
         if layer.usable and layer.name != "requirements":
             merged = _deep_merge(merged, layer.data)
 
-    # The sandbox and approvals.
+    # The sandbox: the older sandbox_mode, or a permissions profile, which
+    # replaces it and does not compose with it (E16).
     sandbox_assumed = False
+    profile_name = str(merged.get("default_permissions") or "")
+    legacy = merged.get("sandbox_mode") or isinstance(
+        merged.get("sandbox_workspace_write"), Mapping
+    )
     sandbox = context.sandbox or merged.get("sandbox_mode")
-    if not sandbox:
-        builtin = {
-            ":read-only": "read-only",
-            ":workspace": "workspace-write",
-            ":danger-full-access": "danger-full-access",
-        }
-        sandbox = builtin.get(str(merged.get("default_permissions", "")), "")
+    profile = _CodexProfile()
+    if profile_name and not context.sandbox:
+        if legacy:
+            assumed.append(
+                "default_permissions and sandbox_mode are both set, and Codex documents "
+                "that they do not combine"
+            )
+        elif profile_name == ":danger-full-access":
+            sandbox = "danger-full-access"
+        else:
+            sandbox = "profile"
+            profile = _codex_profile(merged, profile_name, context.cwd, assumed)
     if context.approve_for_me:
         sandbox = sandbox or "workspace-write"
     if not sandbox:
@@ -786,25 +801,13 @@ def resolve_codex(
         sandbox, approval = "danger-full-access", "never"
     reviewer_auto = context.approve_for_me or merged.get("approvals_reviewer") == "auto_review"
 
-    # Files and network.
-    profile_name = str(merged.get("default_permissions", ""))
-    profile = (
-        _get(merged, f"permissions.{profile_name}")
-        if profile_name and not profile_name.startswith(":")
-        else None
-    )
+    # Files and network. The admin's deny_read applies whatever the sandbox.
     deny_read = _strings(_get(requirements, "permissions.filesystem.deny_read"))
-    network_domains: dict[str, str] = {}
-    network_on = bool(_get(merged, "sandbox_workspace_write.network_access", False))
-    if isinstance(profile, Mapping):
-        for path, rule in (_get(profile, "filesystem") or {}).items():
-            if rule == "deny":
-                deny_read.append(str(path))
-        net = _get(profile, "network")
-        if isinstance(net, Mapping):
-            network_on = bool(net.get("enabled", network_on))
-            for pattern, verdict in (net.get("domains") or {}).items():
-                network_domains[str(pattern)] = str(verdict)
+    if sandbox == "profile":
+        network_on, network_domains = profile.network_on, dict(profile.domains)
+    else:
+        network_on = bool(_get(merged, "sandbox_workspace_write.network_access", False))
+        network_domains = {}
     proxy = (
         merged.get("features", {}).get("network_proxy")
         if isinstance(merged.get("features"), Mapping)
@@ -885,7 +888,63 @@ def resolve_codex(
         env_keep_secret_names=policy.get("ignore_default_excludes", True) is not False,
         env_filters=filters,
         env_include_only=_strings(policy.get("include_only")),
+        profile_base=profile.base,
+        profile_entries=profile.entries,
+        workspace_roots=[context.cwd, *profile.roots],
     )
+
+
+@dataclass
+class _CodexProfile:
+    base: str = ""
+    entries: list[tuple[str, str, bool]] = field(default_factory=list)
+    roots: list[Path] = field(default_factory=list)
+    network_on: bool = False
+    domains: dict[str, str] = field(default_factory=dict)
+
+
+def _codex_profile(
+    merged: Mapping[str, Any], name: str, cwd: Path, assumed: list[str]
+) -> _CodexProfile:
+    """A named permissions profile with its `extends` chain applied, parent first."""
+    chain: list[Mapping[str, Any]] = []
+    current, base = name, ""
+    for _ in range(8):
+        if current.startswith(":"):
+            base = current
+            break
+        found = _get(merged, f"permissions.{current}")
+        if not isinstance(found, Mapping):
+            assumed.append(f"Permissions profile {current!r} was not found")
+            break
+        chain.append(found)
+        parent = found.get("extends")
+        if not parent:
+            break
+        current = str(parent)
+    else:
+        assumed.append(f"Permissions profile {name!r} extends too deep, or in a loop")
+    entries: dict[tuple[str, bool], str] = {}
+    out = _CodexProfile(base=base)
+    for profile in reversed(chain):
+        filesystem = profile.get("filesystem")
+        for key, value in filesystem.items() if isinstance(filesystem, Mapping) else []:
+            if key == ":workspace_roots" and isinstance(value, Mapping):
+                for sub, access in value.items():
+                    entries[(str(sub), True)] = str(access)
+            elif isinstance(value, str):
+                entries[(str(key), False)] = value
+        for root in _strings(profile.get("workspace_roots")):
+            path = Path(os.path.expanduser(root))
+            out.roots.append(path if path.is_absolute() else cwd / path)
+        network = profile.get("network")
+        if isinstance(network, Mapping):
+            out.network_on = bool(network.get("enabled", out.network_on))
+            domains = network.get("domains")
+            for pattern, verdict in domains.items() if isinstance(domains, Mapping) else []:
+                out.domains[str(pattern)] = str(verdict)
+    out.entries = [(key, access, roots) for (key, roots), access in entries.items()]
+    return out
 
 
 def _ancestors(start: Path) -> list[Path]:

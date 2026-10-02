@@ -151,6 +151,7 @@ Curb reads; the only files it writes are its own redacted reports and digest key
 | A launch uses a flag Curb does not know | Every channel is unknown | The flag could have changed anything |
 | No desktop session, or no Tk | `curb show` explains and exits 1 | `curb map` still gives the redacted report |
 | A scheduled job's command cannot be read | The job is listed with its problem | It is not assessed |
+| A Codex config sets both `default_permissions` and `sandbox_mode` | Listed under Assumed; every channel unknown | Codex documents that the two do not combine, so Curb cannot tell which applies |
 | Kingfisher is not installed | `curb sweep` names the `flanner[sweep]` extra and exits 1 | Nothing was read |
 | A file is over 64 MB, or cannot be read | Counted under Not checked | That file's secrets are not counted |
 | You answer no to validation, or nobody is there to answer | No issuer is contacted | Findings are counted unvalidated |

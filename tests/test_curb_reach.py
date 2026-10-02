@@ -265,23 +265,44 @@ def codex_report(dirs, config=None, *argv, creds=None, version="0.154.0"):
 
 
 @needs_toml
-def test_codex_with_approvals_off_and_deny_read_closes_the_shell(dirs):
-    report = codex_report(
+def test_codex_with_approvals_off_and_a_profile_closes_the_shell(dirs):
+    profile = [
+        'approval_policy = "never"',
+        'web_search = "disabled"',
+        'default_permissions = "locked"',
+        "[features]",
+        "apps = false",
+        "[permissions.locked]",
+        'extends = ":workspace"',
+    ]
+    report = codex_report(dirs, "\n".join(profile))
+    assert channel(report, curb_reach.SHELL_NETWORK).state == curb_reach.CONTROLLED
+    assert report.readable == []  # outside the workspace, a profile reads only what it lists
+    assert report.verdict.severity == "Low"
+    granted = codex_report(
+        dirs, "\n".join([*profile, "[permissions.locked.filesystem]", '"~" = "read"'])
+    )
+    assert granted.readable and granted.verdict.severity == "Medium"
+    denied = codex_report(
         dirs,
         "\n".join(
-            [
-                'sandbox_mode = "workspace-write"',
-                'approval_policy = "never"',
-                'web_search = "disabled"',
-                'default_permissions = "locked"',
-                "[permissions.locked.filesystem]",
-                '"~/.aws" = "deny"',
-            ]
+            [*profile, "[permissions.locked.filesystem]", '"~" = "read"', '"~/.aws" = "deny"']
         ),
     )
-    assert channel(report, curb_reach.SHELL_NETWORK).state == curb_reach.CONTROLLED
-    assert report.readable == []
-    assert report.verdict.severity == "Low"
+    assert denied.readable == []  # the narrower deny wins
+
+
+@needs_toml
+def test_codex_profile_reads_inside_the_workspace_unless_denied(dirs):
+    env_file = write(dirs.project / "svc" / ".env", "API_TOKEN=x\n")
+    dotenv = Credential("dotenv", "project .env", "Project .env files", (env_file,))
+    head = 'approval_policy = "never"\ndefault_permissions = "p"\n[permissions.p]\n'
+    profile = head + 'extends = ":workspace"\n'
+    assert codex_report(dirs, profile, creds=[dotenv]).readable
+    deny = profile + '[permissions.p.filesystem.":workspace_roots"]\n"**/.env" = "deny"\n'
+    assert codex_report(dirs, deny, creds=[dotenv]).readable == []
+    bare = head + 'description = "x"\n'
+    assert codex_report(dirs, bare, creds=[dotenv]).readable == []  # no parent: nothing granted
 
 
 @needs_toml

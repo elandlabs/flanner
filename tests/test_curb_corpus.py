@@ -326,6 +326,10 @@ CLAUDE_POSTURES = (
 
 
 # --- Codex postures (E10, E16, E47) -----------------------------------------------
+#
+# A permissions profile (`default_permissions`) replaces `sandbox_mode` and does
+# not combine with it. Outside its workspace roots a profile reads only what it
+# lists, the most specific entry winning, `deny` over `write` over `read`.
 
 
 def _toml_string(text: str) -> str:
@@ -335,35 +339,54 @@ def _toml_string(text: str) -> str:
 def _codex(
     w: SimpleNamespace,
     *,
-    sandbox: str | None = '"workspace-write"',
+    profile: bool = True,
+    sandbox: str | None = None,
     approval: str | None = '"never"',
     web: str | None = '"disabled"',
     top: tuple[str, ...] = (),
     features: tuple[str, ...] = ("apps = false",),
+    home: bool = True,
     deny: bool = True,
+    roots: tuple[str, ...] = (),
+    parent: bool = True,
+    network: str | None = None,
+    domains: tuple[str, ...] = (),
     tables: tuple[str, ...] = (),
     trust: bool = False,
 ) -> str:
-    """A strict Codex config: sandboxed, never asking, web off, apps off, deny_read set."""
-    lines = [
-        f"{key} = {value}"
-        for key, value in (("sandbox_mode", sandbox), ("approval_policy", approval))
-        if value is not None
-    ]
+    """A strict Codex config: a profile on `:workspace` that reads home but its secrets.
+
+    `home` grants the home folder, so the profile reads as widely as the older
+    sandbox modes do, and `deny` takes the credential folders and `.env`
+    files back out. `profile=False` writes the older `sandbox_mode` instead.
+    """
+    lines = [] if approval is None else [f"approval_policy = {approval}"]
     if web is not None:
         lines.append(f"web_search = {web}")
-    lines += list(top)
-    if deny:
+    if sandbox is not None:
+        lines.append(f"sandbox_mode = {sandbox}")
+    if profile:
         lines.append('default_permissions = "locked"')
+    lines += list(top)
     if features:
         lines += ["[features]", *features]
-    if deny:
+    if profile:
         lines += [
-            "[permissions.locked.filesystem]",
-            '"~/.aws" = "deny"',
-            '"~/.ssh" = "deny"',
-            *(f'{_toml_string(path)} = "deny"' for path in _dotenvs(w)),
+            "[permissions.locked]",
+            'extends = ":workspace"' if parent else 'description = "x"',
         ]
+        entries = ['"~" = "read"'] if home else []
+        if deny:
+            entries += ['"~/.aws" = "deny"', '"~/.ssh" = "deny"']
+            entries += [f'{_toml_string(path)} = "deny"' for path in _dotenvs(w)]
+        if entries:
+            lines += ["[permissions.locked.filesystem]", *entries]
+        if roots:
+            lines += ['[permissions.locked.filesystem.":workspace_roots"]', *roots]
+        if network is not None:
+            lines += ["[permissions.locked.network]", f"enabled = {network}"]
+        if domains:
+            lines += ["[permissions.locked.network.domains]", *domains]
     lines += list(tables)
     if trust:
         for project in (w.plain, w.dotenv):
@@ -371,86 +394,96 @@ def _codex(
     return "\n".join(lines) + "\n"
 
 
-NET_ON = "sandbox_workspace_write.network_access = true"
 STRICT = {"blocked": DENIED, "net": C, "web": C}
 FULL = {"net": U, "web": C}
-RISKY_PROJECT = 'sandbox_mode = "danger-full-access"\nweb_search = "live"\n'
+HOME_FILES = frozenset({AWS, SSH, KUBE})
+RISKY_PROJECT = 'default_permissions = ":danger-full-access"\nweb_search = "live"\n'
+PROXY = ("apps = false", "network_proxy = true")
 
 CODEX_POSTURES = (
     Posture("no config", web=C, external=True, apps=K),
-    Posture("strict", user=_codex, **STRICT),
-    Posture("strict without deny_read", user=lambda w: _codex(w, deny=False), net=C, web=C),
-    Posture("strict, network on", user=lambda w: _codex(w, top=(NET_ON,)), **{**STRICT, "net": U}),
+    Posture("strict profile", user=_codex, **STRICT),
+    Posture("strict profile without denials", user=lambda w: _codex(w, deny=False), net=C, web=C),
     Posture(
-        "strict, network through the proxy's allowlist",
+        "strict profile, network on",
+        user=lambda w: _codex(w, network="true"),
+        **{**STRICT, "net": U},
+    ),
+    Posture(
+        "strict profile, network through the proxy's allowlist",
         user=lambda w: _codex(
-            w,
-            top=(NET_ON,),
-            features=(
-                "apps = false",
-                'network_proxy = { enabled = true, domains = { "pypi.org" = "allow" } }',
-            ),
+            w, features=PROXY, network="true", domains=('"pypi.org" = "allow"',)
         ),
         **STRICT,
     ),
     Posture(
-        "strict, proxy allows every domain",
-        user=lambda w: _codex(
-            w,
-            top=(NET_ON,),
-            features=(
-                "apps = false",
-                'network_proxy = { enabled = true, domains = { "*" = "allow" } }',
-            ),
-        ),
+        "strict profile, proxy allows every domain",
+        user=lambda w: _codex(w, features=PROXY, network="true", domains=('"*" = "allow"',)),
         **{**STRICT, "net": U},
     ),
-    Posture("full access", user=lambda w: _codex(w, sandbox='"danger-full-access"'), **FULL),
     Posture(
-        "strict, but approvals on request",
+        "full access, older sandbox setting",
+        user=lambda w: _codex(w, profile=False, sandbox='"danger-full-access"'),
+        **FULL,
+    ),
+    Posture(
+        "strict profile, but approvals on request",
         user=lambda w: _codex(w, approval='"on-request"'),
         **FULL,
     ),
-    Posture("read-only sandbox", user=lambda w: _codex(w, sandbox='"read-only"'), **STRICT),
     Posture(
-        "strict, automatic approval reviewer",
+        "read-only, older sandbox setting",
+        user=lambda w: _codex(w, profile=False, sandbox='"read-only"'),
+        net=C,
+        web=C,
+    ),
+    Posture(
+        "workspace-write, older sandbox setting",
+        user=lambda w: _codex(w, profile=False, sandbox='"workspace-write"'),
+        net=C,
+        web=C,
+    ),
+    Posture(
+        "strict profile, automatic approval reviewer",
         user=lambda w: _codex(w, top=('approvals_reviewer = "auto_review"',)),
         **FULL,
     ),
     Posture(
-        "strict, live web search", user=lambda w: _codex(w, web='"live"'), **{**STRICT, "web": U}
+        "strict profile, live web search",
+        user=lambda w: _codex(w, web='"live"'),
+        **{**STRICT, "web": U},
     ),
     Posture(
-        "strict, cached web search",
+        "strict profile, cached web search",
         user=lambda w: _codex(w, web='"cached"'),
         external=True,
         **STRICT,
     ),
     Posture(
-        "strict, one app enabled",
+        "strict profile, one app enabled",
         user=lambda w: _codex(w, features=(), tables=("[apps.github]", "enabled = true")),
         apps=U,
         **STRICT,
     ),
     Posture(
-        "strict, apps off by default",
+        "strict profile, apps off by default",
         user=lambda w: _codex(w, features=(), tables=("[apps._default]", "enabled = false")),
         **STRICT,
     ),
     Posture(
-        "strict, apps left at their default",
+        "strict profile, apps left at their default",
         user=lambda w: _codex(w, features=()),
         apps=K,
         **STRICT,
     ),
     Posture(
-        "strict, core environment only",
+        "strict profile, core environment only",
         user=lambda w: _codex(w, tables=("[shell_environment_policy]", 'inherit = "core"')),
         env_hidden=True,
         **STRICT,
     ),
     Posture(
-        "strict, default secret excludes on",
+        "strict profile, default secret excludes on",
         user=lambda w: _codex(
             w, tables=("[shell_environment_policy]", "ignore_default_excludes = false")
         ),
@@ -458,63 +491,63 @@ CODEX_POSTURES = (
         **STRICT,
     ),
     Posture(
-        "strict, the secret variable excluded by pattern",
+        "strict profile, the secret variable excluded by pattern",
         user=lambda w: _codex(w, tables=("[shell_environment_policy]", 'exclude = ["OPENAI_*"]')),
         env_hidden=True,
         **STRICT,
     ),
     Posture(
-        "strict, launched bypassing approvals and sandbox",
+        "strict profile, launched bypassing approvals and sandbox",
         user=_codex,
         argv=("--dangerously-bypass-approvals-and-sandbox",),
         **FULL,
     ),
     Posture(
-        "strict, sandbox overridden at launch",
+        "strict profile, sandbox overridden at launch",
         user=_codex,
         argv=("-s", "danger-full-access"),
         **FULL,
     ),
     Posture(
-        "strict, web search turned on at launch",
+        "strict profile, web search turned on at launch",
         user=_codex,
         argv=("--search",),
         **{**STRICT, "web": U},
     ),
     Posture(
-        "strict, a full-access profile picked at launch",
+        "strict profile, a full-access config profile picked at launch",
         user=_codex,
-        files={"yolo.config.toml": 'sandbox_mode = "danger-full-access"\n'},
+        files={"yolo.config.toml": 'default_permissions = ":danger-full-access"\n'},
         argv=("-p", "yolo"),
         **FULL,
     ),
     Posture(
-        "strict, a legacy profile with live search",
+        "strict profile, a legacy config profile with live search",
         user=lambda w: _codex(w, tables=("[profiles.calm]", 'web_search = "live"')),
         argv=("-p", "calm"),
         **{**STRICT, "web": U},
     ),
     Posture(
-        "strict, an untrusted project asks for full access (E47)",
+        "strict profile, an untrusted project asks for full access (E47)",
         user=_codex,
         project=RISKY_PROJECT,
         **STRICT,
     ),
     Posture(
-        "strict, a trusted project asks for full access",
+        "strict profile, a trusted project asks for full access",
         user=lambda w: _codex(w, trust=True),
         project=RISKY_PROJECT,
         net=U,
         web=U,
     ),
     Posture(
-        "strict, network turned on with -c",
+        "strict profile, network turned on with -c",
         user=_codex,
-        argv=("-c", "sandbox_workspace_write.network_access=true"),
+        argv=("-c", "permissions.locked.network.enabled=true"),
         **{**STRICT, "net": U},
     ),
     Posture(
-        "strict, the admin disables the MCP server",
+        "strict profile, the admin disables the MCP server",
         user=_codex,
         managed='disabled_mcp_servers = ["pencil"]\n',
         mcp_kept=False,
@@ -531,19 +564,47 @@ CODEX_POSTURES = (
         win32={"blocked": frozenset()},
     ),
     Posture(
-        "strict, granular approvals that never ask",
+        "strict profile, granular approvals that never ask",
         user=lambda w: _codex(w, approval="{ granular = { sandbox_approval = false } }"),
         **STRICT,
     ),
     Posture(
-        "strict, apps turned off at launch",
+        "strict profile, apps turned off at launch",
         user=lambda w: _codex(w, features=()),
         argv=("--disable", "apps"),
         **STRICT,
     ),
-    Posture("strict, unknown launch flag", user=_codex, argv=("--frobnicate",), doubt=True),
     Posture(
-        "strict config with a broken last line",
+        "profile that grants nothing outside the workspace",
+        user=lambda w: _codex(w, home=False, deny=False),
+        blocked=HOME_FILES,
+        net=C,
+        web=C,
+    ),
+    Posture(
+        "profile denying .env files in the workspace",
+        user=lambda w: _codex(w, home=False, deny=False, roots=('"**/.env" = "deny"',)),
+        blocked=HOME_FILES | {DOTENV},
+        net=C,
+        web=C,
+    ),
+    Posture(
+        "profile with no parent and no entries",
+        user=lambda w: _codex(w, home=False, deny=False, parent=False),
+        blocked=FILES,
+        net=C,
+        web=C,
+    ),
+    Posture(
+        "profile and sandbox_mode together, which Codex says do not combine",
+        user=lambda w: _codex(w, sandbox='"workspace-write"'),
+        doubt=True,
+    ),
+    Posture(
+        "strict profile, unknown launch flag", user=_codex, argv=("--frobnicate",), doubt=True
+    ),
+    Posture(
+        "strict profile with a broken last line",
         user=lambda w: _codex(w) + 'web_search = "live\n',
         doubt=True,
     ),

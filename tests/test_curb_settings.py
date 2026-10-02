@@ -383,15 +383,22 @@ def test_granular_approvals_without_sandbox_escalation_count_as_never(dirs):
 
 
 @needs_toml
-def test_a_permissions_profile_contributes_denied_paths_and_network_rules(dirs):
+def test_a_permissions_profile_replaces_the_sandbox_and_brings_its_rules(dirs):
     write(
         dirs.codex / "config.toml",
         "\n".join(
             [
                 'default_permissions = "locked"',
+                "[permissions.base]",
+                'extends = ":workspace"',
+                "[permissions.base.filesystem]",
+                '"~/src" = "write"',
+                "[permissions.locked]",
+                'extends = "base"',
                 "[permissions.locked.filesystem]",
                 '"~/.aws" = "deny"',
-                '"~/src" = "write"',
+                '[permissions.locked.filesystem.":workspace_roots"]',
+                '"**/.env" = "deny"',
                 "[permissions.locked.network]",
                 "enabled = true",
                 "[permissions.locked.network.domains]",
@@ -400,8 +407,29 @@ def test_a_permissions_profile_contributes_denied_paths_and_network_rules(dirs):
         ),
     )
     found = codex(dirs)
-    assert found.deny_read == ["~/.aws"]
+    assert (found.sandbox, found.profile_base) == ("profile", ":workspace")
+    assert sorted(found.profile_entries) == [
+        ("**/.env", "deny", True),
+        ("~/.aws", "deny", False),
+        ("~/src", "write", False),
+    ]
     assert found.network_access and found.network_domains == {"pypi.org": "allow"}
+    assert found.deny_read == [] and found.workspace_roots == [dirs.project]
+
+
+@needs_toml
+def test_a_profile_and_sandbox_mode_together_are_a_documented_misconfiguration(dirs):
+    write(
+        dirs.codex / "config.toml",
+        'sandbox_mode = "workspace-write"\ndefault_permissions = ":workspace"\n',
+    )
+    assert any("do not combine" in note for note in codex(dirs).assumed)
+
+
+@needs_toml
+def test_a_builtin_full_access_profile_is_no_sandbox(dirs):
+    write(dirs.codex / "config.toml", 'default_permissions = ":danger-full-access"\n')
+    assert codex(dirs).sandbox == "danger-full-access"
 
 
 @needs_toml

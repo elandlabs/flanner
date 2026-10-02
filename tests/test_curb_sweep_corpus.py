@@ -205,9 +205,11 @@ def _locked(agent: str, w: SimpleNamespace) -> None:
         }
         (w.claude / "settings.json").write_text(json.dumps(settings), encoding="utf-8")
     else:
+        # A permissions profile alone: Codex documents that it does not
+        # combine with sandbox_mode.
         locked = (
-            'sandbox_mode = "workspace-write"\napproval_policy = "never"\n'
-            'default_permissions = "locked"\n[permissions.locked.filesystem]\n'
+            'approval_policy = "never"\ndefault_permissions = "locked"\n'
+            '[permissions.locked]\nextends = ":workspace"\n[permissions.locked.filesystem]\n'
             f'{json.dumps(str(w.base))} = "deny"\n'
         )
         config = w.codex / "config.toml"

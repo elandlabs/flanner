@@ -506,7 +506,7 @@ def _codex(
     home: Path,
     env: Mapping[str, str],
 ) -> tuple[list[Channel], list[Reach], list[str]]:
-    sandboxed = settings.sandbox in ("read-only", "workspace-write")
+    sandboxed = settings.sandbox in ("read-only", "workspace-write", "profile")
     boundary = sandboxed and settings.approval == "never" and not settings.reviewer_auto
     deny = [(entry, context.cwd) for entry in settings.deny_read]
     sandbox_evidence = (
@@ -529,13 +529,11 @@ def _codex(
             evidence = ASSUMED
         else:
             stops = [
-                curb_match.sandbox_read_denied(path, deny=deny, allow=[], home=home)
-                if boundary
-                else None
+                _codex_read_stop(path, settings, deny, home) if boundary else None
                 for path in credential.paths
             ]
             if credential.paths and all(stops):
-                blocked.extend(f"deny_read {s}" for s in stops if s)
+                blocked.extend(s for s in stops if s)
             else:
                 via.append(SHELL_FILES)
         reach.append(Reach(credential, tuple(via), tuple(blocked), evidence))
@@ -543,6 +541,8 @@ def _codex(
     readable = sum(1 for r in reach if r.via)
     if settings.sandbox == "danger-full-access":
         why = "commands run with no sandbox"
+    elif settings.sandbox == "profile" and boundary:
+        why = "the permissions profile grants these paths"
     elif not boundary:
         why = "commands can ask to run outside the sandbox (approval_policy is not never)"
     else:
@@ -575,7 +575,7 @@ def _codex(
     elif not boundary:
         net_state = UNCONTROLLED
         net_why = "commands can ask to run outside the sandbox (approval_policy is not never)"
-    elif settings.sandbox == "read-only" or not settings.network_access:
+    elif settings.sandbox == "read-only" or not settings.network_access:  # a profile too
         net_state, net_why = CONTROLLED, "sandboxed commands have no network"
     elif (settings.network_domains or settings.proxy_enabled) and not allow_all:
         net_state, net_why = CONTROLLED, "sandboxed commands reach only the allowed domains"
@@ -647,6 +647,24 @@ def _codex(
         external.append("apps are enabled" if settings.apps else "apps may be connected")
     channels.append(_model_channel())
     return channels, reach, external
+
+
+def _codex_read_stop(
+    path: Path, settings: CodexSettings, deny: list[tuple[str, Path]], home: Path
+) -> str | None:
+    """What keeps sandboxed commands from reading a file, or None."""
+    admin = curb_match.sandbox_read_denied(path, deny=deny, allow=[], home=home)
+    if admin:
+        return f"deny_read {admin}"
+    if settings.sandbox != "profile":
+        return None  # the older sandbox modes read everywhere
+    return curb_match.codex_profile_reads(
+        path,
+        settings.profile_entries,
+        roots=settings.workspace_roots,
+        home=home,
+        base=settings.profile_base,
+    )
 
 
 def _codex_env_kept(name: str, settings: CodexSettings) -> bool:

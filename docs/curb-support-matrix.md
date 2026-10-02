@@ -27,9 +27,9 @@ launch's hand-written labels, taken from each agent's documentation, and the
 
 | | Claude Code | Codex |
 |---|---|---|
-| Launches | 35 | 32 |
+| Launches | 35 | 37 |
 | Credential sets | 9 | 9 |
-| Cases (× MCP on/off × 3 OSes) | 1,890 | 1,728 |
+| Cases (× MCP on/off × 3 OSes) | 1,890 | 1,998 |
 
 The corpus is split into strata: agent × OS × channel × expected severity,
 99 in all. The release gates (PRD §16):

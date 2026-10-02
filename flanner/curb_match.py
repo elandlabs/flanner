@@ -216,3 +216,61 @@ def within(target: Path, roots: Iterable[Path]) -> bool:
         if path == base or path.startswith(base.rstrip("/") + "/"):
             return True
     return False
+
+
+def codex_profile_pattern(key: str, *, home: Path, root: Path | None) -> str | None:
+    """A Codex permissions-profile filesystem key as an absolute POSIX glob.
+
+    Special tokens (`:minimal`, `:tmpdir`, ...) name system paths, never a
+    credential, so they give None, as does a relative key outside
+    `:workspace_roots`. Under `:workspace_roots` a key is relative to each
+    workspace root.
+    """
+    key = key.strip()
+    if not key or key.startswith(":"):
+        return None
+    if key.startswith("~"):
+        return _join(posix(home), key[1:].lstrip("/\\"))
+    if root is not None:
+        return _join(posix(root), key.replace("\\", "/"))
+    if key.startswith(("/", "\\")) or _DRIVE.match(key):
+        return posix(key)
+    return None
+
+
+def codex_profile_reads(
+    target: Path,
+    entries: Sequence[tuple[str, str, bool]],
+    *,
+    roots: Sequence[Path],
+    home: Path,
+    base: str,
+) -> str | None:
+    """Whether a Codex permissions profile lets sandboxed commands read `target`.
+
+    `entries` are (key, access, under workspace roots). The most specific
+    matching entry wins, and on the same path `deny` beats `write` beats
+    `read`. With no matching entry, a profile extending `:workspace` or
+    `:read-only` reads inside the workspace roots and nowhere else (their
+    `:minimal` paths are system ones). Returns None when readable, or what
+    stops it.
+    """
+    path = posix(target)
+    best: tuple[int, int, str, str] | None = None
+    rank = {"read": 1, "write": 2, "deny": 3}
+    for key, access, under_roots in entries:
+        if access not in rank:
+            continue
+        for root in roots if under_roots else [None]:
+            pattern = codex_profile_pattern(key, home=home, root=root)
+            if pattern is None or not glob_matches(pattern, path):
+                continue
+            specific = sum(1 for part in pattern.split("/") if part and "*" not in part)
+            candidate = (specific, rank[access], access, key)
+            if best is None or candidate[:2] > best[:2]:
+                best = candidate
+    if best is not None:
+        return f"profile {best[3]} = deny" if best[2] == "deny" else None
+    if base in (":workspace", ":read-only") and within(target, roots):
+        return None
+    return "the permissions profile does not grant it"
