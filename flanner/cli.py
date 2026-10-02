@@ -9377,8 +9377,8 @@ EXAMPLES: dict[str, tuple[str, ...]] = {
         "flanner curb test                 prove each block with decoys (costs tokens)",
     ),
     "curb scrub": (
-        "flanner curb scrub FILE --dry-run  check a file can be scrubbed",
-        "flanner curb scrub FILE            replace its secrets, after rotating them",
+        "flanner curb scrub notes.md --dry-run  check a file can be scrubbed",
+        "flanner curb scrub notes.md            replace its secrets, after rotating them",
     ),
     "curb log": (
         "flanner curb log --enable         log each tool call's metadata (asks first)",
