@@ -21,14 +21,15 @@ from typing import Any
 
 def unavailable() -> str | None:
     """Why a window cannot open here, or None if it can."""
-    if sys.platform.startswith("linux") and not (
+    platform: str = sys.platform  # a plain str, so mypy checks every branch on every OS
+    if platform.startswith("linux") and not (
         os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")
     ):
         return "there is no desktop session here (no DISPLAY or WAYLAND_DISPLAY)"
     try:
         import tkinter  # noqa: F401 - only asking whether it imports
     except ImportError:
-        if sys.platform.startswith("linux"):
+        if platform.startswith("linux"):
             return "Python's Tk support is missing; install your distribution's python3-tk package"
         return "Python's Tk support is missing from this Python"
     return None
