@@ -156,6 +156,16 @@ def forget() -> list[str]:
     if actions.is_file():
         actions.unlink()
         removed.append("the action log")
+    # Alerts are keyed digests and audit export follows the action log, so
+    # both go with them. The org policy, the authority list and the fleet
+    # report sequence stay: they are what refuses a rollback or a replay.
+    derived = [
+        curb_dir() / f"{n}.json" for n in ("alerts", "alerts-outbox", "alerts-notices", "export")
+    ]
+    if any(path.is_file() for path in derived):
+        for path in derived:
+            path.unlink(missing_ok=True)
+        removed.append("queued alerts and the audit export position")
     store = identity._keychain()
     gone = False
     if store is not None:

@@ -350,6 +350,7 @@ ALLOWED = {
         "curb_wire",
         "notify",
     },
+    "curb_export": {"curb_context", "curb_log", "curb_store"},
     # The list of every operation and the surfaces that offer it. Data only,
     # imported by the tests that check it against the CLI, web app and MCP
     # server, and by nothing that would make it a dependency.

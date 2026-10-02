@@ -118,3 +118,13 @@ def test_an_alert_carries_only_the_contract_fields():
     }
     assert alert["event_id"].startswith("evt_") and len(alert["event_id"]) == 36
 
+
+def test_forget_drops_alerts_and_export_but_keeps_policy_and_sequence():
+    curb_alerts.raise_alerts([finding()], device_id="dev_a", now=1000)
+    curb_store.write_state("export", {"cursor": "x"})
+    curb_store.write_state("fleet", {"sequence": 4})
+    curb_store.write_state("policy", {"delegated_at": 1.0})
+    assert "queued alerts and the audit export position" in curb_store.forget()
+    assert curb_store.read_state("alerts-outbox") == {} and curb_store.read_state("export") == {}
+    assert curb_store.read_state("fleet")["sequence"] == 4  # a reset would read as a replay
+    assert curb_store.read_state("policy")["delegated_at"] == 1.0
