@@ -352,6 +352,15 @@ ALLOWED = {
     "web": FOUNDATION
     | {
         "crash",
+        # The Agent reach page: the same redacted reports `curb map` prints,
+        # the window launcher, and fixes behind the operating system's yes.
+        "curb_approval",
+        "curb_fix",
+        "curb_kingfisher",
+        "curb_reach",
+        "curb_report",
+        "curb_store",
+        "curb_window",
         "database",
         "paging",
         "actions",

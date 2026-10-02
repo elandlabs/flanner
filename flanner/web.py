@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import secrets
+import sys
 import threading
 import time
 from collections import OrderedDict
@@ -4164,6 +4165,103 @@ async def ipc_call(request: Request) -> JSONResponse:
     except Exception as e:
         logger.exception("IPC operation %s failed", op)
         return JSONResponse({"result": {"error": True, "message": str(e)}})
+
+
+# --- Curb: what agents can reach (redacted) ------------------------------------------------
+
+
+def _curb_last_sweep() -> dict[str, Any] | None:
+    """The counts from the newest stored sweep report, or None."""
+    from . import curb_store
+
+    folder = curb_store.curb_dir() / "reports"
+    newest = max(folder.glob("sweep-*.json"), default=None) if folder.is_dir() else None
+    if newest is None:
+        return None
+    try:
+        data = json.loads(newest.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data.get("by_class"), dict) else None
+
+
+def _curb_views() -> tuple[list[dict[str, Any]], list[str]]:
+    from . import curb_reach, curb_report
+
+    _, contexts, skipped = curb_report.contexts(None, None, None, ())
+    reports = curb_report.with_proofs(curb_report.assess(contexts))
+    return [curb_reach.redacted(report) for report in reports], skipped
+
+
+@app.get("/curb", response_class=HTMLResponse)
+async def curb_page(request: Request, said: str = "") -> HTMLResponse:
+    """What each agent here can reach, redacted exactly as `flanner curb map` is.
+
+    Names and locations never reach a browser: the buttons open Curb's own
+    desktop window, and a fix asks the operating system for a yes (Curb
+    PRD §11.1).
+    """
+    ensure_db()
+    session = get_session()
+    views, skipped = await run_in_threadpool(_curb_views)
+    return templates.TemplateResponse(
+        request,
+        "curb.html",
+        {
+            "reports": views,
+            "skipped": skipped,
+            "sweep": _curb_last_sweep(),
+            "said": said,
+            **_nav(session),
+        },
+    )
+
+
+@app.post("/curb/show")
+async def curb_show_form(sweep: str = Form("")) -> RedirectResponse:
+    """Open Curb's desktop window on this machine's screen. Nothing comes back here."""
+    from . import curb_kingfisher, curb_window
+
+    reason = curb_window.unavailable() or (curb_kingfisher.unavailable() if sweep else None)
+    if reason:
+        said = f"No window can open: {reason}."
+    else:
+        curb_window.launch(["--dir", str(Path.cwd()), *(["--sweep"] if sweep else [])])
+        said = "Opened in a window on this machine's screen."
+    return RedirectResponse(f"/curb?said={quote(said)}", status_code=303)
+
+
+def _curb_fix_now() -> str:
+    from . import curb_approval, curb_fix, curb_report
+
+    _, contexts, _ = curb_report.contexts(None, None, None, ())
+    reports = curb_report.assess([c for c in contexts if c.source == "default"])
+    planned = curb_fix.plan(reports, home=Path.home(), platform=sys.platform, env=os.environ)
+    if not planned.edits:
+        return "Nothing Curb can change on its own."
+    presence = curb_approval.method()
+    if presence is None:
+        return "No approval method on this machine, so nothing changed."
+    broker = curb_approval.Broker(presence)
+    try:
+        grant = broker.request(planned.summary(), curb_approval.change_hash(planned.change()))
+    except curb_approval.Paused as stop:
+        return f"Not asked: {stop}."
+    if grant is None:
+        return "Not approved, so nothing changed."
+    try:
+        folder = curb_fix.apply(planned, broker, grant)
+    except (curb_fix.FixFailed, curb_approval.NoGrant) as error:
+        return f"Nothing changed: {error}."
+    changed = ", ".join(edit.where for edit in planned.edits)
+    return f"Changed {changed}; backed up for 7 days ({folder.name})."
+
+
+@app.post("/curb/fix")
+async def curb_fix_form() -> RedirectResponse:
+    """Plan fixes and apply them after the operating system's own prompt says yes."""
+    said = await run_in_threadpool(_curb_fix_now)
+    return RedirectResponse(f"/curb?said={quote(said)}", status_code=303)
 
 
 if __name__ == "__main__":

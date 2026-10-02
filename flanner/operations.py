@@ -808,6 +808,7 @@ OPERATIONS: tuple[Operation, ...] = (
         "See what each agent launch can reach",
         "read",
         cli=("curb map", "curb show"),
+        web=("GET /curb", "POST /curb/show"),
         why=(
             "A map of reachable credentials is a target list for an injected agent, "
             "so even the redacted report stays in the terminal."
@@ -830,6 +831,7 @@ OPERATIONS: tuple[Operation, ...] = (
         "Fix what each agent can reach",
         "write",
         cli=("curb fix",),
+        web=("POST /curb/fix",),
         why=(
             "Each fix needs a person's yes in the operating system's own prompt, which an "
             "agent cannot give."

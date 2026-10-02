@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Agent reach{% endblock %}
+
+{% block topbar_main %}
+<h1>Agent reach</h1>
+  <span class="sub">Redacted, as the terminal is: no credential, secret or location</span>
+{% endblock %}
+
+{#
+  The same redacted report `flanner curb map` prints. Names and locations
+  never reach this page or any browser: the buttons open Curb's desktop
+  window, drawn by a process of its own on this machine's screen, and a fix
+  asks the operating system for a yes before it writes anything (Curb PRD
+  §11). A script driving this page gets counts, and nothing it could act on.
+#}
+{% block content %}
+<div class="pane narrow">
+  {% if said %}<div class="notice info" role="status">{{ said }}</div>{% endif %}
+  {% for line in skipped %}<p class="hint">{{ line }}</p>{% endfor %}
+
+  {% for report in reports %}
+  <div class="card card-pad" data-curb-report>
+    <h2 class="card-title" style="margin-bottom:2px">{{ report.label }}:
+      <b data-severity>{{ report.severity.level }}</b>
+      <span class="hint">({{ report.severity.rule }}, {{ report.severity.evidence }})</span></h2>
+    <p class="hint">{{ report.severity.reason }}. {{ report.launch | replace('`', '') }}.</p>
+    {% for channel in report.channels %}
+    <div class="kv"><span>{{ channel.channel }}</span>
+      <b>{{ channel.state }}{% if channel.evidence != 'configured' %} · {{ channel.evidence }}{% endif %}</b></div>
+    {% endfor %}
+    <div class="kv"><span>Credentials found</span>
+      <b class="tnum">{{ report.credentials.found }}, {{ report.credentials.readable }} readable</b></div>
+    {% if not report.supported %}
+    <p class="hint">Version {{ report.version or 'unknown' }} is not the tested
+      {{ report.baseline }}, so every result is assumed.</p>
+    {% endif %}
+  </div>
+  {% else %}
+  <div class="card card-pad"><p class="hint">No supported agent was found on this machine.</p></div>
+  {% endfor %}
+
+  <div class="card card-pad">
+    <h2 class="card-title">Leak sweep</h2>
+    {% if sweep %}
+    {% for key, name in sweep.classes.items() %}
+    <div class="kv"><span>{{ key }}, {{ name }}</span><b class="tnum">{{ sweep.by_class[key] }}</b></div>
+    {% endfor %}
+    <p class="hint">From the last <code class="mono">flanner curb sweep</code>.</p>
+    {% else %}
+    <p class="hint">No sweep yet. <code class="mono">flanner curb sweep</code> runs one.</p>
+    {% endif %}
+  </div>
+
+  <div class="card card-pad">
+    <h2 class="card-title">Details and fixes</h2>
+    <form method="post" action="/curb/show" class="switch-row">
+      <div class="body">Names and locations, in a window on this machine's screen</div>
+      <button class="btn btn-sm" type="submit">Open</button>
+    </form>
+    <form method="post" action="/curb/show" class="switch-row">
+      <input type="hidden" name="sweep" value="1">
+      <div class="body">Where each secret the sweep found is</div>
+      <button class="btn btn-sm" type="submit">Open</button>
+    </form>
+    <form method="post" action="/curb/fix" class="switch-row">
+      <div class="body">Close what Curb can, in each agent's own user settings. Your operating
+        system asks you first, and each file is backed up for 7 days.</div>
+      <button class="btn btn-sm" type="submit">Fix</button>
+    </form>
+  </div>
+</div>
+{% endblock %}
