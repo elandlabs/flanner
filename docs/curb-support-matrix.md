@@ -64,9 +64,14 @@ A stratum is agent × OS × artifact type, 54 in all, 1,080 secrets.
 
 These numbers come from a stand-in detector that knows the planted
 format, so they measure where the sweep looks and how it classes what it
-finds. The same corpus runs through Kingfisher itself, with real-format
-GitHub tokens, wherever the `sweep` extra is installed. It has not run
-yet: Kingfisher was not installed on the development laptop.
+finds. The same corpus also runs through Kingfisher itself, with
+real-format GitHub tokens carrying valid checksums:
+
+| Detector | Planted | Found in the right class | False positives | Values in any output |
+|---|---|---|---|---|
+| Kingfisher 1.0.1, development laptop, 2026-10-03 | 1,080 in 54 strata | 1,080 (100% in every stratum) | None | None |
+
+CI runs it on Linux, macOS and Windows, with the `sweep` extra installed.
 
 Not read: plans in a plan folder other than `.plans`, and files over
 64 MB (counted under Not checked).
@@ -173,8 +178,16 @@ Measured as `flanner curb map --json`, wall clock, from process start.
 
 The leak sweep must take under 2 minutes at the 95th percentile, at low
 CPU priority, in under 500 MB. It lowers its own priority and reads one
-file at a time, skipping files over 64 MB. Its time has not been measured
-yet, because that needs Kingfisher installed.
+file at a time, skipping files over 64 MB.
+
+| Machine | Files | Runs | Median | p95 |
+|---|---|---|---|---|
+| Windows 11 Home development laptop, Kingfisher 1.0.1, otherwise idle, 2026-10-03 | 1,915 | 10 | 80.2 s | 115.2 s |
+
+Measured as `flanner curb sweep --json`, wall clock, from process start.
+With 10 runs, the 95th percentile is the slowest run. It is inside the
+target with little room: under load, one run took 165 s. Memory use has
+not been measured yet.
 
 ## Not checked
 
