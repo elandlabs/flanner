@@ -341,6 +341,7 @@ ALLOWED = {
         "curb_tighten",
         "curb_wire",
     },
+    "curb_fleet": {"curb_reach", "curb_store", "curb_wire"},
     # The list of every operation and the surfaces that offer it. Data only,
     # imported by the tests that check it against the CLI, web app and MCP
     # server, and by nothing that would make it a dependency.
