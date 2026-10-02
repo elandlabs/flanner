@@ -9364,6 +9364,11 @@ EXAMPLES: dict[str, tuple[str, ...]] = {
         "flanner curb sweep --validate    and ask each one's issuer if it works",
     ),
     "curb forget": ("flanner curb forget              delete Curb's reports and digest key",),
+    "curb fix": (
+        "flanner curb fix --dry-run        the fixes, without changing anything",
+        "flanner curb fix                  apply them, after your OS says yes",
+        "flanner curb fix --undo           put the files back",
+    ),
     "init": (
         "flanner init                     adopt the repository you are in",
         "flanner init --plan-dir docs/plans",
@@ -9588,13 +9593,21 @@ def _which(program: str) -> str | None:
 
 
 def _curb_reports(contexts: list[Any], *, full: bool) -> list[dict[str, Any]]:
+    from . import curb_reach
+
+    view = curb_reach.full if full else curb_reach.redacted
+    return [view(report) for report in _curb_assess(contexts)]
+
+
+def _curb_assess(contexts: list[Any]) -> list[Any]:
+    """Each launch context's AgentReport."""
     from . import curb_credentials, curb_inventory, curb_reach, curb_settings
 
     home = Path.home()
     env = dict(os.environ)
     found: dict[str, list[Any]] = {}
     versions: dict[str, str | None] = {}
-    views = []
+    reports = []
     for context in contexts:
         key = str(context.cwd)
         if key not in found:
@@ -9611,8 +9624,8 @@ def _curb_reports(contexts: list[Any], *, full: bool) -> list[dict[str, Any]]:
             env=env,
             version=versions[context.agent],
         )
-        views.append(curb_reach.full(report) if full else curb_reach.redacted(report))
-    return views
+        reports.append(report)
+    return reports
 
 
 _STATE_STYLE = {
@@ -9830,29 +9843,139 @@ def curb_sweep_command(directory: Path | None, as_json: bool, validate: bool) ->
         console.print()
 
 
+def _curb_ask(question: str) -> bool:
+    try:
+        return click.confirm(question, default=False)
+    except click.Abort:  # nobody there to answer
+        return False
+
+
 @curb.command("forget")
 @click.option("--yes", is_flag=True, help="Delete without asking first")
-def curb_forget(yes: bool) -> None:
+@click.option("--backups", is_flag=True, help="With --yes: delete settings backups too")
+def curb_forget(yes: bool, backups: bool) -> None:
     """Delete everything Curb keeps on this machine
 
-    The redacted reports and the per-device digest key. Afterwards older
-    fingerprints can no longer be matched.
+    The redacted reports and the per-device digest key; afterwards older
+    fingerprints can no longer be matched. Settings backups are asked about
+    separately, because they are the only undo for a fix.
     """
-    from . import curb_store
+    from . import curb_fix, curb_store
 
-    if not yes:
-        try:
-            sure = click.confirm("Delete Curb's stored reports and digest key?", default=False)
-        except click.Abort:
-            sure = False
-        if not sure:
-            tui.note("Nothing deleted.")
-            return
+    if not yes and not _curb_ask("Delete Curb's stored reports and digest key?"):
+        tui.note("Nothing deleted.")
+        return
     removed = curb_store.forget()
+    held = curb_fix.count()
+    if held and (
+        backups
+        if yes
+        else _curb_ask(f"Also delete {held} settings backup(s)? They are the only undo.")
+    ):
+        curb_fix.forget_backups()
+        removed.append(f"{held} settings backup(s)")
     if removed:
         tui.ok("Deleted " + "; ".join(removed) + ".")
     else:
         tui.note("Curb keeps nothing on this machine yet.")
+
+
+def _curb_grant(summary: str, change: Any) -> tuple[Any, Any]:
+    """Ask the operating system for a person's yes. Exits when there is none."""
+    from . import curb_approval
+
+    presence = curb_approval.method()
+    if presence is None:
+        tui.bad("No approval method on this machine, so Curb stays read-only.")
+        tui.hint("  Make the changes above by hand.")
+        raise SystemExit(1)
+    broker = curb_approval.Broker(presence)
+    tui.note(f"Asking for approval through {presence.name}…")
+    if presence.weak:
+        tui.warn("A password prompt can be imitated: check it is the system's own window.")
+    try:
+        grant = broker.request(summary, curb_approval.change_hash(change))
+    except curb_approval.Paused as stop:
+        tui.bad(f"Not asked: {stop}.")
+        raise SystemExit(1) from None
+    if grant is None:
+        tui.bad("Not approved, so nothing changed.")
+        raise SystemExit(1)
+    return broker, grant
+
+
+@curb.command("fix")
+@click.option(
+    "--dir",
+    "directory",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=None,
+    help="The project folder to assess from (default: here)",
+)
+@click.option("--agent", type=click.Choice(["claude", "codex"]), default=None)
+@click.option("--dry-run", is_flag=True, help="Show the fixes, change nothing")
+@click.option("--undo", is_flag=True, help="Put back the files the last fix changed")
+def curb_fix_command(directory: Path | None, agent: str | None, dry_run: bool, undo: bool) -> None:
+    """Close what each agent can reach, in its own user settings
+
+    Plans fixes from the same assessment `flanner curb map` makes: deny
+    rules, the sandbox, and network and environment limits. Only changes
+    that leave every channel no broader are planned. Applying asks your
+    operating system for a yes, which an agent cannot give, backs up each
+    file for 7 days, and checks the result.
+    """
+    from . import curb_approval, curb_fix
+
+    if undo:
+        folder = curb_fix.latest()
+        if folder is None:
+            tui.note("There is no fix to undo.")
+            return
+        broker, grant = _curb_grant(
+            "Put back the agent settings the last fix changed", curb_fix.undo_change(folder)
+        )
+        restored, kept = curb_fix.undo(broker, grant, folder)
+        if restored:
+            tui.ok("Put back: " + ", ".join(restored) + ".")
+        if kept:
+            tui.warn("Left as they are, because they changed since: " + ", ".join(kept) + ".")
+        return
+
+    _, contexts, skipped = _curb_contexts(directory, agent, None, ())
+    with tui.working("assessing each agent's launch"):
+        reports = _curb_assess([c for c in contexts if c.source == "default"])
+        planned = curb_fix.plan(reports, home=Path.home(), platform=sys.platform, env=os.environ)
+    for line in skipped:
+        tui.note(line)
+    console.print()
+    if planned.edits:
+        console.print("[bold]Fixes[/]")
+        for edit in planned.edits:
+            console.print(f"  {edit.where}: " + "; ".join(edit.actions) + ".")
+    for heading, lines in (("Left for you", planned.guided), ("Not applied", planned.refused)):
+        if lines:
+            console.print(f"[bold]{heading}[/]")
+            for line in dict.fromkeys(lines):
+                console.print(f"  - {line}.")
+    console.print()
+    if not planned.edits:
+        tui.note("Nothing Curb can change on its own.")
+        return
+    if dry_run:
+        tui.note("Dry run: nothing changed.")
+        return
+    broker, grant = _curb_grant(planned.summary(), planned.change())
+    try:
+        folder = curb_fix.apply(planned, broker, grant)
+    except curb_fix.FixFailed as failure:
+        tui.bad(f"{failure}; every file was put back as it was.")
+        raise SystemExit(1) from None
+    except curb_approval.NoGrant as refusal:
+        tui.bad(f"Nothing changed: {refusal}.")
+        raise SystemExit(1) from None
+    tui.ok("Changed " + ", ".join(e.where for e in planned.edits) + ".")
+    tui.note(f"Backed up for 7 days in {folder.name}; `flanner curb fix --undo` puts them back.")
+    tui.hint(f"  {tui.command('flanner curb map')} shows what each agent can reach now.")
 
 
 @curb.command("show")

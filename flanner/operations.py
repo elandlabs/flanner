@@ -827,6 +827,17 @@ OPERATIONS: tuple[Operation, ...] = (
     ),
     _op(
         "curb",
+        "Fix what each agent can reach",
+        "write",
+        cli=("curb fix",),
+        why=(
+            "Each fix needs a person's yes in the operating system's own prompt, which an "
+            "agent cannot give."
+        ),
+        since="0.16.0",
+    ),
+    _op(
+        "curb",
         "Delete what Curb keeps on this machine",
         "destructive",
         cli=("curb forget",),

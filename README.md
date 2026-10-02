@@ -104,6 +104,7 @@ flanner curb show                                       # names and locations, i
 flanner curb inventory                                  # agents, MCP servers, hooks, jobs
 flanner curb sweep [--validate]                         # secrets agents left behind (needs flanner[sweep])
 flanner curb forget                                     # delete Curb's reports and digest key
+flanner curb fix [--dry-run|--undo]                     # close what agents reach, after your OS says yes
 flanner register [--force] / flanner unregister         # MCP registration with Claude Desktop
 flanner claude-info                                     # integration status
 ```

@@ -45,6 +45,13 @@ versioning follows [SemVer](https://semver.org/).
   - Reports keep counts, classes and keyed fingerprints for 30 days, never
     a value or a location. `flanner curb forget` deletes them and the
     per-device key the fingerprints use.
+  - `flanner curb fix` closes what each agent can reach, in its own user
+    settings: deny rules, the sandbox, network and environment limits. It
+    plans only changes that leave every channel no broader, asks your
+    operating system for a yes first (Windows Hello or the account
+    password, Touch ID, or polkit), backs up each file for 7 days, and
+    checks the result. `--dry-run` shows the plan; `--undo` puts the files
+    back. A write without that yes fails.
   - Local: nothing is changed, and nothing leaves the machine unless you
     ask an issuer to check a secret.
 - **Messages between teammates.** Ask a teammate something from the CLI,

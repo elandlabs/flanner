@@ -279,6 +279,18 @@ ALLOWED = {
     "curb_approval": {"curb_store", "notify"},
     # The tighten-only test: the resolver and reach rules, before and after.
     "curb_tighten": {"curb_context", "curb_credentials", "curb_reach", "curb_settings"},
+    # Fix writers: plan from an assessment, check tighten-only, write with a grant.
+    "curb_fix": {
+        "agent_paths",
+        "curb_approval",
+        "curb_context",
+        "curb_credentials",
+        "curb_match",
+        "curb_reach",
+        "curb_settings",
+        "curb_store",
+        "curb_tighten",
+    },
     # The list of every operation and the surfaces that offer it. Data only,
     # imported by the tests that check it against the CLI, web app and MCP
     # server, and by nothing that would make it a dependency.
@@ -477,8 +489,10 @@ ALLOWED = {
         # Seeding a known catalog, behind the hidden `demo` group.
         "demo",
         # The Curb commands: assessment, inventory and the detail window.
+        "curb_approval",
         "curb_context",
         "curb_credentials",
+        "curb_fix",
         "curb_inventory",
         "curb_kingfisher",
         "curb_reach",

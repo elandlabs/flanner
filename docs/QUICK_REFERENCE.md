@@ -78,6 +78,11 @@ flanner curb sweep
 flanner curb sweep --validate     # ask each secret's issuer if it works
 flanner curb show --sweep         # types and locations, in a window
 
+# Close what each agent can reach, in its own user settings
+flanner curb fix --dry-run        # the fixes, changing nothing
+flanner curb fix                  # apply them after your operating system asks you
+flanner curb fix --undo           # put the files back
+
 # Delete Curb's stored reports and its digest key
 flanner curb forget
 ```

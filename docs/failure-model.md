@@ -157,6 +157,11 @@ Curb reads; the only files it writes are its own redacted reports and digest key
 | You answer no to validation, or nobody is there to answer | No issuer is contacted | Findings are counted unvalidated |
 | No OS keychain | The digest key is a user-only file in `~/.flanner/curb/` | Same fingerprints, weaker custody |
 | The digest key is lost | A new one is made | Older reports' fingerprints stop matching |
+| No approval method (no desktop, no Hello, Touch ID or polkit) | `curb fix` lists the changes and exits 1 | Nothing is written; make them by hand |
+| You refuse or ignore the approval prompt | "Not approved", exit 1 | Nothing is written. Three in ten minutes pause requests for an hour |
+| A fixed file does not read back as written | Every file is put back, exit 1 | The settings are as they were |
+| `curb fix --undo` finds a file edited since the fix | That file is left as it is | Putting the copy back would lose the edit |
+| A Codex config cannot be edited line by line | The changes become steps for you | Nothing is written to it |
 
 ## Known gaps
 
