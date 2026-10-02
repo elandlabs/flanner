@@ -324,6 +324,10 @@ ALLOWED = {
         "curb_store",
         "curb_tighten",
     },
+    # Curb's team features (R5). None of them reaches the network: the team
+    # pass is handed a client by the composition root, which builds it from
+    # `account`, and the reachability test below holds every one to that.
+    "curb_wire": {"artifacts", "entitlements"},
     # The list of every operation and the surfaces that offer it. Data only,
     # imported by the tests that check it against the CLI, web app and MCP
     # server, and by nothing that would make it a dependency.

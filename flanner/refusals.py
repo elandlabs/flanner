@@ -138,6 +138,16 @@ PEER_OUTDATED: Final = "peer_outdated"
 #: can take the message. Retrying cannot help until they enrol one.
 NO_DEVICES: Final = "no_devices"
 
+# --- Flanner Curb team features (docs/curb-wire-contract.md) -----------------
+
+#: The client is older than this endpoint's minimum. Sent with HTTP 426 and
+#: a `minimum_version` field; retrying cannot help until flanner is updated.
+CLIENT_TOO_OLD: Final = "client_too_old"
+
+#: A fleet report whose sequence number is not higher than the last one
+#: accepted from that device: a replay, or a report sent out of order.
+STALE_SEQUENCE: Final = "stale_sequence"
+
 #: Never sent. What a client uses for a code it does not recognise, so that
 #: "an old client met a new server" is a case with a name rather than a
 #: KeyError.
@@ -176,6 +186,8 @@ KNOWN: Final = frozenset(
         AMBIGUOUS_ID,
         PEER_OUTDATED,
         NO_DEVICES,
+        CLIENT_TOO_OLD,
+        STALE_SEQUENCE,
     }
 )
 

@@ -24,6 +24,7 @@ import platform
 import random
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections.abc import Callable
 from datetime import datetime, timezone
@@ -191,6 +192,7 @@ def _session_from(endpoint: str, body: dict[str, Any]) -> Session:
             device_keys=dict(body.get("device_keys") or {}),
             roster=str(body.get("roster") or ""),
             org_role=str(body.get("org_role") or ""),
+            curb_capabilities=[str(c) for c in body.get("curb_capabilities") or []],
         )
     except (KeyError, TypeError, ValueError) as e:
         raise SessionError(f"the control plane returned something unusable: {e}") from None
@@ -211,6 +213,7 @@ def _post(
     payload: dict[str, Any] | Callable[[], dict[str, Any]],
     *,
     repeatable: bool = False,
+    headers: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """One call to the control plane, retried where a repeat cannot do harm.
 
@@ -223,6 +226,8 @@ def _post(
             Defaults to False so the promise is made deliberately. Reads and
             idempotent writes qualify; anything that spends a one-shot
             secret or sends an email does not.
+        headers: extra request headers, such as Curb's version and
+            capability headers.
 
     Retries only when the request never completed — a refused connection, a
     DNS failure, a timeout before the first byte. A response with a status,
@@ -239,7 +244,7 @@ def _post(
         request = urllib.request.Request(  # noqa: S310 - scheme checked above
             url,
             data=json.dumps(body).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
+            headers={"Content-Type": "application/json", **(headers or {})},
             method="POST",
         )
         try:
@@ -304,6 +309,10 @@ def _refusal(error: urllib.error.HTTPError) -> tuple[str, str]:
     detail = body.get("detail")
     code = str(body.get("code") or "") or refusals.UNKNOWN
     message = str(detail) if detail else f"the control plane refused this request ({error.code})"
+    # A client below an endpoint's minimum is told which version to reach.
+    minimum = body.get("minimum_version")
+    if code == refusals.CLIENT_TOO_OLD and minimum:
+        message += f" (update flanner to {minimum} or later)"
 
     # A refusal that says when to come back is far more useful than one that
     # does not, and the server already worked the number out.
@@ -438,6 +447,56 @@ def _signed(path: str, body: dict[str, Any], *, repeatable: bool = False) -> dic
         lambda: device_auth.sign_request(body, device_id=current.device_id).to_dict(),
         repeatable=repeatable,
     )
+
+
+# --- Flanner Curb team features (docs/curb-wire-contract.md) ----------------
+
+
+def curb_call(
+    path: str, body: dict[str, Any], *, headers: dict[str, str], repeatable: bool = True
+) -> dict[str, Any]:
+    """A device-signed call to a Curb endpoint, with Curb's version headers.
+
+    Repeatable by default: each Curb call is a read, or a write the control
+    plane deduplicates (reports by sequence number, alerts by event id).
+    """
+    current = cache.load()
+    if current is None:
+        raise SessionError("this device is not logged in")
+    return _post(
+        current.endpoint,
+        path,
+        lambda: device_auth.sign_request(body, device_id=current.device_id).to_dict(),
+        repeatable=repeatable,
+        headers=headers,
+    )
+
+
+def post_collector(url: str, token: str, records: list[dict[str, Any]]) -> None:
+    """Send audit records to the organization's own collector (Curb PRD §10.10).
+
+    Not the control plane: the signed policy names the endpoint, and records
+    go straight there with the endpoint token. Only https, or a loopback
+    address for a local test collector, since the token is a bearer secret.
+    Nothing is retried here: unsent records stay in the action log.
+    """
+    host = urllib.parse.urlsplit(url).hostname or ""
+    loopback = url.startswith("http://") and host in ("localhost", "127.0.0.1", "::1")
+    if not (url.startswith("https://") or loopback):
+        raise SessionError("an audit collector must use https")
+    request = urllib.request.Request(  # noqa: S310 - scheme checked above
+        url,
+        data=json.dumps(records).encode("utf-8"),
+        headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT):  # noqa: S310 - scheme checked above
+            return
+    except urllib.error.HTTPError as e:
+        raise SessionError(f"the audit collector refused the records ({e.code})") from None
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
+        raise SessionError(f"could not reach the audit collector: {e}") from None
 
 
 def mesh_credential() -> tuple[str, str, datetime] | None:

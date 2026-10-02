@@ -56,6 +56,10 @@ class Session:
     # authorization: the control plane checks the role on every admin call.
     # Empty from a control plane that does not send one.
     org_role: str = ""
+    # The Curb capabilities this control plane offers, such as
+    # "curb-policy/1". Empty from one without Curb, which turns Curb's
+    # team features off however the entitlement reads (curb_wire.usable).
+    curb_capabilities: list[str] = field(default_factory=list)
 
     def store(self) -> EntitlementStore:
         return EntitlementStore(token=self.entitlement, keyring=self.keyring)
@@ -84,6 +88,7 @@ class Session:
             "relay_url": self.relay_url,
             "roster": self.roster,
             "org_role": self.org_role,
+            "curb_capabilities": self.curb_capabilities,
         }
 
 
@@ -109,6 +114,7 @@ def load() -> Session | None:
             relay_url=str(data.get("relay_url") or ""),
             roster=str(data.get("roster") or ""),
             org_role=str(data.get("org_role") or ""),
+            curb_capabilities=[str(c) for c in data.get("curb_capabilities") or []],
         )
     except (OSError, ValueError, KeyError, TypeError):
         # A corrupt cache is indistinguishable from never having logged in,

@@ -52,6 +52,11 @@ SKILL_SYNC = "skill_sync"
 #: Messages between members' devices (the mesh messaging plan). Withheld
 #: when the organization switches messaging off.
 MESH_MESSAGES = "mesh_messages"
+#: Flanner Curb's team features (Curb PRD §10.8-10.11). A client uses one
+#: only when the server also offers its capability (`curb_wire.usable`).
+CURB_POLICY = "curb_policy"
+CURB_FLEET = "curb_fleet"
+CURB_ALERTS = "curb_alerts"
 
 #: How long messages are kept when a roster does not say, as one from a
 #: control plane older than messaging does not.
