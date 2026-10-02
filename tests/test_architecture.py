@@ -275,6 +275,8 @@ ALLOWED = {
         "identity",
         "skills_adapters",
     },
+    # Approvals: the OS confirms a person, grants live in memory.
+    "curb_approval": {"curb_store", "notify"},
     # The list of every operation and the surfaces that offer it. Data only,
     # imported by the tests that check it against the CLI, web app and MCP
     # server, and by nothing that would make it a dependency.
