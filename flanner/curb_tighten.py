@@ -199,6 +199,7 @@ CODEX_RULES: dict[str, Rule] = {
     "permissions.*.filesystem.*": _deny_value,
     "permissions.*.network.enabled": _flag(False, True),
     "permissions.*.network.domains.*": _domain_verdict,
+    "mcp_servers.*.enabled": _flag(False, True),
 }
 
 

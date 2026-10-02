@@ -328,6 +328,7 @@ ALLOWED = {
     # pass is handed a client by the composition root, which builds it from
     # `account`, and the reachability test below holds every one to that.
     "curb_wire": {"artifacts", "entitlements"},
+    "curb_compile": {"curb_fix", "curb_match"},
     # The list of every operation and the surfaces that offer it. Data only,
     # imported by the tests that check it against the CLI, web app and MCP
     # server, and by nothing that would make it a dependency.
