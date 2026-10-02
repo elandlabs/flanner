@@ -124,6 +124,10 @@ versioning follows [SemVer](https://semver.org/).
   desktop app exists.
 
 ### Changed
+- **Read-only commands start faster.** They no longer load the action
+  history store, which they never write to. That took about 1.7 seconds of
+  every `flanner status`, `flanner curb map` and similar call on a Windows
+  laptop.
 - **The web UI draws the wordmark and favicon from the brand kit.** The
   rail and the footer showed the name typed in Geist beside a CSS dot; they
   now include the wordmark's outline, Sora Bold's fl ligature and the dot,

@@ -406,6 +406,8 @@ ALLOWED = {
         # The hidden commands the desktop app runs: desktop-link, -probe, -connect.
         "desktop",
         "actions",
+        # Tells a read command from a write without importing the store.
+        "operations",
         "setup_check",
         "skills_ops",
         "skills_observe",

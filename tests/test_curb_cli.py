@@ -391,3 +391,11 @@ def test_curb_writes_nothing_to_disk(machine, tmp_path, monkeypatch):
     for args in (["map"], ["map", "--json"], ["inventory"], ["show", "--in-window"]):
         assert invoke(*args).exit_code == 0
     assert files() == before
+
+
+def test_a_read_command_never_opens_the_action_store(machine, monkeypatch):
+    def refuse():
+        raise AssertionError("a read command opened the action store")
+
+    monkeypatch.setattr(actions, "watching", refuse)
+    assert invoke("map", "--json").exit_code == 0

@@ -225,9 +225,16 @@ class Sectioned(click.Group):
         so the history does not depend on which path a command happens to
         take. Whether it failed is read from how it exited.
         """
-        from . import actions
+        from . import operations
 
         name = _command_path(self, ctx)
+        # Reads are never recorded, so they skip the store: importing it
+        # costs most of a second and a half on a Windows laptop.
+        if not any(name in op.cli and op.access != "read" for op in operations.OPERATIONS):
+            return super().invoke(ctx)
+
+        from . import actions
+
         ok = False
         ran = True
         with actions.watching() as seen:
