@@ -242,10 +242,22 @@ ALLOWED = {
         "skills_mesh",
         "skills_ops",
     },
-    # Curb: what an agent launch can reach. Each piece reads files only.
-    # The launch parser is pure, so it imports nothing.
+    # Curb: what an agent launch can reach. Each piece reads files and
+    # nothing reaches the network; the reachability test below holds them
+    # to that. The launch parser, the matcher and the severity function are
+    # pure, so they import nothing.
     "curb_context": set(),
+    "curb_match": set(),
+    "curb_severity": set(),
+    "curb_credentials": {"agent_paths"},
     "curb_settings": {"agent_paths", "curb_context"},
+    "curb_reach": {
+        "curb_context",
+        "curb_credentials",
+        "curb_match",
+        "curb_settings",
+        "curb_severity",
+    },
     # The list of every operation and the surfaces that offer it. Data only,
     # imported by the tests that check it against the CLI, web app and MCP
     # server, and by nothing that would make it a dependency.
@@ -516,7 +528,16 @@ def test_no_read_path_can_reach_the_network():
                     pending.append(dependency)
         return seen
 
-    for module in ("authz", "assurance", "review", "session", "workflow", "peer"):
+    for module in (
+        "authz",
+        "assurance",
+        "review",
+        "session",
+        "workflow",
+        "peer",
+        # Curb R1 reads local files only (Curb PRD §7.1).
+        "curb_reach",
+    ):
         assert "account" not in closure(module), (
             f"{module} can reach the network through account; "
             "a read command would make an HTTP call"
