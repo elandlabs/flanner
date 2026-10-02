@@ -52,6 +52,19 @@ versioning follows [SemVer](https://semver.org/).
     password, Touch ID, or polkit), backs up each file for 7 days, and
     checks the result. `--dry-run` shows the plan; `--undo` puts the files
     back. A write without that yes fails.
+  - `flanner curb test` proves a block by asking the agent itself to get
+    past it. It plants a decoy of fake credentials beside each file a
+    control claims to block and asks the agent, headless, to read it with
+    its Read tool, `cat`, `grep -r` and a script; it also checks a network
+    allowlist from inside the sandbox, secret-variable masking by keyed
+    digests, and the MCP allowlist. Each method comes out blocked, allowed,
+    inconclusive, not tested or unsupported, with evidence; a declined or
+    prompt-stopped attempt is never counted as blocked. A channel shows as
+    enforced only while a proof from the same launch context and settings
+    holds. It states the token cost first, asks your operating system for a
+    yes, and deletes the test transcript. `flanner curb decoys` lists,
+    renews and removes the decoys, which expire after 30 days and never go
+    inside a git working tree.
   - Local: nothing is changed, and nothing leaves the machine unless you
     ask an issuer to check a secret.
 - **Messages between teammates.** Ask a teammate something from the CLI,

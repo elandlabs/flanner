@@ -108,6 +108,10 @@ def forget() -> list[str]:
         count = sum(1 for _ in reports.glob("*.json"))
         shutil.rmtree(reports)
         removed.append(f"{count} stored report(s)")
+    proofs = curb_dir() / "proofs.json"
+    if proofs.is_file():
+        proofs.unlink()
+        removed.append("the tester's proofs")
     store = identity._keychain()
     gone = False
     if store is not None:

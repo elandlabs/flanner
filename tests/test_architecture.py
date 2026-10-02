@@ -279,6 +279,15 @@ ALLOWED = {
     "curb_approval": {"curb_store", "notify"},
     # The tighten-only test: the resolver and reach rules, before and after.
     "curb_tighten": {"curb_context", "curb_credentials", "curb_reach", "curb_settings"},
+    # The tester: decoys, headless agent runs, and proofs kept as digests.
+    "curb_tester": {
+        "agent_paths",
+        "curb_context",
+        "curb_reach",
+        "curb_settings",
+        "curb_severity",
+        "curb_store",
+    },
     # Fix writers: plan from an assessment, check tighten-only, write with a grant.
     "curb_fix": {
         "agent_paths",
@@ -500,6 +509,7 @@ ALLOWED = {
         "curb_severity",
         "curb_store",
         "curb_sweep",
+        "curb_tester",
         "curb_window",
         # `doctor` reports how far this machine's clock is from the server's,
         # and the threshold it compares against is the peer freshness window.

@@ -9364,6 +9364,13 @@ EXAMPLES: dict[str, tuple[str, ...]] = {
         "flanner curb sweep --validate    and ask each one's issuer if it works",
     ),
     "curb forget": ("flanner curb forget              delete Curb's reports and digest key",),
+    "curb test": (
+        "flanner curb test                 prove each block with decoys (costs tokens)",
+    ),
+    "curb decoys": (
+        "flanner curb decoys               how many decoys, and when they expire",
+        "flanner curb decoys --remove      delete them all",
+    ),
     "curb fix": (
         "flanner curb fix --dry-run        the fixes, without changing anything",
         "flanner curb fix                  apply them, after your OS says yes",
@@ -9593,10 +9600,14 @@ def _which(program: str) -> str | None:
 
 
 def _curb_reports(contexts: list[Any], *, full: bool) -> list[dict[str, Any]]:
-    from . import curb_reach
+    from . import curb_reach, curb_store, curb_tester
 
     view = curb_reach.full if full else curb_reach.redacted
-    return [view(report) for report in _curb_assess(contexts)]
+    reports = _curb_assess(contexts)
+    if (curb_store.curb_dir() / "proofs.json").is_file():
+        key = curb_store.digest_key()
+        reports = [curb_tester.enforced(r, key, Path.home()) for r in reports]
+    return [view(report) for report in reports]
 
 
 def _curb_assess(contexts: list[Any]) -> list[Any]:
@@ -9860,12 +9871,15 @@ def curb_forget(yes: bool, backups: bool) -> None:
     fingerprints can no longer be matched. Settings backups are asked about
     separately, because they are the only undo for a fix.
     """
-    from . import curb_fix, curb_store
+    from . import curb_fix, curb_store, curb_tester
 
-    if not yes and not _curb_ask("Delete Curb's stored reports and digest key?"):
+    if not yes and not _curb_ask("Delete Curb's stored reports, decoys and digest key?"):
         tui.note("Nothing deleted.")
         return
     removed = curb_store.forget()
+    decoys = curb_tester.remove(curb_tester.inventory())
+    if decoys:
+        removed.append(f"{decoys} decoy(s) and their scratch projects")
     held = curb_fix.count()
     if held and (
         backups
@@ -9976,6 +9990,110 @@ def curb_fix_command(directory: Path | None, agent: str | None, dry_run: bool, u
     tui.ok("Changed " + ", ".join(e.where for e in planned.edits) + ".")
     tui.note(f"Backed up for 7 days in {folder.name}; `flanner curb fix --undo` puts them back.")
     tui.hint(f"  {tui.command('flanner curb map')} shows what each agent can reach now.")
+
+
+@curb.command("test")
+@click.option(
+    "--dir",
+    "directory",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=None,
+    help="The project folder to test from (default: here)",
+)
+@click.option("--agent", type=click.Choice(["claude", "codex"]), default=None)
+def curb_test_command(directory: Path | None, agent: str | None) -> None:
+    """Prove each block by asking the agent itself to get past it
+
+    Plants a decoy of fake credentials beside each file a control claims to
+    block, then runs the agent headless and asks it to read the decoy four
+    ways: its Read tool, cat, grep -r and a script. Costs tokens on your own
+    plan, said before it starts, and asks your operating system for a yes.
+    The test transcript is deleted afterwards.
+    """
+    from . import curb_store, curb_tester
+
+    curb_tester.remove_expired()
+    _, contexts, skipped = _curb_contexts(directory, agent, None, ())
+    reports = _curb_assess([c for c in contexts if c.source == "default"])
+    home = Path.home()
+    env = dict(os.environ)
+    work = [
+        (report, curb_tester.targets(report, home), curb_tester.probes(report, env))
+        for report in reports
+    ]
+    for line in skipped:
+        tui.note(line)
+    runnable = [(r, [t for t in ts if t.folder or t.relative], ps) for r, ts, ps in work]
+    decoys = sum(len(ts) for _, ts, _ in runnable)
+    sessions = sum(len(ts) + len(ps) for _, ts, ps in runnable)
+    if not sessions:
+        tui.note("No control here claims to block anything a test can reach, so nothing to test.")
+        return
+    for report, ts, ps in runnable:
+        if ts or ps:
+            cost = curb_tester.estimate(len(ts) + len(ps), report.context.agent)
+            console.print(f"  {report.context.label}: {cost}.")
+    change = {
+        "test": [curb_tester.context_key(r.context) for r, _, _ in runnable],
+        "sessions": sessions,
+        "decoys": decoys,
+    }
+    broker, grant = _curb_grant(
+        f"Run {sessions} test session(s) and plant {decoys} decoy(s)", change
+    )
+    broker.redeem(grant, _curb_change_hash(change))
+    key = curb_store.digest_key()
+    for report, ts, ps in work:
+        results = []
+        with tui.working(f"testing {report.context.label}"):
+            for file_target in ts:
+                results.append(curb_tester.test_target(report.context, file_target, key=key))
+            for probe in ps:
+                results.append(curb_tester.test_probe(report.context, probe, env=env))
+        curb_tester.record(results, report, key)
+        console.print()
+        console.print(f"[bold]{report.context.label}[/]")
+        for result in results:
+            reason = f" ({result.target.reason})" if result.target.reason else ""
+            console.print(f"  {result.target.label}: {result.summary}{reason}")
+            for method, outcome in result.outcomes.items():
+                console.print(f"    {method}: {outcome}", style="muted")
+    console.print()
+    tui.note("Decoys stay 30 days; `flanner curb decoys` lists, renews and removes them.")
+
+
+def _curb_change_hash(change: Any) -> str:
+    from . import curb_approval
+
+    return curb_approval.change_hash(change)
+
+
+@curb.command("decoys")
+@click.option("--renew", is_flag=True, help="Keep every decoy another 30 days")
+@click.option("--remove", is_flag=True, help="Delete every decoy, and its scratch project")
+def curb_decoys(renew: bool, remove: bool) -> None:
+    """The decoy files `flanner curb test` planted, and when each expires
+
+    Counts and dates only: where a decoy sits says where credentials sit.
+    """
+    from . import curb_tester
+
+    curb_tester.remove_expired()
+    if remove:
+        tui.ok(f"Removed {curb_tester.remove(curb_tester.inventory())} decoy(s).")
+        return
+    if renew:
+        tui.ok(f"Renewed {curb_tester.renew()} decoy(s) for 30 days.")
+        return
+    held = curb_tester.inventory()
+    if not held:
+        tui.note("No decoys are planted.")
+        return
+    soonest = min(d.expires for d in held)
+    console.print(
+        f"  {len(held)} decoy(s); the first expires "
+        f"{time.strftime('%Y-%m-%d', time.localtime(soonest))}."
+    )
 
 
 @curb.command("show")

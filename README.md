@@ -105,6 +105,8 @@ flanner curb inventory                                  # agents, MCP servers, h
 flanner curb sweep [--validate]                         # secrets agents left behind (needs flanner[sweep])
 flanner curb forget                                     # delete Curb's reports and digest key
 flanner curb fix [--dry-run|--undo]                     # close what agents reach, after your OS says yes
+flanner curb test                                       # prove each block with decoys (costs tokens)
+flanner curb decoys [--renew|--remove]                  # the decoys the tester planted
 flanner register [--force] / flanner unregister         # MCP registration with Claude Desktop
 flanner claude-info                                     # integration status
 ```

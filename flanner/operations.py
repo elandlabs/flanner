@@ -838,6 +838,25 @@ OPERATIONS: tuple[Operation, ...] = (
     ),
     _op(
         "curb",
+        "Prove a block by asking the agent to get past it",
+        "write",
+        cli=("curb test",),
+        why=(
+            "It plants decoys and spends the person's tokens, so it needs their yes in the "
+            "operating system's own prompt."
+        ),
+        since="0.16.0",
+    ),
+    _op(
+        "curb",
+        "List, renew or remove the tester's decoys",
+        "write",
+        cli=("curb decoys",),
+        why="Where a decoy sits says where credentials sit, so the list stays in the terminal.",
+        since="0.16.0",
+    ),
+    _op(
+        "curb",
         "Delete what Curb keeps on this machine",
         "destructive",
         cli=("curb forget",),

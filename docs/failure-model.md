@@ -162,6 +162,11 @@ Curb reads; the only files it writes are its own redacted reports and digest key
 | A fixed file does not read back as written | Every file is put back, exit 1 | The settings are as they were |
 | `curb fix --undo` finds a file edited since the fix | That file is left as it is | Putting the copy back would lose the edit |
 | A Codex config cannot be edited line by line | The changes become steps for you | Nothing is written to it |
+| The agent declines, a call never runs, or a prompt stops it | That method is "inconclusive" | Nothing is proved; it is never counted as blocked |
+| The agent is not installed or signed in | Every method is "inconclusive" (the run failed) | Nothing is proved |
+| A rule names one existing file outside the project | "not tested" | Curb never moves or edits a real file to test it |
+| The credential's folder is inside a git working tree | "not tested" | A decoy there could be committed |
+| Settings change after a test | The channel goes back to "configured" | A proof holds only for the settings it ran against |
 
 ## Known gaps
 

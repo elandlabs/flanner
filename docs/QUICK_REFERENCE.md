@@ -83,6 +83,11 @@ flanner curb fix --dry-run        # the fixes, changing nothing
 flanner curb fix                  # apply them after your operating system asks you
 flanner curb fix --undo           # put the files back
 
+# Prove each block: decoys, and the agent asked to read them four ways
+flanner curb test                 # states the token cost and asks first
+flanner curb decoys               # how many, and when they expire
+flanner curb decoys --remove
+
 # Delete Curb's stored reports and its digest key
 flanner curb forget
 ```
