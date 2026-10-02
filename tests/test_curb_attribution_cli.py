@@ -122,3 +122,22 @@ class _Device:
     offered = ()
     organization_id = "org_test"
     device_id = "dev_a"
+
+
+def test_setup_registers_each_key_once(agents, monkeypatch):
+    from flanner import cli as cli_module
+    from flanner import curb_wire
+    from flanner.entitlements import CURB_ATTRIBUTION, Claims
+
+    class Online(_Device):
+        claims = Claims("org", "u", "dev_a", "k", "t", "t", features=(CURB_ATTRIBUTION,))
+        offered = (curb_wire.ATTRIBUTION_V1,)
+
+    calls = []
+    monkeypatch.setattr(cli_module, "_curb_device", lambda: Online())
+    monkeypatch.setattr(
+        cli_module._CurbClient, "call", lambda self, name, body: calls.append(body["agent"]) or {}
+    )
+    run("attribution", "--setup")
+    run("attribution", "--setup")
+    assert sorted(calls) == ["claude", "codex"]

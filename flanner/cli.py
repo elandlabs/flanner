@@ -10790,7 +10790,8 @@ def _curb_register(agents: list[str]) -> None:
         return
     from . import account
 
-    for agent in agents:
+    held = curb_attribution.keys()["keys"]
+    for agent in [a for a in agents if not (held.get(a) or {}).get("registered")]:
         try:
             _CurbClient().call(
                 "attribution-keys", curb_attribution.registration(agent, device.device_id)
