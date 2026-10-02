@@ -8,6 +8,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 
 import pytest
 from click.testing import CliRunner
@@ -16,6 +17,8 @@ from flanner import curb_approval, curb_attribution, curb_sshsig, identity
 from flanner.cli import cli
 from tests.test_curb_attribution import A, accept, entry, registry
 from tests.test_curb_policy import ISSUER_RING
+
+needs_toml = pytest.mark.skipif(sys.version_info < (3, 11), reason="no tomllib")
 
 
 class Yes:
@@ -46,6 +49,7 @@ def run(*args):
     return CliRunner().invoke(cli, ["curb", *args])
 
 
+@needs_toml
 def test_setup_makes_keys_configures_both_agents_and_says_how_to_add_them_to_github(agents):
     claude, codex = agents
     result = run("attribution", "--setup")

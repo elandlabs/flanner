@@ -12,6 +12,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -29,6 +30,7 @@ from flanner import (
 )
 from tests.test_curb_policy import ISSUER, ISSUER_RING, ORG, signer, stamp
 
+needs_toml = pytest.mark.skipif(sys.version_info < (3, 11), reason="no tomllib")
 NOW = datetime(2026, 10, 2, 12, tzinfo=timezone.utc)
 needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 needs_ssh_keygen = pytest.mark.skipif(shutil.which("ssh-keygen") is None, reason="no ssh-keygen")
@@ -355,6 +357,7 @@ def test_ssh_keygen_accepts_the_brokers_signature(tmp_path):
 # --- setting agents up -------------------------------------------------------------------------
 
 
+@needs_toml
 def test_setup_routes_each_agents_commits_through_the_broker(tmp_path, monkeypatch):
     claude, codex = tmp_path / "claude", tmp_path / "codex"
     claude.mkdir()

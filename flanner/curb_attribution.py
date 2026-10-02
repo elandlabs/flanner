@@ -443,8 +443,14 @@ def setup_plan(agents: list[str], signer: Path) -> curb_fix.Plan:
             by_path[path] = curb_fix.Edit(agent, path, before, after, text, actions)
         elif agent == CODEX:
             path = agent_paths.codex_home() / "config.toml"
-            before = curb_tighten.load(path)
-            original = path.read_text(encoding="utf-8-sig") if path.is_file() else ""
+            try:
+                before = curb_tighten.load(path)
+                original = path.read_text(encoding="utf-8-sig") if path.is_file() else ""
+            except (OSError, ValueError):  # unreadable, or Python 3.10 with no TOML reader
+                plan.guided.append(
+                    f"{LABELS[agent]}'s config.toml cannot be read, so it is left alone"
+                )
+                continue
             after = json.loads(json.dumps(before))
             edits = []
             for key, value in env.items():
