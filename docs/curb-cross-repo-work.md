@@ -90,12 +90,30 @@ Client work is done. Commands: `flanner curb sweep`, `flanner curb show
 
 ## R3: fixes, tester, scrubbing and approvals
 
+Client work is done. Commands: `flanner curb fix [--dry-run|--undo]`,
+`flanner curb test`, `flanner curb decoys [--renew|--remove]`, `flanner curb
+scrub FILE [--dry-run]`, `flanner curb forget --backups`. Web: the Agent
+reach page at `/curb`.
+
 **flanner-landing** (gated on `SHIPS_IN.curbFix`):
 
-- [ ] Docs for fixes, tester outcomes, approvals and scrubbing.
-- [ ] `app/docs/web/page.tsx`: the redacted Curb page.
-- [ ] Troubleshooting: approval methods, and "inconclusive" results.
-- [ ] Security page: approvals and grants.
+- [ ] Docs for fixes (what each kind writes, backups for 7 days, `--undo`),
+      the tighten-only rule, tester outcomes (blocked, allowed, inconclusive,
+      not tested, unsupported, "passed in scratch context"), decoys and
+      scrubbing (no backup, rotate first).
+- [ ] Approvals: Windows Hello or the account password, Touch ID or the
+      password, polkit on a Linux desktop; grants single use for two minutes;
+      the pause after three refusals; no method means read-only.
+- [ ] CLI rows for the five commands above.
+- [ ] `lib/operations.json` regenerated: "Fix what each agent can reach"
+      (write, also `POST /curb/fix`), "Prove a block by asking the agent to
+      get past it", "List, renew or remove the tester's decoys", "Scrub
+      rotated secrets out of a file" (destructive); `GET /curb` and
+      `POST /curb/show` added to "See what each agent launch can reach".
+- [ ] `app/docs/web/page.tsx`: the Agent reach page.
+- [ ] Troubleshooting: "No approval method on this machine", "Not approved",
+      the pause, "inconclusive" results, a Codex config edited by hand.
+- [ ] Security page: approvals and grants, backups denied to agents.
 - [ ] `app/disclaimer/page.tsx`: what Curb's tests do and don't prove. Needs
       the owner's approval.
 

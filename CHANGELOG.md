@@ -71,6 +71,9 @@ versioning follows [SemVer](https://semver.org/).
     must not have changed since it was read, or it is left exactly as it
     was. No backup is kept, because a backup would be another copy of the
     secret, so it asks your operating system for a yes per file.
+  - The web UI has an Agent reach page: the same redacted report as
+    `flanner curb map`, the last sweep's counts, a button that opens the
+    desktop window, and a Fix button behind the same approval.
   - Local: nothing is changed, and nothing leaves the machine unless you
     ask an issuer to check a secret.
 - **Messages between teammates.** Ask a teammate something from the CLI,

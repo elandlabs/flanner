@@ -71,6 +71,23 @@ yet: Kingfisher was not installed on the development laptop.
 Not read: plans in a plan folder other than `.plans`, and files over
 64 MB (counted under Not checked).
 
+## Fixes, tests, scrubbing and approvals (R3)
+
+| Gate | How it is checked | At this commit |
+|---|---|---|
+| 100% rollback, zero config corruption | `tests/test_curb_fix_corpus.py` applies the planned fixes for every R1 corpus launch that sets user settings, on each OS, then undoes them | 106 fixes (37 Claude Code, 69 Codex): every file parsed as meant, no channel broader, every undo byte for byte |
+| A write without a grant fails | `tests/test_curb_fix.py`, `tests/test_curb_scrub.py` | Fails, file unchanged |
+| Backups denied to every agent | `tests/test_curb_fix.py` | Claude Code always; Codex only with a permissions profile, which its older sandbox cannot express |
+| The tighten-only test rejects every known trap | `tests/test_curb_tighten.py` | The three MCP allowlist traps in PRD §10.8, each a test |
+| Tester outcomes | `tests/test_curb_tester.py`, with recorded agent output | Deny rules alone: Read blocked, cat, grep and script allowed. Sandbox read denial on: all blocked. Declined, failed or prompt-stopped: inconclusive. One existing home file: not tested. Scratch pass: never enforced |
+| A failing scrub leaves the file unchanged | `tests/test_curb_scrub.py` | Unchanged, and no copy of the secret anywhere |
+| Synthetic input cannot complete an approval | By hand, on each OS, before each release | **Not checked yet.** On the development laptop, Windows Hello reports DeviceNotPresent, so the password prompt is what would be checked |
+
+The tester's classifier reads Claude Code's `stream-json` and Codex's
+`exec --json` events. Its tests use recorded-style output; a run against
+both real agents, and the exact denial wording each returns, is still to
+check by hand.
+
 ## Scan time
 
 Inventory plus reach now must take under 10 seconds at the 95th percentile
