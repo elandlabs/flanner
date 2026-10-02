@@ -31,6 +31,7 @@ Flanner is local-first, and stays that way when a team uses it. Plans sync direc
 - **Agent integration**: `flanner init` wires CLAUDE.md, AGENTS.md, and a guard hook so agents save plans through flanner instead of scattering raw markdown.
 - **Memory**: the durable context around a plan — a constraint, a rejected library, a fact about the environment — kept as Markdown files a later session can search. By default an agent proposes and you approve; it refuses anything that looks like a credential, and shares with a teammate only when somebody asks for it.
 - **Skills**: what your agents actually load. Skill packages arrive from a project, your home directory and every installed plugin at once, and when two share a name one wins silently. `flanner skills scan` reads them all and `flanner skills doctor` says which copy is in effect and what is wrong with the rest. A read: nothing in a package is executed.
+- **Curb**: what each agent can reach. `flanner curb map` checks every Claude Code and Codex launch for readable credentials and for the channels that could carry them away, and rates it High, Medium or Low with the rule behind it. Its output never names a credential or a location, whoever runs it; `flanner curb show` puts those in a window on your screen. A read: nothing is changed and nothing leaves the machine.
 - **Messages** (Team Mesh): teammates can message each other inside their agents, device to device. `flanner messages send` previews before it sends, and flanner tells an agent to show a teammate's message and never act on it.
 - **Issue tracker links** (off in this build): tie a plan to its Linear (or JIRA) issue; with a `LINEAR_API_KEY`, flanner verifies the issue and shows its live state, in the CLI and the dashboard. Built but not supported yet: set `FLANNER_INTEGRATIONS=1` to turn them on.
 - **Reading view**: a browser dashboard to read, edit, and walk the history of plans (light and dark, fully offline).
@@ -98,6 +99,9 @@ flanner skills list [--all] / inspect NAME              # browse them, or read e
 flanner skills observe enable / flanner skills report   # record which get used; init asks
 flanner skills adopt NAME / install HASH / rollback ID  # keep a copy, install it, put it back
 flanner skills share HASH / transfers / import ID       # send one to the team; receiving is not installing
+flanner curb map [--agent A] [-- LAUNCH ...]            # what each agent launch can reach
+flanner curb show                                       # names and locations, in a window
+flanner curb inventory                                  # agents, MCP servers, hooks, jobs
 flanner register [--force] / flanner unregister         # MCP registration with Claude Desktop
 flanner claude-info                                     # integration status
 ```

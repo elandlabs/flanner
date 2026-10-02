@@ -376,7 +376,17 @@ installed, and on Linux with `notify-send` from libnotify 0.7.9 or later.
 Elsewhere the notification shows without the click. On Linux,
 notifications need `notify-send`; without it, none appear.
 
-## 🐛 Troubleshooting
+## 🛡️ Why Curb has no MCP tools
+
+`flanner curb` reports what each agent launch can reach: which credentials
+it could read and which channels could carry them away. That report is a
+target list for a prompt-injected agent, so Curb deliberately offers no MCP
+tools, and its terminal output never names a credential or a location,
+whoever runs it. An agent can still run `flanner curb map` in its shell and
+get the redacted summary. For names and locations, a person runs
+`flanner curb show`, which opens a window on their screen and prints
+nothing from it.
+
 
 ### Issue: "Could not find Claude Desktop configuration path"
 

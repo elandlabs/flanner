@@ -7,6 +7,29 @@ versioning follows [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Flanner Curb: what each agent launch can reach.** `flanner curb map`
+  checks every Claude Code and Codex launch on the machine for readable
+  credentials and for each channel that could carry them away: the file
+  tools, shell commands reading files, shell commands reaching the network,
+  web fetch and search, MCP servers and apps. It rates each launch High,
+  Medium or Low with the rule behind it (`severity-r1` version 1), and says
+  which setting would close each open channel.
+  - Every result is for a stated launch context. The default is the agent
+    started from the current folder with no flags; pass `--dir`,
+    `--profile`, or the launch command itself after `--`. Scheduled jobs
+    that run an agent unattended are assessed in their own contexts.
+  - Findings are marked configured or assumed. A setting Curb cannot read
+    or an unknown launch flag makes every channel unknown, and an agent
+    version other than the tested one (Claude Code 2.1.287, Codex 0.154.0)
+    makes every result assumed. Codex apps, on by default, count as
+    unknown until `features.apps` is turned off.
+  - Output names no credential and no location, whoever runs it.
+    `flanner curb show` opens the names and locations in a window on your
+    screen, in a process of its own; nothing from it is printed or written
+    to disk. Curb offers no MCP tools.
+  - `flanner curb inventory` lists the agents, settings layers, MCP
+    servers, hooks, skills and scheduled jobs, and who controls each.
+  - Read-only and local: nothing is changed and nothing leaves the machine.
 - **Messages between teammates.** Ask a teammate something from the CLI,
   the web UI or your agent, and it goes straight to their devices, never
   through a server.

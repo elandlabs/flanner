@@ -189,6 +189,10 @@ class Sectioned(click.Group):
             ("skills",),
         ),
         (
+            "What your agents can reach (no account, no network)",
+            ("curb",),
+        ),
+        (
             "Is a plan still true (local, reads your git history)",
             ("freshness", "why"),
         ),
@@ -9338,6 +9342,13 @@ def why(ctx: click.Context, plan_name: str | None, project: str | None) -> None:
 # against a command that exists.
 
 EXAMPLES: dict[str, tuple[str, ...]] = {
+    "curb map": (
+        "flanner curb map                 every agent, launched from here",
+        "flanner curb map --agent codex --profile ci",
+        "flanner curb map -- claude --settings ./ci-settings.json",
+    ),
+    "curb show": ("flanner curb show                names and locations, in a window",),
+    "curb inventory": ("flanner curb inventory           agents, MCP servers, hooks, jobs",),
     "init": (
         "flanner init                     adopt the repository you are in",
         "flanner init --plan-dir docs/plans",
@@ -9481,6 +9492,346 @@ def _attach_examples(group: click.Group, prefix: str = "") -> None:
             command.epilog = "Examples:\n\n\b\n" + "\n".join(f"  {line}" for line in lines)
         if isinstance(command, click.Group):
             _attach_examples(command, f"{path} ")
+
+
+# --- curb -------------------------------------------------------------------
+#
+# What each agent launch can reach. Read-only, local, and redacted for every
+# caller: an agent can fake a terminal, so no flag or terminal check prints
+# a credential's name or location. `curb show` puts full detail in a window
+# on the person's screen instead (Curb PRD §11).
+
+
+@cli.group()
+def curb() -> None:
+    """What your agents can reach: credentials, files and network"""
+
+
+_CURB_LAUNCH = (
+    click.option(
+        "--dir",
+        "directory",
+        type=click.Path(file_okay=False, exists=True, path_type=Path),
+        default=None,
+        help="The folder the agent starts in (this one if omitted)",
+    ),
+    click.option(
+        "--agent",
+        type=click.Choice(["claude", "codex"]),
+        default=None,
+        help="Only this agent. Both by default",
+    ),
+    click.option("--profile", default=None, help="The Codex profile the launch uses"),
+    click.argument("launch", nargs=-1, type=click.UNPROCESSED),
+)
+
+
+def _curb_launch_options(command: Callable[..., Any]) -> Callable[..., Any]:
+    for decorator in reversed(_CURB_LAUNCH):
+        command = decorator(command)
+    return command
+
+
+def _curb_contexts(
+    directory: Path | None, agent: str | None, profile: str | None, launch: tuple[str, ...]
+) -> tuple[Path, list[Any], list[str]]:
+    """The launch contexts to report on, and the agents left out and why."""
+    from dataclasses import replace
+
+    from . import agent_paths, curb_context, curb_inventory
+
+    cwd = (directory or Path.cwd()).resolve()
+    if launch:
+        try:
+            context = curb_context.parse(launch, cwd)
+        except curb_context.LaunchError as error:
+            raise click.UsageError(str(error)) from None
+        if profile and context.agent == curb_context.CODEX:
+            context = replace(context, profile=profile)
+        return cwd, [context], []
+
+    contexts: list[Any] = []
+    skipped: list[str] = []
+    jobs = curb_inventory.scheduled_jobs(Path.home())
+    for name in [agent] if agent else list(curb_context.AGENTS):
+        home = agent_paths.claude_config_dir() if name == "claude" else agent_paths.codex_home()
+        job_contexts = [j.context for j in jobs if j.context and j.context.agent == name]
+        if not (home.is_dir() or job_contexts or _which(name)):
+            skipped.append(f"{curb_context.LABELS[name]} was not found on this machine.")
+            continue
+        context = curb_context.default(name, cwd)
+        if name == curb_context.CODEX and profile:
+            context = replace(context, profile=profile)
+        contexts += [context, *job_contexts]
+    return cwd, contexts, skipped
+
+
+def _which(program: str) -> str | None:
+    import shutil
+
+    return shutil.which(program)
+
+
+def _curb_reports(contexts: list[Any], *, full: bool) -> list[dict[str, Any]]:
+    from . import curb_credentials, curb_inventory, curb_reach, curb_settings
+
+    home = Path.home()
+    env = dict(os.environ)
+    found: dict[str, list[Any]] = {}
+    versions: dict[str, str | None] = {}
+    views = []
+    for context in contexts:
+        key = str(context.cwd)
+        if key not in found:
+            found[key] = curb_credentials.find(home, context.cwd, env, sys.platform)
+        if context.agent not in versions:
+            versions[context.agent] = curb_inventory.version_of(context.agent)[1]
+        settings = curb_settings.resolve(context)
+        report = curb_reach.assess(
+            context,
+            settings,
+            found[key],
+            platform=sys.platform,
+            home=home,
+            env=env,
+            version=versions[context.agent],
+        )
+        views.append(curb_reach.full(report) if full else curb_reach.redacted(report))
+    return views
+
+
+_STATE_STYLE = {
+    "controlled": "green",
+    "uncontrolled": "red",
+    "unknown": "yellow",
+    "absent": "muted",
+    "informational": "muted",
+}
+_LEVEL_STYLE = {"High": "red", "Medium": "yellow", "Low": "green"}
+
+
+def _print_curb_report(view: dict[str, Any]) -> None:
+    severity = view["severity"]
+    style = _LEVEL_STYLE.get(severity["level"], "default")
+    console.print()
+    console.print(
+        f"[bold]{view['label']}[/]  [{style}]{severity['level']}[/] [muted]"
+        f"({severity['rule']}, {severity['evidence']})[/]"
+    )
+    console.print(f"  {severity['reason']}.", style="muted")
+    version = view["version"] or "unknown"
+    tested = "tested" if view["supported"] else f"not the tested {view['baseline']}"
+    console.print(
+        tui.fields(
+            [
+                ("Launch", view["launch"]),
+                ("Directory", view["directory"]),
+                ("Version", f"{version} ({tested})"),
+            ]
+        )
+    )
+    rows = tui.table("Channel", "State", "Evidence", "Why")
+    for channel in view["channels"]:
+        state = channel["state"]
+        rows.add_row(
+            channel["channel"],
+            f"[{_STATE_STYLE.get(state, 'default')}]{state}[/]",
+            channel["evidence"],
+            channel["why"],
+        )
+    console.print(rows)
+    credentials = view["credentials"]
+    categories = ", ".join(f"{name} {count}" for name, count in credentials["by_category"].items())
+    console.print(
+        f"  Credentials: {credentials['found']} found, {credentials['readable']} readable"
+        f" ({credentials['wide']} wide){': ' + categories if categories else ''}."
+    )
+    if view["external_content"]:
+        console.print("  Takes in outside content: " + "; ".join(view["external_content"]) + ".")
+    fixes = [c for c in view["channels"] if c["fix"] and c["state"] != "controlled"]
+    if fixes:
+        console.print("  To close:", style="bold")
+        for channel in fixes:
+            console.print(f"    {channel['channel']}: {channel['fix']}.")
+    for heading, key in (("Assumed", "assumed"), ("Not checked", "not_checked")):
+        if view[key]:
+            console.print(f"  {heading}: " + "; ".join(view[key]) + ".", style="muted")
+    console.print(f"  {view['assumption']}", style="muted")
+
+
+@curb.command("map")
+@_curb_launch_options
+@click.option("--json", "as_json", is_flag=True, help="Machine-readable report, redacted the same")
+def curb_map(
+    directory: Path | None,
+    agent: str | None,
+    profile: str | None,
+    launch: tuple[str, ...],
+    as_json: bool,
+) -> None:
+    """What each agent launch can reach, channel by channel
+
+    Reads settings and credential locations on this machine, and runs
+    nothing from the repository. The report names no credential and no
+    location, whoever runs it: `flanner curb show` puts those in a window on
+    your screen. Give a launch command after -- to assess that launch
+    instead of the default one.
+    """
+    from . import curb_severity
+
+    _, contexts, skipped = _curb_contexts(directory, agent, profile, launch)
+    with tui.working("reading agent settings and credential locations"):
+        views = _curb_reports(contexts, full=False)
+    if as_json:
+        click.echo(
+            json.dumps(
+                {"function": curb_severity.LABEL, "reports": views, "skipped": skipped}, indent=2
+            )
+        )
+        return
+    for line in skipped:
+        tui.note(line)
+    for view in views:
+        _print_curb_report(view)
+    console.print()
+    if views:
+        tui.hint(
+            f"  {tui.command('flanner curb show')} opens names and locations in a window "
+            "on your screen."
+        )
+        console.print()
+
+
+@curb.command("show")
+@_curb_launch_options
+@click.option("--in-window", is_flag=True, hidden=True)
+def curb_show(
+    directory: Path | None,
+    agent: str | None,
+    profile: str | None,
+    launch: tuple[str, ...],
+    in_window: bool,
+) -> None:
+    """Open the full report, with names and locations, in a window
+
+    The window opens on this machine's screen, in a process of its own.
+    Nothing from it is printed here or written to disk, so an agent that
+    runs this command learns nothing it could not already see.
+    """
+    from . import curb_inventory, curb_settings, curb_window
+
+    cwd, contexts, _ = _curb_contexts(directory, agent, profile, launch)
+    if in_window:
+        reports = _curb_reports(contexts, full=True)
+        jobs = curb_inventory.scheduled_jobs(Path.home())
+        inventories = [
+            curb_inventory.full(
+                curb_inventory.gather(
+                    name,
+                    curb_settings.resolve(next(c for c in contexts if c.agent == name)),
+                    project=cwd,
+                    jobs=jobs,
+                )
+            )
+            for name in dict.fromkeys(c.agent for c in contexts)
+        ]
+        curb_window.show("Flanner Curb", curb_window.render(reports, inventories))
+        return
+    reason = curb_window.unavailable()
+    if reason:
+        tui.bad(f"No window can open: {reason}.")
+        tui.hint(f"  {tui.command('flanner curb map')} gives the redacted report here.")
+        raise SystemExit(1)
+    arguments = ["--dir", str(cwd)]
+    if agent:
+        arguments += ["--agent", agent]
+    if profile:
+        arguments += ["--profile", profile]
+    if launch:
+        arguments += ["--", *launch]
+    curb_window.launch(arguments)
+    tui.ok("Opened the full report in a window on this machine's screen.")
+    tui.note("Nothing from it is printed here.")
+
+
+@curb.command("inventory")
+@_curb_launch_options
+@click.option(
+    "--json", "as_json", is_flag=True, help="Machine-readable listing, redacted the same"
+)
+def curb_inventory_command(
+    directory: Path | None,
+    agent: str | None,
+    profile: str | None,
+    launch: tuple[str, ...],
+    as_json: bool,
+) -> None:
+    """Which agents are here, and what each one loads
+
+    Settings layers, MCP servers, hooks, skills, and scheduled jobs that run
+    an agent unattended, with who controls each. Credential names appear
+    only as counts.
+    """
+    from . import curb_context, curb_inventory, curb_settings
+
+    cwd, contexts, skipped = _curb_contexts(directory, agent, profile, launch)
+    jobs = curb_inventory.scheduled_jobs(Path.home())
+    rows = []
+    with tui.working("reading agent settings"):
+        for context in contexts:
+            if context.source != "command" and context.source != "default":
+                continue
+            settings = curb_settings.resolve(context)
+            rows.append(
+                curb_inventory.redacted(
+                    curb_inventory.gather(context.agent, settings, project=cwd, jobs=jobs)
+                )
+            )
+    if as_json:
+        click.echo(json.dumps({"agents": rows, "skipped": skipped}, indent=2))
+        return
+    for line in skipped:
+        tui.note(line)
+    for row in rows:
+        console.print()
+        version = row["version"] or "not on PATH"
+        tested = "tested" if row["supported"] else f"tested: {row['baseline']}"
+        console.print(f"[bold]{row['label']}[/]  {version} [muted]({tested})[/]")
+        layers = ", ".join(
+            f"{layer['name']} ({layer['controlled_by']})"
+            for layer in row["settings_layers"]
+            if layer["present"]
+        )
+        console.print(f"  Settings: {layers or 'none found'}")
+        if row["mcp_servers"]:
+            servers = tui.table("MCP server", "Transport", "Configured in", "Controlled by")
+            for server in row["mcp_servers"]:
+                servers.add_row(
+                    server["name"],
+                    server["transport"],
+                    server["configured_in"],
+                    server["controlled_by"],
+                )
+            console.print(servers)
+        else:
+            console.print("  MCP servers: none")
+        hooks = ", ".join(
+            f"{h['event']} x{h['count']} ({h['controlled_by']})" for h in row["hooks"]
+        )
+        console.print(f"  Hooks: {hooks or 'none'}")
+        skills = ", ".join(f"{scope} {count}" for scope, count in row["skills"].items())
+        console.print(f"  Skills: {skills or 'none'}")
+        for job in row["scheduled_jobs"]:
+            what = job["launch"] or job["problem"]
+            console.print(f"  Scheduled: {job['name']} ({job['scheduler']}) {what}")
+    console.print()
+    if rows:
+        label = curb_context.LABELS
+        tui.hint(
+            f"  {tui.command('flanner curb map')} says what "
+            f"{' and '.join(label[r['agent']] for r in rows)} can reach."
+        )
+        console.print()
 
 
 # --- demo -------------------------------------------------------------------

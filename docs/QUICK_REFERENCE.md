@@ -57,6 +57,26 @@ flanner sync --project PROJECT_NAME
 plan of your own, ask your agent to save it, or paste it into the web
 interface.
 
+## What your agents can reach
+
+```bash
+# Every Claude Code and Codex launch: credentials, files, network
+flanner curb map
+
+# One launch, exactly as you run it
+flanner curb map -- claude --settings ./ci-settings.json
+flanner curb map -- codex exec -s workspace-write
+
+# Names and locations, in a window on your screen
+flanner curb show
+
+# Agents, settings layers, MCP servers, hooks, skills and scheduled jobs
+flanner curb inventory
+```
+
+The terminal never shows a credential's name or location, for anyone.
+Nothing is changed and nothing leaves the machine.
+
 ## Web Interface
 
 ```bash

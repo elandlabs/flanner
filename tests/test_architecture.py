@@ -249,6 +249,7 @@ ALLOWED = {
     "curb_context": set(),
     "curb_match": set(),
     "curb_severity": set(),
+    "curb_window": set(),
     "curb_credentials": {"agent_paths"},
     "curb_settings": {"agent_paths", "curb_context"},
     "curb_reach": {
@@ -258,6 +259,7 @@ ALLOWED = {
         "curb_settings",
         "curb_severity",
     },
+    "curb_inventory": {"agent_paths", "skills_adapters", "curb_context", "curb_settings"},
     # The list of every operation and the surfaces that offer it. Data only,
     # imported by the tests that check it against the CLI, web app and MCP
     # server, and by nothing that would make it a dependency.
@@ -453,6 +455,14 @@ ALLOWED = {
         "identity",
         # Seeding a known catalog, behind the hidden `demo` group.
         "demo",
+        # The Curb commands: assessment, inventory and the detail window.
+        "curb_context",
+        "curb_credentials",
+        "curb_inventory",
+        "curb_reach",
+        "curb_settings",
+        "curb_severity",
+        "curb_window",
         # `doctor` reports how far this machine's clock is from the server's,
         # and the threshold it compares against is the peer freshness window.
         # Naming the module that owns that rule is better than copying the
@@ -537,6 +547,7 @@ def test_no_read_path_can_reach_the_network():
         "peer",
         # Curb R1 reads local files only (Curb PRD §7.1).
         "curb_reach",
+        "curb_inventory",
     ):
         assert "account" not in closure(module), (
             f"{module} can reach the network through account; "

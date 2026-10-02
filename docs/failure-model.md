@@ -140,6 +140,18 @@ rather than a judgement call.
 
 ---
 
+## Curb (`flanner curb`)
+
+Curb reads; it never writes, so a failure costs a report, not data.
+
+| What fails | What you see | What it means |
+|---|---|---|
+| A settings file will not parse | Its layer is listed with the problem, under Assumed | Every channel counts as unknown, so reach is never understated |
+| The agent's version is not the tested one | Every result is marked assumed | Curb's rules were checked against the baseline only |
+| A launch uses a flag Curb does not know | Every channel is unknown | The flag could have changed anything |
+| No desktop session, or no Tk | `curb show` explains and exits 1 | `curb map` still gives the redacted report |
+| A scheduled job's command cannot be read | The job is listed with its problem | It is not assessed |
+
 ## Known gaps
 
 Stated rather than left to be discovered:

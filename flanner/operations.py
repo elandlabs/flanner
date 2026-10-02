@@ -25,7 +25,17 @@ from dataclasses import asdict, dataclass
 ACCESS = ("read", "write", "approve", "share", "destructive", "admin")
 
 #: The order the site groups operations in.
-DOMAINS = ("projects", "plans", "review", "memory", "skills", "mesh", "local", "integrations")
+DOMAINS = (
+    "projects",
+    "plans",
+    "review",
+    "memory",
+    "skills",
+    "curb",
+    "mesh",
+    "local",
+    "integrations",
+)
 
 #: Said where an operation is deliberately left for a later release rather
 #: than kept from agents on principle. Worded once, so the two cases read
@@ -783,6 +793,27 @@ OPERATIONS: tuple[Operation, ...] = (
         why="Ends the session. The device keeps its identity.",
     ),
     # --- local ---------------------------------------------------------------
+    # Curb's reports stay out of agents' reach on principle: a full report is
+    # a ready-made target list for an injected agent (Curb PRD §11).
+    _op(
+        "curb",
+        "List the agents here and what each one loads",
+        "read",
+        cli=("curb inventory",),
+        why="Lists what each agent loads; an agent that could read it could plan around it.",
+        since="0.16.0",
+    ),
+    _op(
+        "curb",
+        "See what each agent launch can reach",
+        "read",
+        cli=("curb map", "curb show"),
+        why=(
+            "A map of reachable credentials is a target list for an injected agent, "
+            "so even the redacted report stays in the terminal."
+        ),
+        since="0.16.0",
+    ),
     _op(
         "local",
         "Register flanner with your agents",
