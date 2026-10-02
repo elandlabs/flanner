@@ -9456,6 +9456,10 @@ EXAMPLES: dict[str, tuple[str, ...]] = {
         "flanner curb decoys               how many decoys, and when they expire",
         "flanner curb decoys --remove      delete them all",
     ),
+    "curb ci": (
+        "flanner curb ci                   agent steps in this repository's workflows",
+        "flanner curb ci --sarif curb.sarif --fail-on high",
+    ),
     "curb policy": (
         "flanner curb policy               the org policy here, and what waits for you",
         "flanner curb policy --enrol       let signed policy make changes that only tighten",
@@ -10581,6 +10585,92 @@ def curb_fleet_command(as_json: bool) -> None:
     if counts:
         biggest = max(counts.values())
         console.print(f"  {biggest} of {len(rows)} device(s) share one effective policy.")
+
+
+# --- Curb in pipelines and code (R6): the CI check and the app audit -------------------------
+
+_SEVERITY_RANK = {"Low": 1, "Medium": 2, "High": 3}
+
+
+def _curb_write_sarif(target: Path, results: list[Any], rules: list[Any]) -> None:
+    from . import __version__, curb_sarif
+
+    document = curb_sarif.document(results, rules, version=__version__)
+    target.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+    tui.note(f"Wrote {len(results)} result(s) as SARIF to {target}.")
+
+
+@curb.command("ci")
+@click.argument("path", type=click.Path(file_okay=False, exists=True, path_type=Path), default=".")
+@click.option(
+    "--sarif",
+    "sarif_to",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=None,
+    help="Also write the findings as SARIF, for code scanning",
+)
+@click.option(
+    "--fail-on",
+    type=click.Choice(["high", "medium", "low", "never"]),
+    default="never",
+    help="Exit 1 when a finding is at least this severe",
+)
+@click.option("--fix", is_flag=True, help="Make the one-line fixes that are safe without a person")
+@click.option("--json", "as_json", is_flag=True, help="The findings as JSON")
+def curb_ci_command(
+    path: Path, sarif_to: Path | None, fail_on: str, fix: bool, as_json: bool
+) -> None:
+    """Agent steps in a repository's GitHub Actions workflows
+
+    Each step that runs Claude Code, Codex or Gemini CLI is judged like an
+    agent launch: whether untrusted text from issues, comments or pull
+    requests reaches it, who can start it, the secrets and tools it holds,
+    and whether Harden-Runner blocks its egress. Names workflow files and
+    lines, never a secret's name. `--fix` makes the edits that are safe to
+    make blind; open a pull request with them for review.
+    """
+    from . import curb_ci
+
+    steps, problems = curb_ci.check(path)
+    if fix:
+        for workflow in sorted({s.workflow for s in steps}):
+            for done in curb_ci.fix(path / workflow):
+                tui.ok(f"{workflow}: {done}.")
+        steps, problems = curb_ci.check(path)
+    found = curb_ci.results(steps)
+    if sarif_to is not None:
+        _curb_write_sarif(sarif_to, found, list(curb_ci.RULES.values()))
+    if as_json:
+        click.echo(
+            json.dumps(
+                [
+                    {
+                        "workflow": r.path,
+                        "line": r.line,
+                        "rule": r.rule.id,
+                        "severity": r.rule.severity,
+                        "message": r.message,
+                    }
+                    for r in found
+                ],
+                indent=2,
+            )
+        )
+    else:
+        if not found:
+            tui.note("No agent steps in this repository's workflows.")
+        for result in found:
+            style = {"High": "red", "Medium": "yellow"}.get(result.rule.severity, "muted")
+            console.print(
+                f"  [{style}]{result.rule.severity}[/] {result.path}:{result.line} "
+                f"({result.rule.id})"
+            )
+            console.print(f"    {result.message}", style="muted")
+    for problem in problems:
+        tui.warn(problem)
+    threshold = {"high": 3, "medium": 2, "low": 1}.get(fail_on)
+    if threshold and any(_SEVERITY_RANK[r.rule.severity] >= threshold for r in found):
+        raise SystemExit(1)
 
 
 @curb.command("show")

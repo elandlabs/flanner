@@ -218,3 +218,32 @@ jobs:
           smoke/bin/pip install dist/*.whl
           smoke/bin/flanner --version
           smoke/bin/python -c "import flanner.server, flanner.web, flanner.cli"
+
+  # The Curb CI check as users run it: the composite action from this
+  # repository, against fixtures modelled on PromptPwnd, Clinejection and
+  # Comment and Control (Curb PRD §10.12). Each must come out High, and a
+  # workflow with none of their weaknesses must not.
+  curb-ci-action:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: ./actions/curb-ci
+        id: unsafe
+        with:
+          path: tests/data/curb_ci/unsafe
+          sarif: unsafe.sarif
+          fail-on: never
+      - uses: ./actions/curb-ci
+        with:
+          path: tests/data/curb_ci/safe
+          sarif: safe.sarif
+          fail-on: medium
+      - name: Every unsafe fixture is High
+        run: |
+          python - <<'EOF'
+          import json
+          results = json.load(open("unsafe.sarif"))["runs"][0]["results"]
+          assert len(results) == 3 and all(r["ruleId"] == "CI-H1" for r in results), results
+          EOF

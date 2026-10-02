@@ -1,0 +1,49 @@
+name: Flanner Curb CI check
+description: >
+  Judge every agent step in this repository's workflows (Claude Code, Codex,
+  Gemini CLI) like an agent launch, and write SARIF for code scanning.
+author: flanner
+branding:
+  icon: shield
+  color: blue
+inputs:
+  path:
+    description: The repository folder to check
+    default: "."
+  sarif:
+    description: Where to write the SARIF file
+    default: curb-ci.sarif
+  fail-on:
+    description: Fail the step at this severity or above (high, medium, low, never)
+    default: high
+  fix:
+    description: Make the one-line fixes that are safe without a person ("true" or "false")
+    default: "false"
+outputs:
+  sarif:
+    description: The SARIF file written
+    value: ${{ inputs.sarif }}
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+    # The flanner this action ships with: the repository two folders up,
+    # at the same ref as the action, rather than whatever PyPI has.
+    - name: Install flanner
+      shell: bash
+      run: python -m pip install --quiet "$GITHUB_ACTION_PATH/../.."
+    # Inputs go through the environment, never into the script text, so a
+    # crafted input cannot become a command.
+    - name: Check the agent steps
+      shell: bash
+      env:
+        CURB_PATH: ${{ inputs.path }}
+        CURB_SARIF: ${{ inputs.sarif }}
+        CURB_FAIL_ON: ${{ inputs.fail-on }}
+        CURB_FIX: ${{ inputs.fix }}
+      run: |
+        args=("$CURB_PATH" --sarif "$CURB_SARIF" --fail-on "$CURB_FAIL_ON")
+        if [ "$CURB_FIX" = "true" ]; then args+=(--fix); fi
+        flanner curb ci "${args[@]}"

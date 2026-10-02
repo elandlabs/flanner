@@ -905,6 +905,17 @@ OPERATIONS: tuple[Operation, ...] = (
     ),
     _op(
         "curb",
+        "Check the agent steps in a repository's CI workflows",
+        "write",
+        cli=("curb ci",),
+        why=(
+            "A workflow's weak spots tell an injected agent how to reach a repository's "
+            "secrets, so findings go to code scanning; --fix edits workflows for a review."
+        ),
+        since="0.16.0",
+    ),
+    _op(
+        "curb",
         "Log tool calls and re-check org policy from an agent hook",
         "write",
         cli=("hook curb-record", "hook curb-session"),
