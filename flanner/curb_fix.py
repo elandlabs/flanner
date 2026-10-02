@@ -576,11 +576,20 @@ def backup(edits: Sequence[Edit], *, now: float | None = None) -> Path:
 def apply(plan: Plan, broker: Broker, grant: Grant | None) -> Path:
     """Write the plan's edits with a grant for exactly them. Returns the backup folder."""
     broker.redeem(grant, curb_approval.change_hash(plan.change()))
+    return write(plan.edits)
+
+
+def write(edits: Sequence[Edit]) -> Path:
+    """Back up, write and read back each edit; any difference puts every file back.
+
+    Called by `apply`, after a grant, and by org policy under the delegation
+    for a change the tighten-only test passed (Curb PRD §10.8). Nothing else.
+    """
     prune()
-    encoded = [_encoded(edit) for edit in plan.edits]
-    folder = backup(plan.edits)
+    encoded = [_encoded(edit) for edit in edits]
+    folder = backup(edits)
     try:
-        for edit, data in zip(plan.edits, encoded, strict=True):
+        for edit, data in zip(edits, encoded, strict=True):
             _write_atomic(edit.path, data)
             if curb_tighten.load(edit.path) != edit.after:
                 raise FixFailed(f"{edit.where} did not read back as written")

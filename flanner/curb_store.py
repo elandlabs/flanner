@@ -76,6 +76,46 @@ def digest_key() -> bytes:
     return key
 
 
+def read_state(name: str) -> dict[str, Any]:
+    """One of Curb's JSON state files, {} when absent or unreadable."""
+    try:
+        data = json.loads((curb_dir() / f"{name}.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def write_state(name: str, data: dict[str, Any]) -> None:
+    """Replace a state file in one step, user-only."""
+    path = curb_dir() / f"{name}.json"
+    temporary = path.with_name(f".{path.name}.tmp")
+    _write_user_only(temporary, json.dumps(data, indent=1, sort_keys=True))
+    os.replace(temporary, path)
+
+
+def keep_secret(name: str, value: str) -> None:
+    """Hold a secret in the OS keychain, or a user-only file where there is none."""
+    store = identity._keychain()
+    if store is not None:
+        with contextlib.suppress(Exception):
+            store.set_password(f"flanner-curb-{name}", _account(), value)
+            if store.get_password(f"flanner-curb-{name}", _account()) == value:
+                (curb_dir() / f"{name}.secret").unlink(missing_ok=True)
+                return
+    _write_user_only(curb_dir() / f"{name}.secret", value)
+
+
+def read_secret(name: str) -> str | None:
+    store = identity._keychain()
+    if store is not None:
+        with contextlib.suppress(Exception):
+            held = store.get_password(f"flanner-curb-{name}", _account())
+            if held:
+                return str(held)
+    path = curb_dir() / f"{name}.secret"
+    return path.read_text(encoding="utf-8").strip() or None if path.is_file() else None
+
+
 def digest(value: str | bytes, key: bytes) -> str:
     """The keyed fingerprint of a secret or a path: matchable here, not reversible."""
     data = value.encode("utf-8") if isinstance(value, str) else value
