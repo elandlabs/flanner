@@ -288,6 +288,17 @@ ALLOWED = {
         "curb_severity",
         "curb_store",
     },
+    # The reports for this machine, for the CLI and the web page alike.
+    "curb_report": {
+        "agent_paths",
+        "curb_context",
+        "curb_credentials",
+        "curb_inventory",
+        "curb_reach",
+        "curb_settings",
+        "curb_store",
+        "curb_tester",
+    },
     # Scrubbing: Kingfisher finds, the grant permits, one rename writes.
     "curb_scrub": {"curb_approval", "curb_kingfisher", "curb_settings"},
     # Fix writers: plan from an assessment, check tighten-only, write with a grant.
@@ -507,6 +518,7 @@ ALLOWED = {
         "curb_inventory",
         "curb_kingfisher",
         "curb_reach",
+        "curb_report",
         "curb_scrub",
         "curb_settings",
         "curb_severity",

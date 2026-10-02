@@ -9567,80 +9567,26 @@ def _curb_contexts(
     directory: Path | None, agent: str | None, profile: str | None, launch: tuple[str, ...]
 ) -> tuple[Path, list[Any], list[str]]:
     """The launch contexts to report on, and the agents left out and why."""
-    from dataclasses import replace
+    from . import curb_context, curb_report
 
-    from . import agent_paths, curb_context, curb_inventory
-
-    cwd = (directory or Path.cwd()).resolve()
-    if launch:
-        try:
-            context = curb_context.parse(launch, cwd)
-        except curb_context.LaunchError as error:
-            raise click.UsageError(str(error)) from None
-        if profile and context.agent == curb_context.CODEX:
-            context = replace(context, profile=profile)
-        return cwd, [context], []
-
-    contexts: list[Any] = []
-    skipped: list[str] = []
-    jobs = curb_inventory.scheduled_jobs(Path.home())
-    for name in [agent] if agent else list(curb_context.AGENTS):
-        home = agent_paths.claude_config_dir() if name == "claude" else agent_paths.codex_home()
-        job_contexts = [j.context for j in jobs if j.context and j.context.agent == name]
-        if not (home.is_dir() or job_contexts or _which(name)):
-            skipped.append(f"{curb_context.LABELS[name]} was not found on this machine.")
-            continue
-        context = curb_context.default(name, cwd)
-        if name == curb_context.CODEX and profile:
-            context = replace(context, profile=profile)
-        contexts += [context, *job_contexts]
-    return cwd, contexts, skipped
-
-
-def _which(program: str) -> str | None:
-    import shutil
-
-    return shutil.which(program)
+    try:
+        return curb_report.contexts(directory, agent, profile, launch)
+    except curb_context.LaunchError as error:
+        raise click.UsageError(str(error)) from None
 
 
 def _curb_reports(contexts: list[Any], *, full: bool) -> list[dict[str, Any]]:
-    from . import curb_reach, curb_store, curb_tester
+    from . import curb_reach, curb_report
 
     view = curb_reach.full if full else curb_reach.redacted
-    reports = _curb_assess(contexts)
-    if (curb_store.curb_dir() / "proofs.json").is_file():
-        key = curb_store.digest_key()
-        reports = [curb_tester.enforced(r, key, Path.home()) for r in reports]
-    return [view(report) for report in reports]
+    return [view(report) for report in curb_report.with_proofs(curb_report.assess(contexts))]
 
 
 def _curb_assess(contexts: list[Any]) -> list[Any]:
     """Each launch context's AgentReport."""
-    from . import curb_credentials, curb_inventory, curb_reach, curb_settings
+    from . import curb_report
 
-    home = Path.home()
-    env = dict(os.environ)
-    found: dict[str, list[Any]] = {}
-    versions: dict[str, str | None] = {}
-    reports = []
-    for context in contexts:
-        key = str(context.cwd)
-        if key not in found:
-            found[key] = curb_credentials.find(home, context.cwd, env, sys.platform)
-        if context.agent not in versions:
-            versions[context.agent] = curb_inventory.version_of(context.agent)[1]
-        settings = curb_settings.resolve(context)
-        report = curb_reach.assess(
-            context,
-            settings,
-            found[key],
-            platform=sys.platform,
-            home=home,
-            env=env,
-            version=versions[context.agent],
-        )
-        reports.append(report)
-    return reports
+    return curb_report.assess(contexts)
 
 
 _STATE_STYLE = {
