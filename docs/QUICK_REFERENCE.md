@@ -75,7 +75,8 @@ flanner curb inventory
 ```
 
 The terminal never shows a credential's name or location, for anyone.
-Nothing is changed and nothing leaves the machine.
+Nothing is changed and nothing leaves the machine. The tested agent
+versions are in [curb-support-matrix.md](curb-support-matrix.md).
 
 ## Web Interface
 

@@ -23,6 +23,9 @@ versioning follows [SemVer](https://semver.org/).
     version other than the tested one (Claude Code 2.1.287, Codex 0.154.0)
     makes every result assumed. Codex apps, on by default, count as
     unknown until `features.apps` is turned off.
+  - Tested against a labelled corpus of 3,618 launches across both agents,
+    macOS, Linux and Windows. The tested versions and what is not checked
+    are in [docs/curb-support-matrix.md](docs/curb-support-matrix.md).
   - Output names no credential and no location, whoever runs it.
     `flanner curb show` opens the names and locations in a window on your
     screen, in a process of its own; nothing from it is printed or written
