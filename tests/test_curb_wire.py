@@ -15,10 +15,15 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from flanner import curb_wire, identity, refusals
 from flanner.artifacts import canonical_bytes
-from flanner.entitlements import CURB_ALERTS, CURB_FLEET, CURB_POLICY, Claims
+from flanner.entitlements import CURB_ALERTS, CURB_ATTRIBUTION, CURB_FLEET, CURB_POLICY, Claims
 
 DOC = Path(__file__).resolve().parent.parent / "docs" / "curb-wire-contract.md"
-SIGNER = {"authority": "issuer", "policy": "policy_current", "report": "device"}
+SIGNER = {
+    "authority": "issuer",
+    "policy": "policy_current",
+    "report": "device",
+    "registry": "issuer",
+}
 
 
 def vectors():
@@ -54,7 +59,7 @@ def test_every_key_derives_from_its_seed():
     assert identity.device_id_for(private(device["seed"]).public_key()) == device["device_id"]
 
 
-@pytest.mark.parametrize("name", ["authority", "policy", "report"])
+@pytest.mark.parametrize("name", ["authority", "policy", "report", "registry"])
 def test_each_document_signs_to_exactly_its_vector(name):
     found = vectors()
     doc, key = found[name], found["keys"][SIGNER[name]]
@@ -95,10 +100,16 @@ def test_every_name_the_client_sends_is_in_the_contract():
     text = DOC.read_text(encoding="utf-8")
     for name in [*curb_wire.PATHS.values(), *curb_wire.CAPABILITIES, curb_wire.EVENT_HEADER]:
         assert f"`{name}`" in text
-    for code in (refusals.CLIENT_TOO_OLD, refusals.STALE_SEQUENCE):
+    for code in (
+        refusals.CLIENT_TOO_OLD,
+        refusals.STALE_SEQUENCE,
+        refusals.KEY_OWNED,
+        refusals.BAD_PROOF,
+        refusals.REPLACES_UNKNOWN,
+    ):
         assert f"`{code}`" in text
         assert code in refusals.KNOWN
-    for feature in (CURB_POLICY, CURB_FLEET, CURB_ALERTS):
+    for feature in (CURB_POLICY, CURB_FLEET, CURB_ALERTS, CURB_ATTRIBUTION):
         assert f"`{feature}`" in text
 
 
@@ -109,3 +120,4 @@ def test_a_feature_needs_both_the_entitlement_and_the_server():
     assert not curb_wire.usable(CURB_POLICY, claims(CURB_POLICY), ())  # an older control plane
     assert not curb_wire.usable(CURB_FLEET, claims(CURB_FLEET), offered)
     assert not curb_wire.usable(CURB_POLICY, None, offered)  # not signed in
+

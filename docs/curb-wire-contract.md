@@ -1,8 +1,8 @@
 # Flanner Curb wire contract (R5)
 
 What a flanner device and the control plane exchange for Curb's team
-features: org policy, the fleet view and alerts (Curb PRD §10.8–10.11,
-§12.2). The client's half is `flanner/curb_wire.py`.
+features: org policy, the fleet view, alerts (Curb PRD §10.8–10.11, §12.2)
+and commit attribution (§10.15). The client's half is `flanner/curb_wire.py`.
 
 **Rules for both sides:**
 
@@ -27,12 +27,13 @@ A device uses a Curb team feature only when **both** hold:
 | `curb_policy` | `curb-policy/1` | Policy check-in, the authority list, policy state, audit export |
 | `curb_fleet` | `curb-fleet/1` | Fleet reports, and `flanner curb fleet` for admins |
 | `curb_alerts` | `curb-alerts/1` | Alerts relayed to the organization's webhook or Slack |
+| `curb_attribution` | `curb-attribution/1` | Registering attribution keys, and the attribution registry |
 
 A control plane without Curb sends no `curb_capabilities`, and the device
 then uses none of these, whatever its entitlement says. Everything else in
 Curb works with no account at all.
 
-The free Curb plan carries all three features (cloud `issuer.py`), and so
+The free Curb plan carries all four features (cloud `issuer.py`), and so
 does `managed_mesh`.
 
 ## Headers
@@ -42,7 +43,7 @@ Every Curb request carries:
 | Header | Value |
 |---|---|
 | `Flanner-Client-Version` | The client's version, such as `0.16.0` |
-| `Flanner-Curb-Capabilities` | The capabilities it speaks, comma-separated: `curb-policy/1, curb-fleet/1, curb-alerts/1` |
+| `Flanner-Curb-Capabilities` | The capabilities it speaks, comma-separated: `curb-policy/1, curb-fleet/1, curb-alerts/1, curb-attribution/1` |
 
 A client below a Curb endpoint's minimum version gets **HTTP 426** with:
 
@@ -259,6 +260,74 @@ the time. With `"openshell": true`, OpenShell's own OCSF lines are passed
 through, with command lines, paths, queries and bodies replaced by keyed
 digests.
 
+## Commit attribution (R7)
+
+| Endpoint | Body | Answer |
+|---|---|---|
+| `/v1/curb/attribution-keys` | `{"agent", "public_key", "nonce", "replaces", "proof"}` | `{"status": "active"}`, or `key_owned`, `bad_proof`, `replaces_unknown` or `replayed` |
+| `/v1/curb/attribution-registry` | `{}` | `{"registry": "<signed curb_attribution_registry>"}` |
+
+Registration is a device-signed envelope like every Curb call, so the
+envelope shows which device asks. The body proves that device holds the key:
+
+- `public_key`: the raw 32-byte Ed25519 key, standard base64;
+- `nonce`: fresh for every request. The control plane refuses one it has
+  seen (`replayed`, through `replay.py`);
+- `replaces`: the fingerprint of an active key of the same device that
+  this key replaces, or `""`;
+- `proof`: the attribution key's own Ed25519 signature, standard base64,
+  over the canonical bytes of `{"kind": "curb_attribution_proof",
+  "device_id", "public_key", "nonce", "replaces"}`.
+
+The control plane binds each fingerprint to the device that registered it,
+for good: any other device registering or replacing it gets `key_owned`. A
+replacement that names no active key of the same device gets
+`replaces_unknown`, and a proof that does not verify `bad_proof`.
+
+| Code | HTTP | Means |
+|---|---|---|
+| `key_owned` | 409 | The key is registered to another device; ownership never moves |
+| `bad_proof` | 400 | The key's proof of possession does not verify |
+| `replaces_unknown` | 409 | The replacement names no active key of this device |
+
+A key's **fingerprint** is OpenSSH's: `SHA256:` and the unpadded base64 of
+the SHA-256 of the key's SSH wire form (`string "ssh-ed25519" || string
+key`), as `ssh-keygen -l` and GitHub show it.
+
+### `curb_attribution_registry`: the organization's keys
+
+Signed by the **entitlement issuer key**.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `kind` | `"curb_attribution_registry"` | |
+| `key_id` | string | The issuer key that signed it |
+| `organization_id` | string | Must match the device's organization |
+| `version` | integer | Rises with every change |
+| `issued_at`, `expires_at` | RFC 3339 UTC | Re-signed daily and on each change; 7 days by default |
+| `keys` | list | Each: `fingerprint`, `public_key`, `agent`, `device_id`, `status` (`active`, `retired` or `revoked`), `changed_at` |
+
+A device accepts a registry only when it verifies against the issuer
+keyring, names its organization, is not older than the one it holds, has
+the same entries when it has the same version (only the expiry may move),
+and keeps every revocation and every key's device it has seen. Revocations
+are never undone. Removing a device revokes every key it registered,
+retired ones included, and no other device's.
+
+### Commit signatures
+
+An agent's commits carry an SSH signature (`gpg.format = ssh`, namespace
+`git`) in OpenSSH's SSHSIG format, made by `flanner-curb-sign`.
+`flanner curb verify` gives each commit one state:
+
+| State | When |
+|---|---|
+| attributed | A valid signature by a key a fresh registry lists as active |
+| attributed, retired key | A valid signature by a key a fresh registry lists as retired |
+| untrusted: revoked | The key is revoked in any registry the device has accepted, however old |
+| key status unknown | A valid signature, no known revocation, and no fresh registry |
+| unattributed | No signature, a bad one, or a key a fresh registry does not list |
+
 ## Test vectors
 
 Every key is derived from a 32-byte seed (`Ed25519PrivateKey.from_private_bytes`).
@@ -287,6 +356,11 @@ these keys outside tests.
       "seed": "0404040404040404040404040404040404040404040404040404040404040404",
       "device_id": "dev_c5b940ed3f65c391",
       "public_key": "ypOsFwUYcHHWe4PH/w7+gQjo7EUwV113JoeTM9vavnw="
+    },
+    "attribution": {
+      "seed": "0505050505050505050505050505050505050505050505050505050505050505",
+      "public_key": "bnoc3Smwt4/ROvTFWY/v9O8qlxZuPKby5Pv8zYBQW/E=",
+      "fingerprint": "SHA256:LA4QoSmstGCy/UHfdU3jKjnPz56pQzud9OmslMh3g8w"
     }
   },
   "authority": {
@@ -405,6 +479,40 @@ these keys outside tests.
     "hash": "sha256:2467793fe125b3ebc08b36f920bfeb8ef99e0a88185313c1cc701de6438d6522",
     "token": "eyJhZ2VudHMiOlt7ImFnZW50IjoiY2xhdWRlIiwidmVyc2lvbiI6IjIuMS4yODcifV0sImNoZWNrZWRfYXQiOiIyMDI2LTEwLTAyVDA5OjAwOjAwWiIsImNsaWVudF92ZXJzaW9uIjoiMC4xNi4wIiwiY3JlYXRlZF9hdCI6IjIwMjYtMTAtMDJUMDk6MDA6MDBaIiwiZGV2aWNlX2lkIjoiZGV2X2M1Yjk0MGVkM2Y2NWMzOTEiLCJleHBvc3VyZSI6eyJBIjowLCJCIjoyLCJDIjoxfSwia2V5X2lkIjoiZGV2X2M1Yjk0MGVkM2Y2NWMzOTEiLCJraW5kIjoiY3VyYl9yZXBvcnQiLCJvcmdhbml6YXRpb25faWQiOiJvcmdfdGVzdCIsInBvbGljeSI6eyJhcHBsaWVkIjo3LCJhcHByb3ZlZF9ieSI6ImRlbGVnYXRpb24iLCJjb21wbGlhbmNlX2hhc2giOiJzaGEyNTY6Y2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjYyIsImRlbGVnYXRpb24iOnRydWUsImRyaWZ0IjpmYWxzZSwiZmxhZ3MiOltdLCJoYXNoIjoic2hhMjU2Ojc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3NzciLCJwZW5kaW5nIjpudWxsLCJyZWNlaXZlZCI6NywicmVqZWN0ZWQiOm51bGwsInJlamVjdGVkX291dGNvbWUiOm51bGx9LCJwcmV2aW91c19oYXNoIjoic2hhMjU2OjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIiLCJzZXF1ZW5jZSI6Mywic2V2ZXJpdHkiOnsiaGlnaCI6MSwibG93IjowLCJtZWRpdW0iOjB9fQ.YKblgrFL1KbOeKoYp8lMbT4RbYdhXAV7QsgR8SztfKNa1rVDhVRr5GdScJ5kNXiO0LWcvw4ZRUCpQQeNc39bCw=="
   },
+  "registry": {
+    "fields": {
+      "kind": "curb_attribution_registry",
+      "key_id": "iss_test",
+      "organization_id": "org_test",
+      "version": 4,
+      "issued_at": "2026-10-02T00:00:00Z",
+      "expires_at": "2026-10-09T00:00:00Z",
+      "keys": [
+        {
+          "fingerprint": "SHA256:LA4QoSmstGCy/UHfdU3jKjnPz56pQzud9OmslMh3g8w",
+          "public_key": "bnoc3Smwt4/ROvTFWY/v9O8qlxZuPKby5Pv8zYBQW/E=",
+          "agent": "claude",
+          "device_id": "dev_c5b940ed3f65c391",
+          "status": "active",
+          "changed_at": "2026-10-01T00:00:00Z"
+        }
+      ]
+    },
+    "canonical": "{\"expires_at\":\"2026-10-09T00:00:00Z\",\"issued_at\":\"2026-10-02T00:00:00Z\",\"key_id\":\"iss_test\",\"keys\":[{\"agent\":\"claude\",\"changed_at\":\"2026-10-01T00:00:00Z\",\"device_id\":\"dev_c5b940ed3f65c391\",\"fingerprint\":\"SHA256:LA4QoSmstGCy/UHfdU3jKjnPz56pQzud9OmslMh3g8w\",\"public_key\":\"bnoc3Smwt4/ROvTFWY/v9O8qlxZuPKby5Pv8zYBQW/E=\",\"status\":\"active\"}],\"kind\":\"curb_attribution_registry\",\"organization_id\":\"org_test\",\"version\":4}",
+    "hash": "sha256:781f28ab202cb33d6876d51c3a33f7a10e67f6c1577948ba7b812a66ac976932",
+    "token": "eyJleHBpcmVzX2F0IjoiMjAyNi0xMC0wOVQwMDowMDowMFoiLCJpc3N1ZWRfYXQiOiIyMDI2LTEwLTAyVDAwOjAwOjAwWiIsImtleV9pZCI6Imlzc190ZXN0Iiwia2V5cyI6W3siYWdlbnQiOiJjbGF1ZGUiLCJjaGFuZ2VkX2F0IjoiMjAyNi0xMC0wMVQwMDowMDowMFoiLCJkZXZpY2VfaWQiOiJkZXZfYzViOTQwZWQzZjY1YzM5MSIsImZpbmdlcnByaW50IjoiU0hBMjU2OkxBNFFvU21zdEdDeS9VSGZkVTNqS2puUHo1NnBRenVkOU9tc2xNaDNnOHciLCJwdWJsaWNfa2V5IjoiYm5vYzNTbXd0NC9ST3ZURldZL3Y5TzhxbHhadVBLYnk1UHY4ellCUVcvRT0iLCJzdGF0dXMiOiJhY3RpdmUifV0sImtpbmQiOiJjdXJiX2F0dHJpYnV0aW9uX3JlZ2lzdHJ5Iiwib3JnYW5pemF0aW9uX2lkIjoib3JnX3Rlc3QiLCJ2ZXJzaW9uIjo0fQ.hvqnadZParwx1FSi727lRFNs+xOdyqWBbnfvMmng+y8MNzDXHfIJ96OHBpsg5XUiYqVmw7xpeLtwek23vCxBCw=="
+  },
+  "proof": {
+    "fields": {
+      "kind": "curb_attribution_proof",
+      "device_id": "dev_c5b940ed3f65c391",
+      "public_key": "bnoc3Smwt4/ROvTFWY/v9O8qlxZuPKby5Pv8zYBQW/E=",
+      "nonce": "0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f",
+      "replaces": ""
+    },
+    "canonical": "{\"device_id\":\"dev_c5b940ed3f65c391\",\"kind\":\"curb_attribution_proof\",\"nonce\":\"0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f\",\"public_key\":\"bnoc3Smwt4/ROvTFWY/v9O8qlxZuPKby5Pv8zYBQW/E=\",\"replaces\":\"\"}",
+    "signature": "xSm8fMafdNa/juG3apYz3ZsthIlTClgRLpsTKzFYx7+CAdtPVAABLLlI6s5FLGxGvm3UhAHufgyJ8NglkWIpBA=="
+  },
   "event_id": {
     "device_id": "dev_c5b940ed3f65c391",
     "finding": "mcp_server_added:claude:dddddddddddddddddddddddddddddddd:Claude Code MCP settings",
@@ -413,7 +521,7 @@ these keys outside tests.
   },
   "headers": {
     "Flanner-Client-Version": "0.16.0",
-    "Flanner-Curb-Capabilities": "curb-policy/1, curb-fleet/1, curb-alerts/1"
+    "Flanner-Curb-Capabilities": "curb-policy/1, curb-fleet/1, curb-alerts/1, curb-attribution/1"
   }
 }
 ```

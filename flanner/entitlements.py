@@ -57,6 +57,7 @@ MESH_MESSAGES = "mesh_messages"
 CURB_POLICY = "curb_policy"
 CURB_FLEET = "curb_fleet"
 CURB_ALERTS = "curb_alerts"
+CURB_ATTRIBUTION = "curb_attribution"
 
 #: How long messages are kept when a roster does not say, as one from a
 #: control plane older than messaging does not.

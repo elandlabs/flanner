@@ -24,6 +24,7 @@ from typing import Any
 from .artifacts import canonical_bytes
 from .entitlements import (
     CURB_ALERTS,
+    CURB_ATTRIBUTION,
     CURB_FLEET,
     CURB_POLICY,
     Claims,
@@ -35,8 +36,14 @@ from .entitlements import (
 POLICY_V1 = "curb-policy/1"
 FLEET_V1 = "curb-fleet/1"
 ALERTS_V1 = "curb-alerts/1"
-CAPABILITIES = (POLICY_V1, FLEET_V1, ALERTS_V1)
-FOR_FEATURE = {CURB_POLICY: POLICY_V1, CURB_FLEET: FLEET_V1, CURB_ALERTS: ALERTS_V1}
+ATTRIBUTION_V1 = "curb-attribution/1"
+CAPABILITIES = (POLICY_V1, FLEET_V1, ALERTS_V1, ATTRIBUTION_V1)
+FOR_FEATURE = {
+    CURB_POLICY: POLICY_V1,
+    CURB_FLEET: FLEET_V1,
+    CURB_ALERTS: ALERTS_V1,
+    CURB_ATTRIBUTION: ATTRIBUTION_V1,
+}
 
 VERSION_HEADER = "Flanner-Client-Version"
 CAPABILITIES_HEADER = "Flanner-Curb-Capabilities"
@@ -47,6 +54,7 @@ EVENT_HEADER = "Flanner-Event-Id"
 AUTHORITY = "curb_authority"
 POLICY = "curb_policy"
 REPORT = "curb_report"
+REGISTRY = "curb_attribution_registry"
 
 PATHS = {
     "authority": "/v1/curb/authority",
@@ -55,6 +63,8 @@ PATHS = {
     "reports": "/v1/curb/reports",
     "alerts": "/v1/curb/alerts",
     "fleet": "/v1/curb/fleet",
+    "attribution-keys": "/v1/curb/attribution-keys",
+    "attribution-registry": "/v1/curb/attribution-registry",
 }
 
 
