@@ -99,11 +99,24 @@ flanner curb scrub FILE
 
 # Delete Curb's stored reports and its digest key
 flanner curb forget
+
+# Your organization's agent policy (Flanner Mesh)
+flanner curb policy               # the policy here, what waits for you, what is not met
+flanner curb policy --enrol       # let signed policy make changes that only tighten (asks once)
+flanner curb policy --check-in    # fetch the newest policy now; also runs at session start
+flanner curb policy --approve     # review and apply a change that waits for you
+flanner curb policy --withdraw    # later changes wait for your approval
+flanner curb policy --export mdm  # admin-owned settings files for device management
+
+# Admins: every device, each report checked against its own key
+flanner curb fleet
 ```
 
 The terminal never shows a credential's name or location, for anyone.
-Nothing is changed and nothing leaves the machine. The tested agent
-versions are in [curb-support-matrix.md](curb-support-matrix.md).
+Without an account nothing leaves the machine. With Flanner Mesh, devices
+send only the minimised, signed fields in
+[curb-wire-contract.md](curb-wire-contract.md). The tested agent versions
+are in [curb-support-matrix.md](curb-support-matrix.md).
 
 ## Web Interface
 

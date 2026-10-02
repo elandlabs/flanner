@@ -89,6 +89,40 @@ versioning follows [SemVer](https://semver.org/).
     desktop window, and a Fix button behind the same approval.
   - Local: nothing is changed, and nothing leaves the machine unless you
     ask an issuer to check a secret.
+  - With Flanner Mesh, `flanner curb policy` takes one agent policy your
+    organization signs: paths no agent may read, the sandbox, allowed
+    domains, web access and allowed MCP servers. A device trusts it only
+    when it verifies against the policy authority list, signed by the key
+    that signs entitlements; an older version, the same version with other
+    contents, another organization's policy, a revoked or unknown key, or
+    an expired policy is refused, alerted, and the policy in force kept.
+    `--enrol` asks your operating system once to let signed policy make
+    changes that only tighten, judged by the same tighten-only test as
+    fixes; anything else, and every change for an agent version Curb has
+    not tested, waits for `--approve`. `--withdraw` ends the delegation.
+    An expired policy stays in force, flagged. `--export` writes Claude
+    Code's managed settings, Codex's `requirements.toml` and an NVIDIA
+    OpenShell policy for device management to deliver.
+  - Drift: effective settings are re-read against the policy at session
+    start, on Claude Code's ConfigChange, when Codex's config changes, and
+    every 6 hours while `flanner peer serve` runs.
+  - `flanner curb fleet` shows admins each device's policy state, drift and
+    counts by severity and exposure class. Each device signs its reports
+    and numbers them, and the command checks every signature, number and
+    chain with the organization's device keys itself: a replayed or
+    reordered report is caught, and a gap or a report over 24 hours old
+    shows the device stale. Reports carry no paths, names or fingerprints.
+  - Alerts: one per change that grows reach (a new MCP server, a removed
+    deny rule, the sandbox turned off, a new class A secret) and for each
+    policy refusal, with a stable event id so retries never double up. The
+    developer sees them at once; admins through the control plane's relay.
+  - Audit export: the action log as OCSF 1.9.0 records, sent straight to
+    the collector the policy names, with OpenShell's own records passed
+    through on request, redacted.
+  - The wire format, with test vectors, is
+    [docs/curb-wire-contract.md](docs/curb-wire-contract.md). A control
+    plane without Curb turns all of this off, and a client below an
+    endpoint's minimum is told which version to update to.
 - **Messages between teammates.** Ask a teammate something from the CLI,
   the web UI or your agent, and it goes straight to their devices, never
   through a server.

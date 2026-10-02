@@ -886,12 +886,31 @@ OPERATIONS: tuple[Operation, ...] = (
     ),
     _op(
         "curb",
-        "Log each tool call from an agent hook",
+        "See, apply or approve your organization's agent policy",
         "write",
-        cli=("hook curb-record",),
+        cli=("curb policy",),
         why=(
-            "Called by the agent's own hook system on each tool call, not by a person or a "
-            "tool call."
+            "It changes agent settings: only changes that tighten, under the person's standing "
+            "approval, and anything else after their own yes, which an agent cannot give."
+        ),
+        since="0.16.0",
+    ),
+    _op(
+        "curb",
+        "Check your organization's devices: policy, drift and exposure",
+        "read",
+        cli=("curb fleet",),
+        why="It is for admins, and where the fleet has gaps is what an injected agent looks for.",
+        since="0.16.0",
+    ),
+    _op(
+        "curb",
+        "Log tool calls and re-check org policy from an agent hook",
+        "write",
+        cli=("hook curb-record", "hook curb-session"),
+        why=(
+            "Called by the agent's own hook system on each tool call and at session start, not "
+            "by a person or a tool call."
         ),
         since="0.16.0",
     ),

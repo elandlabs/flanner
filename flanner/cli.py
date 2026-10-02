@@ -2152,6 +2152,35 @@ def curb_record_hook(agent: str) -> None:
     record_hook(agent, sys.stdin.read())  # fails open by design
 
 
+@hook.command("curb-session")
+@click.option("--agent", type=click.Choice(["claude", "codex"]), required=True)
+def curb_session_hook(agent: str) -> None:
+    """SessionStart and ConfigChange: re-check org policy, and show Curb's notices."""
+    # Never fails and never blocks the agent: network work goes to a child.
+    notices: list[str] = []
+    try:
+        from . import curb_alerts, curb_store, curb_team, identity, release
+
+        payload = json.loads(sys.stdin.read() or "{}")
+        event = str(payload.get("hook_event_name") or "SessionStart")
+        if event == "SessionStart" and curb_team.due(every=curb_team.QUIET):
+            curb_store.write_state("team", {"last": time.time()})
+            release.spawn_detached(_CURB_BACKGROUND)
+        else:
+            curb_team.reconcile(
+                _curb_home_reports(),
+                identity.device_id(),
+                home=Path.home(),
+                env=os.environ,
+                platform=sys.platform,
+            )
+        notices = curb_alerts.take_notices()
+    except Exception:  # noqa: BLE001 - see above
+        return
+    if notices:
+        click.echo(json.dumps({"systemMessage": " ".join(notices)}))
+
+
 @hook.command("skill-use")
 def skill_use() -> None:
     """PostToolUse: record that a skill was invoked, if this repo opted in."""
@@ -7596,6 +7625,42 @@ def _message_upkeep_in_background() -> None:
     threading.Thread(target=run, daemon=True).start()
 
 
+def _curb_upkeep_in_background() -> None:
+    """Curb's team pass every 6 hours, and a watch on Codex's config, while serving.
+
+    Only on a device whose person enrolled in Curb's team checks. Codex has
+    no event for a settings change, so its config file is watched instead
+    (Curb PRD §10.11); a change re-runs the local half of the pass.
+    """
+    import threading
+
+    from . import agent_paths, curb_team, identity
+
+    def run() -> None:
+        seen: float | None = None
+        while True:
+            try:
+                if _curb_enrolled():
+                    config = agent_paths.codex_home() / "config.toml"
+                    stamp = config.stat().st_mtime if config.exists() else 0.0
+                    if curb_team.due():
+                        _curb_team_pass()
+                    elif seen is not None and stamp != seen:
+                        curb_team.reconcile(
+                            _curb_home_reports(),
+                            identity.device_id(),
+                            home=Path.home(),
+                            env=os.environ,
+                            platform=sys.platform,
+                        )
+                    seen = stamp
+            except Exception:  # noqa: BLE001 - upkeep must outlive one bad pass
+                logging.getLogger(__name__).warning("curb upkeep failed", exc_info=True)
+            time.sleep(60)
+
+    threading.Thread(target=run, daemon=True).start()
+
+
 @peer.command("serve")
 @click.option("--host", default="127.0.0.1", help="Address to listen on (--http only)")
 @click.option("--port", default=None, type=int, help="Port to listen on (--http only)")
@@ -7650,6 +7715,7 @@ def peer_serve(host: str, port: int | None, http: bool) -> None:
             lambda device_id, workspace_id: peer_iroh.peer_for(device_id, workspace_id, cache.load)
         )
         _message_upkeep_in_background()
+        _curb_upkeep_in_background()
         try:
             endpoint.serve(get_session, cache.load, _keyring_refresher())
         except KeyboardInterrupt:
@@ -7669,6 +7735,7 @@ def peer_serve(host: str, port: int | None, http: bool) -> None:
     if beyond_loopback(host):
         tui.warn(f"Reachable from other machines on {host}. Anyone can reach the port.")
     _message_upkeep_in_background()
+    _curb_upkeep_in_background()
     # Over HTTP a peer is named by address, and this device knows device ids
     # rather than addresses, so there is nobody to dial. Catching up here is
     # a manual `flanner peer pull <address>`.
@@ -9389,6 +9456,13 @@ EXAMPLES: dict[str, tuple[str, ...]] = {
         "flanner curb decoys               how many decoys, and when they expire",
         "flanner curb decoys --remove      delete them all",
     ),
+    "curb policy": (
+        "flanner curb policy               the org policy here, and what waits for you",
+        "flanner curb policy --enrol       let signed policy make changes that only tighten",
+        "flanner curb policy --approve     review and apply what waits",
+        "flanner curb policy --export mdm  admin-owned files for device management",
+    ),
+    "curb fleet": ("flanner curb fleet               every device, checked by its own signature",),
     "curb fix": (
         "flanner curb fix --dry-run        the fixes, without changing anything",
         "flanner curb fix                  apply them, after your OS says yes",
@@ -10192,6 +10266,321 @@ def curb_decoys(renew: bool, remove: bool) -> None:
         f"  {len(held)} decoy(s); the first expires "
         f"{time.strftime('%Y-%m-%d', time.localtime(soonest))}."
     )
+
+
+# --- Curb team features (R5): org policy and the fleet view ---------------------------------
+
+#: The team pass a session hook starts in a child process (`release.spawn_detached`).
+_CURB_BACKGROUND = (
+    "import sys;sys.path[:]=[p for p in sys.path if p];"
+    "from flanner.cli import curb_background;curb_background()"
+)
+
+
+class _CurbClient:
+    """The control plane and the audit collector, reached through `account`."""
+
+    def call(self, name: str, body: dict[str, Any]) -> dict[str, Any]:
+        from . import __version__, account, curb_wire
+
+        return account.curb_call(
+            curb_wire.PATHS[name], body, headers=curb_wire.headers(__version__)
+        )
+
+    def collect(self, url: str, token: str, records: list[dict[str, Any]]) -> None:
+        from . import account
+
+        account.post_collector(url, token, records)
+
+
+def _curb_device() -> Any:
+    """This device as the team pass sees it, or None when it is not signed in."""
+    from . import __version__, curb_team, identity
+    from . import session as cache
+
+    held = cache.load()
+    if held is None:
+        return None
+    return curb_team.Device(
+        device_id=held.device_id,
+        organization_id=held.organization_id,
+        issuer_keyring=dict(held.keyring),
+        claims=held.status().claims,
+        offered=tuple(held.curb_capabilities),
+        sign=identity.sign,
+        version=__version__,
+    )
+
+
+def _curb_home_reports() -> list[Any]:
+    """Each agent's default launch from the home folder: the team view of this device.
+
+    Not the current folder, so the fleet view and the policy's drift do not
+    change with whichever project a session last started in.
+    """
+    _, contexts, _ = _curb_contexts(Path.home(), None, None, ())
+    return _curb_assess([c for c in contexts if c.source == "default"])
+
+
+def _curb_team_pass() -> Any:
+    """One team pass, or None when this device is not signed in."""
+    from . import curb_team
+
+    device = _curb_device()
+    if device is None:
+        return None
+    return curb_team.cycle(
+        _CurbClient(), device, _curb_home_reports, home=Path.home(), platform=sys.platform
+    )
+
+
+def _curb_enrolled() -> bool:
+    """Whether the person turned Curb's team checks on (`flanner curb policy --enrol`)."""
+    from . import curb_observe, curb_policy
+
+    return curb_policy.load().delegated_at is not None or any(
+        curb_observe.hooks_on(agent, session=True) for agent in ("claude", "codex")
+    )
+
+
+def curb_background() -> None:
+    """A team pass in a child process, started by the session hook. Never raises."""
+    try:
+        _curb_team_pass()
+    except Exception:  # noqa: BLE001 - a background pass has nobody to tell
+        logging.getLogger(__name__).debug("curb team pass failed", exc_info=True)
+
+
+def _curb_policy_status(as_json: bool) -> None:
+    from datetime import datetime, timezone
+
+    from . import curb_policy
+    from . import session as cache
+
+    state = curb_policy.load()
+    held = cache.load()
+    listing = curb_policy.authority(dict(held.keyring)) if held else None
+    flagged = curb_policy.flags(state, listing, datetime.now(timezone.utc))
+    summary = curb_policy.summary(state, flagged)
+    if as_json:
+        click.echo(json.dumps({**summary, "unmet": state.unmet}, indent=2))
+        return
+    if state.received is None:
+        tui.note("No org policy has arrived on this device.")
+        if held is None:
+            tui.hint(f"  Org policy needs a Flanner Mesh account: {tui.command('flanner login')}")
+        else:
+            tui.hint(f"  {tui.command('flanner curb policy --check-in')} asks for one now.")
+        return
+    console.print(f"[bold]Org policy version {state.received.version}[/]")
+    applied = state.applied or {}
+    console.print(
+        f"  applied: {applied.get('version') or 'not yet'}"
+        + (f" ({applied.get('by')})" if applied.get("by") else "")
+    )
+    delegation = "on" if state.delegated_at is not None else "off"
+    console.print(f"  delegation: {delegation} (changes that only tighten apply on their own)")
+    for code in flagged:
+        tui.warn(curb_policy.FLAGS[code])
+    if state.pending:
+        tui.warn(f"Version {state.pending['version']} waits for your approval:")
+        console.print(f"  {state.pending['summary']}")
+        for reason in state.pending.get("reasons") or []:
+            console.print(f"  - {reason}", style="muted")
+        tui.hint(f"  {tui.command('flanner curb policy --approve')} reviews and applies it.")
+    if state.rejected:
+        tui.warn(f"Refused a policy: {state.rejected['reason']}.")
+    missing = {agent: rules for agent, rules in state.unmet.items() if rules}
+    if missing:
+        console.print("[bold]Not met by the effective settings[/]")
+        for agent, rules in missing.items():
+            for rule in rules:
+                console.print(f"  {agent}: {rule}")
+    elif state.checked_at:
+        tui.ok("Every agent's effective settings meet the policy.")
+
+
+@curb.command("policy")
+@click.option("--check-in", is_flag=True, help="Fetch the newest org policy, apply it, report")
+@click.option("--enrol", is_flag=True, help="Let signed org policy make changes that only tighten")
+@click.option("--withdraw", is_flag=True, help="Stop that; later changes wait for your approval")
+@click.option("--approve", is_flag=True, help="Review and apply the change waiting for you")
+@click.option(
+    "--export",
+    "export_to",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=None,
+    help="Write the policy as admin-owned settings for device management",
+)
+@click.option("--json", "as_json", is_flag=True, help="The policy state as JSON")
+def curb_policy_command(
+    check_in: bool,
+    enrol: bool,
+    withdraw: bool,
+    approve: bool,
+    export_to: Path | None,
+    as_json: bool,
+) -> None:
+    """Your organization's agent policy on this device
+
+    The policy is signed by your organization through Flanner Mesh and
+    checked here before anything changes. Changes that only tighten an
+    agent's settings apply on their own once you enrol; anything else waits
+    until you approve that exact change, and an expired policy stays in
+    force. Settings go into each agent's user settings; `--export` writes
+    the admin-owned files for device management to deliver instead.
+    """
+    from . import curb_approval, curb_compile, curb_fix, curb_observe, curb_policy
+
+    if withdraw:
+        curb_policy.delegate(False)
+        tui.ok("Delegation withdrawn: later policy changes wait for your approval.")
+        return
+    if enrol:
+        plan = curb_observe.hook_plan(["claude", "codex"], enable=True, session=True)
+        consent = {"delegation": "tighten-only org policy", "edits": plan.change()}
+        broker, grant = _curb_grant(
+            "Let your organization's signed policy make changes that only tighten your "
+            "agents' settings, and re-check it at each session start",
+            consent,
+        )
+        try:
+            broker.redeem(grant, curb_approval.change_hash(consent))
+            if plan.edits:
+                curb_fix.write(plan.edits)
+        except (curb_fix.FixFailed, curb_approval.NoGrant) as failure:
+            tui.bad(f"Nothing changed: {failure}.")
+            raise SystemExit(1) from None
+        curb_policy.delegate(True)
+        tui.ok("Enrolled: org policy changes that only tighten now apply on their own.")
+        tui.hint(f"  {tui.command('flanner curb policy --withdraw')} stops that at any time.")
+        return
+    if check_in:
+        with tui.working("checking in for the org policy"):
+            outcome = _curb_team_pass()
+        if outcome is None:
+            tui.bad("This device is not signed in to Flanner Mesh.")
+            tui.hint(f"  {tui.command('flanner login')} first.")
+            raise SystemExit(1)
+        for line in outcome.said:
+            tui.note(line[0].upper() + line[1:] + ".")
+        for line in outcome.problems:
+            tui.warn(line[0].upper() + line[1:] + ".")
+        if outcome.alerts:
+            tui.warn(f"{outcome.alerts} change(s) widened what an agent can reach.")
+        return
+    state = curb_policy.load()
+    if approve:
+        if not state.pending or state.received is None:
+            tui.note("Nothing waits for your approval.")
+            return
+        with tui.working("assessing each agent's launch"):
+            change = curb_policy.plan(
+                state.received,
+                _curb_home_reports(),
+                home=Path.home(),
+                platform=sys.platform,
+                env=os.environ,
+            )
+        planned = curb_fix.Plan(change.edits)
+        if not planned.edits:
+            curb_policy.approved()
+            tui.ok("The policy is already in place.")
+            return
+        console.print("[bold]Changes[/]")
+        for edit in planned.edits:
+            console.print(f"  {edit.where}: " + "; ".join(edit.actions) + ".")
+        for reason in change.reasons:
+            console.print(f"  - {reason}", style="muted")
+        broker, grant = _curb_grant(planned.summary(), planned.change())
+        try:
+            folder = curb_fix.apply(planned, broker, grant)
+        except (curb_fix.FixFailed, curb_approval.NoGrant) as failure:
+            tui.bad(f"Nothing changed: {failure}.")
+            raise SystemExit(1) from None
+        curb_policy.approved()
+        tui.ok(f"Applied policy version {state.received.version}.")
+        tui.note(
+            f"Backed up for 7 days in {folder.name}; `flanner curb fix --undo` puts them back."
+        )
+        return
+    if export_to is not None:
+        if state.received is None:
+            tui.bad("No org policy has arrived on this device to export.")
+            raise SystemExit(1)
+        try:
+            rules = state.received.rules()
+        except ValueError as error:
+            tui.bad(f"The policy's rules cannot be read: {error}.")
+            raise SystemExit(1) from None
+        export_to.mkdir(parents=True, exist_ok=True)
+        managed, notes = curb_compile.claude_managed(rules)
+        requirements, codex_notes = curb_compile.codex_requirements(rules)
+        openshell, openshell_notes = curb_compile.openshell(rules)
+        files = {
+            "managed-settings.json": json.dumps(managed, indent=2) + "\n",
+            "requirements.toml": requirements,
+            "openshell-policy.yaml": openshell,
+        }
+        for name, text in files.items():
+            (export_to / name).write_text(text, encoding="utf-8")
+        tui.ok(f"Wrote {', '.join(files)} for policy version {state.received.version}.")
+        for note in [*notes, *codex_notes, *openshell_notes]:
+            tui.note(note[0].upper() + note[1:] + ".")
+        return
+    _curb_policy_status(as_json)
+
+
+@curb.command("fleet")
+@click.option("--json", "as_json", is_flag=True, help="Every device's newest report as JSON")
+def curb_fleet_command(as_json: bool) -> None:
+    """Your organization's devices: policy, drift and exposure, checked here
+
+    For admins. Each device signs its own reports, so this command checks
+    every signature and sequence number with your organization's device
+    keys before showing anything; it does not take the console's word.
+    """
+    from datetime import datetime, timezone
+
+    from . import account, curb_fleet
+
+    device = _curb_device()
+    if device is None:
+        tui.bad("This device is not signed in to Flanner Mesh.")
+        raise SystemExit(1)
+    try:
+        with tui.working("fetching and checking fleet reports"):
+            keyring = account.fetch_device_keys()
+            devices = _CurbClient().call("fleet", {}).get("devices") or []
+    except account.SessionError as error:
+        tui.bad(f"{error}.")
+        raise SystemExit(1) from None
+    rows = curb_fleet.view(curb_fleet.verify(devices, keyring, now=datetime.now(timezone.utc)))
+    if as_json:
+        click.echo(json.dumps(rows, indent=2))
+        return
+    if not rows:
+        tui.note("No device has sent a report yet.")
+        return
+    for row in rows:
+        policy = row["policy"] or {}
+        severity = row["severity"] or {}
+        state = "drift" if policy.get("drift") else "matches"
+        mark = "verified" if row["verified"] else "NOT verified"
+        console.print(
+            f"  {row['device']}: {mark}"
+            + (", stale" if row["stale"] else "")
+            + f"; policy {policy.get('applied') or '-'} {state}"
+            + (f", {policy['pending']} pending" if policy.get("pending") else "")
+            + f"; High {severity.get('high', 0)}, Medium {severity.get('medium', 0)}"
+            + f", Low {severity.get('low', 0)}"
+        )
+        for problem in row["problems"]:
+            tui.warn(f"    {problem}")
+    counts = curb_fleet.matching(rows)
+    if counts:
+        biggest = max(counts.values())
+        console.print(f"  {biggest} of {len(rows)} device(s) share one effective policy.")
 
 
 @curb.command("show")

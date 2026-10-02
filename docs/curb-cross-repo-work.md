@@ -140,54 +140,94 @@ Client work is done. Commands: `flanner curb log [--enable|--disable|--verify]`,
 
 ## R5: team features on Flanner Mesh
 
+Client work is done. Commands: `flanner curb policy [--check-in|--enrol|--withdraw|
+--approve|--export DIR|--json]`, `flanner curb fleet [--json]`; the hidden hook
+`flanner hook curb-session`. The wire format, with test vectors, is
+`docs/curb-wire-contract.md`: build the control plane against that page, not
+against client code.
+
 **flanner-cloud** (PRD §12.2 R5 has the full contract):
 
-- [ ] Wire contract: string literals only, checked against the client's test
-      vectors; no new client import.
+- [ ] Wire contract: hold every name in `docs/curb-wire-contract.md` as a
+      string literal, and check its test vectors in the cloud suite.
 - [ ] Plans: a free Curb plan in `issuer.py` (`curb_policy`, `curb_fleet`,
       `curb_alerts`); `managed_mesh` gains them. Lapsed trials drop to the free
       plan (`billing.py`); `sign_up.html` says what stays free.
+- [ ] Entitlement responses list `curb_capabilities`: `curb-policy/1`,
+      `curb-fleet/1`, `curb-alerts/1`. The client uses nothing without them.
 - [ ] `relay.py` refuses relay to free-plan orgs; sync stays off for them.
 - [ ] Models and Alembic migrations: policy versions, device policy states,
       fleet reports, alert destinations, alert outbox, delivered event ids,
       policy authority list.
-- [ ] Policy authority: separate signing key behind `signing.py`; signed list
-      at `POST /v1/curb/authority`; rotation and revocation rules; yearly
-      rotation in the ops console.
-- [ ] Version negotiation: capability headers, `client_too_old` (HTTP 426),
-      mixed-version tests.
+- [ ] Policy authority: separate signing key behind `signing.py`; the signed
+      `curb_authority` list at `POST /v1/curb/authority`, signed by the
+      entitlement issuer key; rotation (active, retiring, revoked) and
+      revocation rules; yearly rotation in the ops console.
+- [ ] Policies: each `curb_policy` carries `previous_hash`; re-signing always
+      issues a new version; `POST /v1/curb/policy` answers `unchanged` for the
+      current version and hash, `none` with no policy, and sends
+      `audit_export_token` outside the signed policy.
+- [ ] Version negotiation: the `Flanner-Client-Version` and
+      `Flanner-Curb-Capabilities` headers, `client_too_old` (HTTP 426) with
+      `minimum_version`, mixed-version tests.
 - [ ] API in `api.py`, limits in `ratelimit.py`: `/v1/curb/authority`,
-      `/v1/curb/policy`, `/v1/curb/policy/state`, `/v1/curb/reports`,
-      `/v1/curb/alerts`.
-- [ ] Console: policy editor with preview, fleet page, alert destinations with
-      a test send, audit entries.
+      `/v1/curb/policy`, `/v1/curb/policy/state`, `/v1/curb/reports`
+      (`stale_sequence`, HTTP 409, for a sequence not higher than the last),
+      `/v1/curb/alerts` (answers `accepted` with every id it holds).
+- [ ] **Not in PRD §12.2, needed by the client:** `POST /v1/curb/fleet` for
+      admins (`not_admin` otherwise), returning each device's label and its
+      last 30 days of signed reports, oldest first. `flanner curb fleet`
+      verifies them itself with the device keyring.
+- [ ] Alert relay: adds the device label, delivers each event id at least
+      once, drops ids delivered in the last 7 days, and sends the
+      `Flanner-Event-Id` and `Flanner-Signature` headers defined in the
+      contract.
+- [ ] Console: policy editor with preview ("device evaluation required"
+      where settings outside the policy decide), fleet page, alert
+      destinations with a test send, audit entries.
 - [ ] Customer secrets encrypted at rest (envelope encryption with Vault
-      transit), shown once, rotated yearly; `docs/secrets.md`.
+      transit), shown once, rotated yearly; `docs/secrets.md`. Audit collector
+      tokens join webhook and Slack secrets here.
 - [ ] Jobs: alert delivery with retries, pruning, report deletion on device
       removal.
 - [ ] Operations: metrics, `docs/alerts.md`, `docs/failure-model.md`,
       benchmarks.
+- [ ] `scripts/seed_curb_policy.py`: publish the dev team's next policy
+      version from a rules file, for the client's
+      `scripts/mesh_dev_scenarios.py` cases `curb-policy`, `curb-fleet` and
+      `curb-alerts`.
 - [ ] Tests and seeds; lock update after the client release; console privacy
       page; ADRs 0007 and 0008; changelog.
 
 **flanner-meshlab:**
 
 - [ ] Scenarios `curb-policy`, `curb-fleet`, `curb-alerts`, `curb-tier`, and
-      Curb cases in `mixed-versions`, covering every R5 exit criterion.
-- [ ] A webhook sink that checks HMAC signatures and can fail on purpose.
-- [ ] An approval stand-in in lab device images only, never in the wheel.
-- [ ] Replay steps, stored-data checks through `lab-control`, writable
-      managed-settings paths, README rows and step tests.
+      Curb cases in `mixed-versions`, covering every R5 exit criterion. The
+      client's single-device halves are in `tests/test_curb_team.py`.
+- [ ] A webhook sink that checks `Flanner-Signature` and can fail on purpose.
+- [ ] An approval stand-in in lab device images only, never in the wheel,
+      replacing `curb_approval.method()` so `flanner curb policy --enrol`
+      and `--approve` can run unattended.
+- [ ] Replay steps (a captured policy, authority list or report), stored-data
+      checks through `lab-control`, writable managed-settings paths, README
+      rows and step tests.
 
 **flanner-landing** (gated on `SHIPS_IN.curbTeam`):
 
 - [ ] `app/pricing/page.tsx`: the free Curb plan and what paid adds; a "start
       free" link.
-- [ ] `app/mesh/page.tsx`, `app/docs/mesh/page.tsx`: policy, delegation, fleet,
-      alerts.
+- [ ] `app/mesh/page.tsx`, `app/docs/mesh/page.tsx`: policy rules, the
+      delegation and `--approve`, `--export` for device management, drift,
+      the fleet view, alerts and audit export.
+- [ ] CLI rows for `curb policy` (each option) and `curb fleet`.
+- [ ] `lib/operations.json` regenerated: "See, apply or approve your
+      organization's agent policy" (write), "Check your organization's
+      devices: policy, drift and exposure" (read), and "Log tool calls and
+      re-check org policy from an agent hook" (write).
 - [ ] Privacy policy and terms of service, with dates in `lib/legal.ts`. Need
       the owner's approval.
-- [ ] Security page sections; FAQ entries.
+- [ ] Security page sections; FAQ entries (what a fleet report holds, why an
+      expired policy stays, why some changes wait).
 
 ## R6: CI check, app audit and the skill
 

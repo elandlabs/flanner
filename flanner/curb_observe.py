@@ -38,6 +38,10 @@ EVENTS = {
     CLAUDE: ("PreToolUse", "PostToolUse", "PermissionDenied"),
     CODEX: ("PreToolUse", "PostToolUse"),
 }
+#: The team hooks (R5): re-check org policy at session start, and on Claude
+#: Code's ConfigChange; Codex has no such event, so a file watch covers it.
+SESSION_MARK = " hook curb-session --agent "
+SESSION_EVENTS = {CLAUDE: ("SessionStart", "ConfigChange"), CODEX: ("SessionStart",)}
 #: Which channels each agent's hooks can see a call on.
 COVERAGE = {
     CLAUDE: {
@@ -80,12 +84,12 @@ class Observation:
 # --- the hooks --------------------------------------------------------------------------------
 
 
-def hook_command(agent: str) -> str:
+def hook_command(agent: str, mark: str = HOOK_MARK) -> str:
     """The hook command, naming the interpreter that installs it (as messaging's does)."""
     script = (
         "import sys;sys.path[:]=[p for p in sys.path if p];from flanner.cli import main;main()"
     )
-    return f'"{sys.executable}" -c "{script}"{HOOK_MARK}{agent}'
+    return f'"{sys.executable}" -c "{script}"{mark}{agent}'
 
 
 def _hooks_file(agent: str) -> Path:
@@ -94,30 +98,32 @@ def _hooks_file(agent: str) -> Path:
     return agent_paths.codex_home() / "hooks.json"
 
 
-def hooks_on(agent: str) -> bool:
+def hooks_on(agent: str, *, session: bool = False) -> bool:
     """Whether Curb's hook is installed for every event this agent logs."""
+    mark, events = (SESSION_MARK, SESSION_EVENTS) if session else (HOOK_MARK, EVENTS)
     try:
         hooks = curb_tighten.load(_hooks_file(agent)).get("hooks") or {}
     except ValueError:
         return False
     return all(
         any(
-            HOOK_MARK in str(h.get("command", ""))
+            mark in str(h.get("command", ""))
             for entry in hooks.get(event, [])
             if isinstance(entry, dict)
             for h in entry.get("hooks", [])
             if isinstance(h, dict)
         )
-        for event in EVENTS[agent]
+        for event in events[agent]
     )
 
 
-def hook_plan(agents: Sequence[str], *, enable: bool) -> curb_fix.Plan:
+def hook_plan(agents: Sequence[str], *, enable: bool, session: bool = False) -> curb_fix.Plan:
     """The settings edits that add or remove Curb's hooks, for the fix machinery to apply.
 
     Hooks run commands, so this is never a tighten-only change: it always
     needs the person's own approval, and gets a backup and an undo.
     """
+    mark, events = (SESSION_MARK, SESSION_EVENTS) if session else (HOOK_MARK, EVENTS)
     plan = curb_fix.Plan()
     for agent in agents:
         path = _hooks_file(agent)
@@ -130,23 +136,22 @@ def hook_plan(agents: Sequence[str], *, enable: bool) -> curb_fix.Plan:
             continue
         after = json.loads(json.dumps(before))
         hooks = after.setdefault("hooks", {})
-        for event in EVENTS[agent]:
+        for event in events[agent]:
             kept = [
                 entry
                 for entry in hooks.get(event, [])
                 if not (
                     isinstance(entry, dict)
                     and any(
-                        HOOK_MARK in str(h.get("command", ""))
+                        mark in str(h.get("command", ""))
                         for h in entry.get("hooks", [])
                         if isinstance(h, dict)
                     )
                 )
             ]
             if enable:
-                kept.append(
-                    {"hooks": [{"type": "command", "command": hook_command(agent), "timeout": 10}]}
-                )
+                command = hook_command(agent, mark)
+                kept.append({"hooks": [{"type": "command", "command": command, "timeout": 10}]})
             if kept:
                 hooks[event] = kept
             else:
@@ -155,7 +160,10 @@ def hook_plan(agents: Sequence[str], *, enable: bool) -> curb_fix.Plan:
             after.pop("hooks", None)
         if after == before:
             continue
-        action = "log every tool call (metadata only)" if enable else "stop logging tool calls"
+        if session:
+            action = "re-check org policy at session start" if enable else "stop the session check"
+        else:
+            action = "log every tool call (metadata only)" if enable else "stop logging tool calls"
         text = json.dumps(after, indent=2) + "\n"
         plan.edits.append(curb_fix.Edit(agent, path, before, after, text, (action,)))
     return plan

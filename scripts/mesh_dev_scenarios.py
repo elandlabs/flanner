@@ -9,6 +9,7 @@ touches the hosted control plane or your real `~/.flanner`.
     python scripts/mesh_dev_scenarios.py send question
     python scripts/mesh_dev_scenarios.py all       every scenario, checked
     python scripts/mesh_dev_scenarios.py agents    an isolated Codex and Claude Code
+    python scripts/mesh_dev_scenarios.py send curb-policy    Curb's org policy (R5)
     python scripts/mesh_dev_scenarios.py down      stop and delete the test homes
 
 Needs the `flanner-cloud` worktree beside this one (or `--cloud`) and a
@@ -522,6 +523,72 @@ def channel(_args: argparse.Namespace) -> str:
         flanner("you", "messages", "interrupt", "tool")
 
 
+# --- Curb team features (R5) ---------------------------------------------------
+#
+# These need the control plane's R5 work (docs/curb-cross-repo-work.md): the
+# Curb endpoints, and its `scripts/seed_curb_policy.py`, which publishes the
+# next policy version for the dev team from a rules file. Without an OS
+# approval stand-in nothing is delegated here, so changes stay pending;
+# meshlab covers delegation with its lab-only stand-in.
+
+CURB_RULES = {"deny_read": ["~/.aws"], "web": "off"}
+
+
+def publish_policy(args: argparse.Namespace, rules: dict) -> None:
+    path = Path(args.logs) / "curb-rules.json"
+    path.write_text(json.dumps(rules), encoding="utf-8")
+    subprocess.run(  # noqa: S603 - the cloud's own interpreter and script
+        [args.cloud_python, "scripts/seed_curb_policy.py", str(path)],
+        cwd=args.cloud,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=True,
+    )
+    for who in HOMES:
+        flanner(who, "whoami", "--refresh")
+
+
+def curb_policy(args: argparse.Namespace) -> str:
+    publish_policy(args, CURB_RULES)
+    hashes = {}
+    for who in HOMES:
+        flanner(who, "curb", "policy", "--check-in")
+        state = as_json(who, "curb", "policy")
+        check(state["received"] and state["pending"] == state["received"], state)
+        hashes[who] = state["compliance_hash"]
+    check(len(set(hashes.values())) == 1, hashes)
+    again = flanner("you", "curb", "policy", "--check-in")
+    check("unchanged" in again, again)
+    return "both devices hold the policy with matching hashes; a re-delivery changes nothing"
+
+
+def curb_fleet(_args: argparse.Namespace) -> str:
+    rows = json.loads(flanner("you", "curb", "fleet", "--json"))
+    check(len(rows) >= 2 and all(r["verified"] and not r["problems"] for r in rows), rows)
+    check(not any(str(Path.home()) in json.dumps(r) for r in rows), rows)
+    return f"{len(rows)} devices, each report verified by its own key, no paths"
+
+
+def curb_alerts(_args: argparse.Namespace) -> str:
+    settings = AGENT_HOMES["claude"] / "settings.json"
+    before = settings.read_text(encoding="utf-8") if settings.exists() else None
+    flanner("you", "curb", "policy", "--check-in")  # the first pass only records
+    data = json.loads(before or "{}")
+    data.setdefault("mcpServers", {})["curb-dev-probe"] = {"command": "curb-dev-probe"}
+    settings.parent.mkdir(parents=True, exist_ok=True)
+    settings.write_text(json.dumps(data), encoding="utf-8")
+    try:
+        out = flanner("you", "curb", "policy", "--check-in")
+        check("1 change(s) widened" in out and "queued" not in out, out)
+    finally:
+        if before is None:
+            settings.unlink()
+        else:
+            settings.write_text(before, encoding="utf-8")
+    return "a new MCP server raised one alert, sent to the relay"
+
+
 SCENARIOS = {
     "question": question,
     "workspace": workspace,
@@ -534,6 +601,9 @@ SCENARIOS = {
     "action-request": action_request,
     "settings-request": settings_request,
     "channel": channel,
+    "curb-policy": curb_policy,
+    "curb-fleet": curb_fleet,
+    "curb-alerts": curb_alerts,
 }
 
 

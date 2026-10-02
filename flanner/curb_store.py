@@ -132,6 +132,19 @@ def save_report(kind: str, report: dict[str, Any], *, now: float | None = None) 
     return path
 
 
+def latest_report(kind: str) -> dict[str, Any] | None:
+    """The newest stored report of a kind, such as the last leak sweep."""
+    folder = curb_dir() / "reports"
+    for path in sorted(folder.glob(f"{kind}-*.json"), reverse=True) if folder.is_dir() else []:
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(data, dict):
+            return data
+    return None
+
+
 def prune(folder: Path, *, now: float | None = None) -> None:
     limit = (now if now is not None else time.time()) - REPORT_DAYS * 86400
     for path in folder.glob("*.json") if folder.is_dir() else []:

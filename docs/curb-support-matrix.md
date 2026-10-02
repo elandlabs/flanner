@@ -102,6 +102,30 @@ search, MCP and apps count as unseen by them. The hook payload fields were
 read from each agent's documentation and have not yet been checked against
 live hooks.
 
+## Org policy, fleet view, alerts and audit export (R5)
+
+| Gate | How it is checked | At this commit |
+|---|---|---|
+| Each agent's compiled output matches its saved files | `tests/test_curb_compile.py` against `tests/data/curb_policy/` | Claude Code `managed-settings.json`, Codex `requirements.toml` and the OpenShell policy match |
+| Every check-in outcome in PRD §10.8 | `tests/test_curb_policy.py` | Each row, plus key rotation, revocation, an expired authority list and a successor that does not chain |
+| Tighten-only changes apply under the delegation, nothing broader | `tests/test_curb_policy.py` | Applied and read back; the mixed-allowlist trap and an untested agent version wait for approval; a withdrawn delegation leaves every change pending |
+| Drift by the next reconciliation | `tests/test_curb_policy.py`, `tests/test_curb_team.py` | After a local edit and after managed settings arrive |
+| A replayed report is refused | `tests/test_curb_fleet.py`, `tests/test_curb_team.py` | Caught by the admin's own check, and dropped on `stale_sequence` |
+| One logical alert per change | `tests/test_curb_alerts.py`, `tests/test_curb_team.py` | A retried alert keeps its id and is delivered once |
+| Audit records validate and hold no secret or path | `tests/test_curb_export.py` | Against OCSF 1.9.0 API Activity's required attributes, as published at schema.ocsf.io |
+| The wire contract's test vectors | `tests/test_curb_wire.py` | Every vector recomputed from the client |
+| The two-device scenarios in PRD §15 | meshlab, and `scripts/mesh_dev_scenarios.py` | **Not run yet:** the control plane's R5 work is not built |
+
+Not checked:
+
+- The OpenShell policy has not been loaded by OpenShell, which is not
+  installed here. The Codex `requirements.toml` was parsed, not loaded by
+  Codex.
+- A device writes each agent's user settings. Admin-owned settings come
+  from `flanner curb policy --export` and device management.
+- Team checks read each agent's launch from the home folder, so a
+  project's own settings are not part of drift, the fleet view or alerts.
+
 ## Scan time
 
 Inventory plus reach now must take under 10 seconds at the 95th percentile

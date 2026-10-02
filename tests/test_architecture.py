@@ -351,6 +351,17 @@ ALLOWED = {
         "notify",
     },
     "curb_export": {"curb_context", "curb_log", "curb_store"},
+    "curb_team": {
+        "curb_alerts",
+        "curb_export",
+        "curb_fleet",
+        "curb_policy",
+        "curb_reach",
+        "curb_store",
+        "curb_wire",
+        "entitlements",
+        "refusals",
+    },
     # The list of every operation and the surfaces that offer it. Data only,
     # imported by the tests that check it against the CLI, web app and MCP
     # server, and by nothing that would make it a dependency.
@@ -575,6 +586,14 @@ ALLOWED = {
         "curb_sweep",
         "curb_tester",
         "curb_window",
+        # Curb's team features (R5): the CLI builds the team pass's client
+        # from `account`, which is why the pass itself never imports it.
+        "curb_alerts",
+        "curb_compile",
+        "curb_fleet",
+        "curb_policy",
+        "curb_team",
+        "curb_wire",
         # `doctor` reports how far this machine's clock is from the server's,
         # and the threshold it compares against is the peer freshness window.
         # Naming the module that owns that rule is better than copying the
@@ -661,6 +680,9 @@ def test_no_read_path_can_reach_the_network():
         "curb_reach",
         "curb_inventory",
         "curb_sweep",
+        # Curb R5: the control plane is reached only through the client
+        # the composition root passes to the team pass.
+        "curb_team",
     ):
         assert "account" not in closure(module), (
             f"{module} can reach the network through account; "

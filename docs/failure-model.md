@@ -172,6 +172,18 @@ Curb reads; the only files it writes are its own redacted reports and digest key
 | The action log cannot be written (locked, full disk, no key) | Nothing; the hook exits quietly | The tool call goes ahead unlogged, and observed use counts that session as unlogged |
 | A record is edited, removed or reordered | `curb log --verify` names the record and exits 1 | The log can no longer be trusted from that record on |
 | Sessions ran without the hooks | `curb observed` says "partial evidence" and how many | Their tool calls are unknown |
+| The control plane cannot be reached | `curb policy --check-in` says so | The policy in force stays in force. Reports wait up to 7 days; alerts are retried with the same event ids |
+| A policy fails its signature, names another organization, uses an unknown or revoked key, or has expired | Refused and alerted | The policy in force stays in force |
+| The same policy version arrives with other contents, or an older version arrives | An integrity error or a rollback, alerted | The policy in force stays in force |
+| The policy authority list is older than the cached one, or has expired | Older: refused. Expired: no new policy is accepted | The policy in force is never weakened |
+| The policy in force expires, or its key is revoked later | Flagged expired, or signed by a revoked key | It stays in force until a newer policy arrives |
+| A policy change would broaden a channel, or its effect cannot be established (an agent version Curb has not tested) | It waits for `curb policy --approve` | Nothing broader is written without your yes |
+| The delegation is off, or the machine has no approval method | Every policy change waits | The fleet view shows it pending |
+| A policy rule this flanner does not know | Reported as unmet: "update flanner" | The rules it knows still apply |
+| Settings change after a policy applied (by hand, by MDM, from the console) | Drift at the next reconciliation | The fleet view shows drift, and growth in reach raises an alert |
+| The control plane refuses a fleet report as replayed (`stale_sequence`) | Nothing | The report is dropped: it could never be accepted |
+| The audit collector refuses records or is down | `curb policy --check-in` says the records wait | They stay in the action log; past 10,000 waiting, the oldest are skipped and counted as dropped |
+| flanner is older than a Curb endpoint's minimum | "update flanner to X or later" | Nothing else changes |
 
 ## Known gaps
 
@@ -184,5 +196,8 @@ Stated rather than left to be discovered:
   an enrolment, which spends a one-shot code.
 - **`.plans/` is git-ignored by default**, so an unsynced, uncommitted plan
   that is deleted is unrecoverable.
+- **Curb's team checks read each agent's launch from the home folder.** A
+  project's own settings are not part of the policy's drift, the fleet
+  view or alerts.
 - **No integrity check on read.** `doctor` verifies on demand, not on every
   open, so a corrupt row is noticed when somebody looks.
