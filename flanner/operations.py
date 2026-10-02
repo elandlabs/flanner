@@ -886,6 +886,17 @@ OPERATIONS: tuple[Operation, ...] = (
     ),
     _op(
         "curb",
+        "Log each tool call from an agent hook",
+        "write",
+        cli=("hook curb-record",),
+        why=(
+            "Called by the agent's own hook system on each tool call, not by a person or a "
+            "tool call."
+        ),
+        since="0.16.0",
+    ),
+    _op(
+        "curb",
         "Delete what Curb keeps on this machine",
         "destructive",
         cli=("curb forget",),
