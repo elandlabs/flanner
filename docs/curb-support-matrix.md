@@ -48,6 +48,29 @@ with terminal settings varied.
 Each operating system is applied as its documented rules, so all three are
 measured on any test machine. CI runs the suite on Linux, macOS and Windows.
 
+## Leak sweep (R2)
+
+`tests/test_curb_sweep_corpus.py` plants secrets in every artifact type
+the sweep reads: 20 per stratum, half on a machine whose agent can read
+everything and half on one whose agent is denied the whole test folder.
+A stratum is agent × OS × artifact type, 54 in all, 1,080 secrets.
+
+| Gate | Target | At this commit |
+|---|---|---|
+| Planted secrets per stratum | At least 20 | 20 in each |
+| Recall, found in the right exposure class | At least 95% | 100% in every stratum |
+| False positives | At most 5% | None |
+| Planted values in any output | None | None |
+
+These numbers come from a stand-in detector that knows the planted
+format, so they measure where the sweep looks and how it classes what it
+finds. The same corpus runs through Kingfisher itself, with real-format
+GitHub tokens, wherever the `sweep` extra is installed. It has not run
+yet: Kingfisher was not installed on the development laptop.
+
+Not read: plans in a plan folder other than `.plans`, and files over
+64 MB (counted under Not checked).
+
 ## Scan time
 
 Inventory plus reach now must take under 10 seconds at the 95th percentile
@@ -58,6 +81,11 @@ on a reference laptop.
 | Windows 11 Home development laptop, both agents installed, 2026-10-02 | 20 | 1.61 s | 1.95 s |
 
 Measured as `flanner curb map --json`, wall clock, from process start.
+
+The leak sweep must take under 2 minutes at the 95th percentile, at low
+CPU priority, in under 500 MB. It lowers its own priority and reads one
+file at a time, skipping files over 64 MB. Its time has not been measured
+yet, because that needs Kingfisher installed.
 
 ## Not checked
 
