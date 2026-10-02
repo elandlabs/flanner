@@ -142,7 +142,7 @@ rather than a judgement call.
 
 ## Curb (`flanner curb`)
 
-Curb reads; it never writes, so a failure costs a report, not data.
+Curb reads; the only files it writes are its own redacted reports and digest key, so a failure costs a report, not data.
 
 | What fails | What you see | What it means |
 |---|---|---|
@@ -151,6 +151,11 @@ Curb reads; it never writes, so a failure costs a report, not data.
 | A launch uses a flag Curb does not know | Every channel is unknown | The flag could have changed anything |
 | No desktop session, or no Tk | `curb show` explains and exits 1 | `curb map` still gives the redacted report |
 | A scheduled job's command cannot be read | The job is listed with its problem | It is not assessed |
+| Kingfisher is not installed | `curb sweep` names the `flanner[sweep]` extra and exits 1 | Nothing was read |
+| A file is over 64 MB, or cannot be read | Counted under Not checked | That file's secrets are not counted |
+| You answer no to validation, or nobody is there to answer | No issuer is contacted | Findings are counted unvalidated |
+| No OS keychain | The digest key is a user-only file in `~/.flanner/curb/` | Same fingerprints, weaker custody |
+| The digest key is lost | A new one is made | Older reports' fingerprints stop matching |
 
 ## Known gaps
 

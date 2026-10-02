@@ -32,7 +32,21 @@ versioning follows [SemVer](https://semver.org/).
     to disk. Curb offers no MCP tools.
   - `flanner curb inventory` lists the agents, settings layers, MCP
     servers, hooks, skills and scheduled jobs, and who controls each.
-  - Read-only and local: nothing is changed and nothing leaves the machine.
+  - `flanner curb sweep` finds secrets that agents left behind: in Claude
+    Code transcripts, Codex sessions and prompt history, CLAUDE.md and
+    AGENTS.md, skills, MCP configs and agent settings, shell history,
+    project `.env` files, and flanner's plans and memories. Each secret
+    counts once, in its worst class: sent to a model provider, readable by
+    an agent, or on disk but blocked. Only counts are printed;
+    `flanner curb show --sweep` opens types and locations in a window. No
+    command prints a secret's value. Detection is Kingfisher, offline, from
+    the new `flanner[sweep]` extra. `--validate` asks each secret's own
+    issuer whether it still works, and asks you first, every run.
+  - Reports keep counts, classes and keyed fingerprints for 30 days, never
+    a value or a location. `flanner curb forget` deletes them and the
+    per-device key the fingerprints use.
+  - Local: nothing is changed, and nothing leaves the machine unless you
+    ask an issuer to check a secret.
 - **Messages between teammates.** Ask a teammate something from the CLI,
   the web UI or your agent, and it goes straight to their devices, never
   through a server.

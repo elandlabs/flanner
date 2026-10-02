@@ -260,6 +260,21 @@ ALLOWED = {
         "curb_severity",
     },
     "curb_inventory": {"agent_paths", "skills_adapters", "curb_context", "curb_settings"},
+    # The leak sweep: Kingfisher behind one module, the only one that may
+    # import it, and Curb's own local state behind another.
+    "curb_kingfisher": set(),
+    "curb_store": {"identity"},
+    "curb_sweep": {
+        "agent_paths",
+        "curb_context",
+        "curb_credentials",
+        "curb_kingfisher",
+        "curb_reach",
+        "curb_settings",
+        "curb_store",
+        "identity",
+        "skills_adapters",
+    },
     # The list of every operation and the surfaces that offer it. Data only,
     # imported by the tests that check it against the CLI, web app and MCP
     # server, and by nothing that would make it a dependency.
@@ -461,9 +476,12 @@ ALLOWED = {
         "curb_context",
         "curb_credentials",
         "curb_inventory",
+        "curb_kingfisher",
         "curb_reach",
         "curb_settings",
         "curb_severity",
+        "curb_store",
+        "curb_sweep",
         "curb_window",
         # `doctor` reports how far this machine's clock is from the server's,
         # and the threshold it compares against is the peer freshness window.
@@ -550,6 +568,7 @@ def test_no_read_path_can_reach_the_network():
         # Curb R1 reads local files only (Curb PRD §7.1).
         "curb_reach",
         "curb_inventory",
+        "curb_sweep",
     ):
         assert "account" not in closure(module), (
             f"{module} can reach the network through account; "

@@ -421,25 +421,32 @@ def _agent_logins(home: Path, env: Mapping[str, str], platform: str) -> list[Cre
     return found
 
 
-def _dotenv(cwd: Path) -> list[Credential]:
-    files: list[Path] = []
-    names: list[str] = []
+def dotenv_files(cwd: Path) -> list[Path]:
+    """`.env` files under the project, four levels down, templates left out."""
+    found: list[Path] = []
     root_depth = len(cwd.parts)
     for current, dirs, filenames in os.walk(cwd):
         here = Path(current)
         if len(here.parts) - root_depth >= DOTENV_DEPTH:
             dirs[:] = []
         dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
-        for filename in filenames:
-            if not (filename == ".env" or filename.startswith(".env.")):
-                continue
-            if filename.endswith(TEMPLATE_SUFFIXES):
-                continue
-            path = here / filename
-            secret = _secret_names(path)
-            if secret:
-                files.append(path)
-                names.extend(secret)
+        found.extend(
+            here / filename
+            for filename in filenames
+            if (filename == ".env" or filename.startswith(".env."))
+            and not filename.endswith(TEMPLATE_SUFFIXES)
+        )
+    return found
+
+
+def _dotenv(cwd: Path) -> list[Credential]:
+    files: list[Path] = []
+    names: list[str] = []
+    for path in dotenv_files(cwd):
+        secret = _secret_names(path)
+        if secret:
+            files.append(path)
+            names.extend(secret)
     if not files:
         return []
     return [

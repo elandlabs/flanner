@@ -72,6 +72,14 @@ flanner curb show
 
 # Agents, settings layers, MCP servers, hooks, skills and scheduled jobs
 flanner curb inventory
+
+# Secrets agents left behind, by exposure class (pip install 'flanner[sweep]')
+flanner curb sweep
+flanner curb sweep --validate     # ask each secret's issuer if it works
+flanner curb show --sweep         # types and locations, in a window
+
+# Delete Curb's stored reports and its digest key
+flanner curb forget
 ```
 
 The terminal never shows a credential's name or location, for anyone.

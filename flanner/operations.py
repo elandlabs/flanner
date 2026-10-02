@@ -815,6 +815,25 @@ OPERATIONS: tuple[Operation, ...] = (
         since="0.16.0",
     ),
     _op(
+        "curb",
+        "Find secrets agents left behind",
+        "read",
+        cli=("curb sweep",),
+        why=(
+            "Where secrets sit is a target list for an injected agent, and checking one "
+            "with its issuer needs a person's yes each run."
+        ),
+        since="0.16.0",
+    ),
+    _op(
+        "curb",
+        "Delete what Curb keeps on this machine",
+        "destructive",
+        cli=("curb forget",),
+        why="Deleting the reports and digest key is a person's decision, not an agent's.",
+        since="0.16.0",
+    ),
+    _op(
         "local",
         "Register flanner with your agents",
         "admin",

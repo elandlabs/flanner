@@ -379,13 +379,15 @@ notifications need `notify-send`; without it, none appear.
 ## 🛡️ Why Curb has no MCP tools
 
 `flanner curb` reports what each agent launch can reach: which credentials
-it could read and which channels could carry them away. That report is a
-target list for a prompt-injected agent, so Curb deliberately offers no MCP
-tools, and its terminal output never names a credential or a location,
-whoever runs it. An agent can still run `flanner curb map` in its shell and
-get the redacted summary. For names and locations, a person runs
-`flanner curb show`, which opens a window on their screen and prints
-nothing from it.
+it could read and which channels could carry them away. `flanner curb
+sweep` reports where secrets were left behind. Both are target lists for a
+prompt-injected agent, so Curb deliberately offers no MCP tools, and its
+terminal output never names a credential, a secret's type or a location,
+whoever runs it. An agent can still run `flanner curb map` or `flanner curb
+sweep` in its shell and get the redacted counts. For names and locations, a
+person runs `flanner curb show` (with `--sweep` for the sweep), which opens
+a window on their screen and prints nothing from it. No command ever
+prints a secret's value.
 
 
 ### Issue: "Could not find Claude Desktop configuration path"

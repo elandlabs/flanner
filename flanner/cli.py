@@ -189,7 +189,7 @@ class Sectioned(click.Group):
             ("skills",),
         ),
         (
-            "What your agents can reach (no account, no network)",
+            "What your agents can reach (no account; nothing sent unless you ask)",
             ("curb",),
         ),
         (
@@ -9354,8 +9354,16 @@ EXAMPLES: dict[str, tuple[str, ...]] = {
         "flanner curb map --agent codex --profile ci",
         "flanner curb map -- claude --settings ./ci-settings.json",
     ),
-    "curb show": ("flanner curb show                names and locations, in a window",),
+    "curb show": (
+        "flanner curb show                names and locations, in a window",
+        "flanner curb show --sweep        where each secret the sweep found is",
+    ),
     "curb inventory": ("flanner curb inventory           agents, MCP servers, hooks, jobs",),
+    "curb sweep": (
+        "flanner curb sweep               secrets agents left behind, by class",
+        "flanner curb sweep --validate    and ask each one's issuer if it works",
+    ),
+    "curb forget": ("flanner curb forget              delete Curb's reports and digest key",),
     "init": (
         "flanner init                     adopt the repository you are in",
         "flanner init --plan-dir docs/plans",
@@ -9511,7 +9519,7 @@ def _attach_examples(group: click.Group, prefix: str = "") -> None:
 
 @cli.group()
 def curb() -> None:
-    """What your agents can reach: credentials, files and network"""
+    """What your agents can reach, and the secrets they left behind"""
 
 
 _CURB_LAUNCH = (
@@ -9709,14 +9717,160 @@ def curb_map(
         console.print()
 
 
+def _curb_sweep(directory: Path | None, *, validate: bool) -> Any:
+    """Run the leak sweep for a project folder. The caller checked Kingfisher is here."""
+    from . import curb_inventory, curb_kingfisher, curb_settings, curb_store, curb_sweep
+
+    cwd, contexts, _ = _curb_contexts(directory, None, None, ())
+    agents = dict.fromkeys(c.agent for c in contexts)
+    versions = {name: curb_inventory.version_of(name)[1] for name in agents}
+    launches = [(c, curb_settings.resolve(c), versions[c.agent]) for c in contexts]
+    curb_sweep.lower_priority()
+    report = curb_sweep.run(
+        cwd,
+        curb_kingfisher.Detector(),
+        launches,
+        home=Path.home(),
+        env=dict(os.environ),
+        platform=sys.platform,
+        key=curb_store.digest_key(),
+    )
+    if validate:
+        curb_sweep.validate(report, curb_kingfisher.validate)
+    return report
+
+
+def _curb_sweep_unavailable() -> None:
+    from rich.markup import escape
+
+    from . import curb_kingfisher
+
+    reason = curb_kingfisher.unavailable()
+    if reason:
+        tui.bad(f"No sweep: {escape(reason)}.")  # escaped: "[sweep]" is not a style
+        raise SystemExit(1)
+
+
+def _curb_may_validate() -> bool:
+    """Ask, every run, before any secret goes to its issuer (Curb PRD §7.1)."""
+    try:
+        return click.confirm(
+            "Send each secret found to its own issuer, to check whether it still works?",
+            default=False,
+        )
+    except click.Abort:  # nobody there to answer
+        return False
+
+
+@curb.command("sweep")
+@click.option(
+    "--dir",
+    "directory",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=None,
+    help="The project folder to sweep, besides the agents' own files (default: here)",
+)
+@click.option("--json", "as_json", is_flag=True, help="Machine-readable counts, redacted the same")
+@click.option(
+    "--validate",
+    is_flag=True,
+    help="Ask each secret's own issuer whether it still works. Asks you first.",
+)
+def curb_sweep_command(directory: Path | None, as_json: bool, validate: bool) -> None:
+    """Find secrets that agents left behind, and how exposed each one is
+
+    Reads agent transcripts and sessions, instruction files, skills, MCP
+    configs, shell history, the project's .env files and flanner's plans
+    and memories, offline. Each secret counts once, in its worst class: A,
+    sent to a model provider; B, readable by an agent; C, on disk but
+    blocked. Only counts are printed; `flanner curb show --sweep` puts types
+    and locations in a window on your screen. No value is ever printed or
+    kept.
+    """
+    from . import curb_store, curb_sweep
+
+    _curb_sweep_unavailable()
+    validate = validate and _curb_may_validate()
+    with tui.working("reading agent files for secrets"):
+        report = _curb_sweep(directory, validate=validate)
+    curb_store.save_report("sweep", curb_sweep.stored(report))
+    view = curb_sweep.redacted(report)
+    if as_json:
+        click.echo(json.dumps(view, indent=2))
+        return
+    console.print()
+    console.print(
+        f"[bold]Leak sweep[/]  {view['secrets']} secret(s) in {view['files_scanned']} file(s)"
+    )
+    rows = tui.table("Class", "Secrets", "What to do")
+    for key, name in view["classes"].items():
+        count = view["by_class"][key]
+        style = "red" if key == curb_sweep.SENT and count else "default"
+        rows.add_row(f"{key}, {name}", f"[{style}]{count}[/]", curb_sweep.ADVICE[key])
+    console.print(rows)
+    where = ", ".join(f"{name} {count}" for name, count in view["locations_by_category"].items())
+    if where:
+        console.print(f"  Found in: {where}.")
+    if "validation" in view:
+        outcomes = ", ".join(f"{name} {count}" for name, count in view["validation"].items())
+        console.print(f"  Issuers said: {outcomes}.")
+    if not view["launches"]:
+        tui.note("No supported agent was found, so nothing counts as readable by one.")
+    if view["not_checked"]:
+        console.print("  Not checked: " + "; ".join(view["not_checked"]) + ".", style="muted")
+    console.print(
+        "  A redacted copy is kept for 30 days; `flanner curb forget` deletes it.", style="muted"
+    )
+    console.print()
+    if view["secrets"]:
+        tui.hint(
+            f"  {tui.command('flanner curb show --sweep')} opens types and locations in a "
+            "window on your screen."
+        )
+        console.print()
+
+
+@curb.command("forget")
+@click.option("--yes", is_flag=True, help="Delete without asking first")
+def curb_forget(yes: bool) -> None:
+    """Delete everything Curb keeps on this machine
+
+    The redacted reports and the per-device digest key. Afterwards older
+    fingerprints can no longer be matched.
+    """
+    from . import curb_store
+
+    if not yes:
+        try:
+            sure = click.confirm("Delete Curb's stored reports and digest key?", default=False)
+        except click.Abort:
+            sure = False
+        if not sure:
+            tui.note("Nothing deleted.")
+            return
+    removed = curb_store.forget()
+    if removed:
+        tui.ok("Deleted " + "; ".join(removed) + ".")
+    else:
+        tui.note("Curb keeps nothing on this machine yet.")
+
+
 @curb.command("show")
 @_curb_launch_options
+@click.option("--sweep", is_flag=True, help="Show where each secret the leak sweep found is")
+@click.option(
+    "--validate",
+    is_flag=True,
+    help="With --sweep: ask each secret's own issuer whether it still works. Asks you first.",
+)
 @click.option("--in-window", is_flag=True, hidden=True)
 def curb_show(
     directory: Path | None,
     agent: str | None,
     profile: str | None,
     launch: tuple[str, ...],
+    sweep: bool,
+    validate: bool,
     in_window: bool,
 ) -> None:
     """Open the full report, with names and locations, in a window
@@ -9725,8 +9879,15 @@ def curb_show(
     Nothing from it is printed here or written to disk, so an agent that
     runs this command learns nothing it could not already see.
     """
-    from . import curb_inventory, curb_settings, curb_window
+    from . import curb_inventory, curb_settings, curb_sweep, curb_window
 
+    if validate and not sweep:
+        raise click.UsageError("--validate goes with --sweep")
+    if sweep and in_window:
+        report = _curb_sweep(directory, validate=validate)
+        text = curb_window.render_sweep(curb_sweep.full(report))
+        curb_window.show("Flanner Curb: leak sweep", text)
+        return
     cwd, contexts, _ = _curb_contexts(directory, agent, profile, launch)
     if in_window:
         reports = _curb_reports(contexts, full=True)
@@ -9747,9 +9908,14 @@ def curb_show(
     reason = curb_window.unavailable()
     if reason:
         tui.bad(f"No window can open: {reason}.")
-        tui.hint(f"  {tui.command('flanner curb map')} gives the redacted report here.")
+        redacted = "flanner curb sweep" if sweep else "flanner curb map"
+        tui.hint(f"  {tui.command(redacted)} gives the redacted report here.")
         raise SystemExit(1)
     arguments = ["--dir", str(cwd)]
+    if sweep:
+        _curb_sweep_unavailable()
+        # Asked here, where a person can answer; the window has no terminal.
+        arguments += ["--sweep", *(["--validate"] if validate and _curb_may_validate() else [])]
     if agent:
         arguments += ["--agent", agent]
     if profile:

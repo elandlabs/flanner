@@ -126,6 +126,35 @@ def render(reports: Sequence[Mapping[str, Any]], inventory: Sequence[Mapping[str
     return "\n".join(lines).rstrip() + "\n"
 
 
+def render_sweep(sweep: Mapping[str, Any]) -> str:
+    """The leak sweep's findings as plain text: types and locations, never a value."""
+    by_class = sweep["by_class"]
+    lines = [
+        f"Leak sweep: {sweep['secrets']} secret(s) in {sweep['files_scanned']} file(s) read",
+        *(f"  {key}, {name}: {by_class[key]}" for key, name in sweep["classes"].items()),
+        "",
+    ]
+    for item in sweep["findings"]:
+        lines.append(f"{item['class']} ({item['class_name']}): {item['type']}")
+        lines.append(f"  {item['category']}: {item['path']}, line {item['line']}")
+        if item["readable_by"]:
+            lines.append("  Readable by: " + ", ".join(item["readable_by"]))
+        if item["validation"]:
+            lines.append(f"  Issuer says: {item['validation']}")
+        lines.append(f"  {item['advice']}")
+        lines.append("")
+    if sweep["launches"]:
+        lines.append("Agent launches checked for B and C")
+        lines += [f"  {launch}" for launch in sweep["launches"]]
+    else:
+        lines.append("No supported agent was found, so nothing counts as readable by one.")
+    if sweep["not_checked"]:
+        lines.append("")
+        lines.append("Not checked")
+        lines += [f"  {entry}" for entry in sweep["not_checked"]]
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def show(title: str, text: str) -> None:  # pragma: no cover - draws on a real screen
     """Draw the report in a scrollable, read-only window and wait for it to close."""
     import tkinter

@@ -65,6 +65,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# `flanner curb sweep`: Kingfisher's offline secret detection (Apache-2.0),
+# wheels for macOS, Linux and Windows on Python 3.10 and up. Optional, so a
+# plain install stays free of a native scanner few people ask for.
+sweep = ["kingfisher-secret-scanner>=1.0.1,<2"]
 dev = [
     "pytest>=9.0.3,<10",
     "pytest-cov>=6.0,<9",
@@ -119,6 +123,13 @@ ignore_errors = true
 # than trusted.
 [[tool.mypy.overrides]]
 module = "frontmatter"
+ignore_missing_imports = true
+
+# Kingfisher is the optional `sweep` extra, absent from most installs and
+# from the type-check job. Only flanner/curb_kingfisher.py imports it, and it
+# converts every value it reads at the call site.
+[[tool.mypy.overrides]]
+module = "kingfisher_sdk"
 ignore_missing_imports = true
 
 [tool.ruff]

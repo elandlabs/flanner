@@ -61,11 +61,27 @@ Client work is done. Commands: `flanner curb map`, `flanner curb show`,
 
 ## R2: leak sweep
 
+Client work is done. Commands: `flanner curb sweep`, `flanner curb show
+--sweep`, `flanner curb forget`. Detection needs the `flanner[sweep]` extra.
+
 **flanner-landing** (gated on `SHIPS_IN.curbSweep`):
 
 - [ ] `SHIPS_IN.curbSweep`.
-- [ ] Docs and CLI rows for `flanner curb sweep`.
-- [ ] FAQ entries.
+- [ ] Docs for the sweep: where it reads (transcripts, Codex sessions and
+      prompt history, CLAUDE.md and AGENTS.md, skills, MCP configs and agent
+      settings, shell history, `.env` files, flanner plans and memories); the
+      classes A (sent to a model provider), B (readable by an agent) and C
+      (on disk but blocked); install with `pip install 'flanner[sweep]'`.
+- [ ] CLI rows: `curb sweep` (`--dir`, `--json`, `--validate`),
+      `curb show --sweep [--validate]`, `curb forget [--yes]`.
+- [ ] `lib/operations.json` regenerated: two more `curb` operations, "Find
+      secrets agents left behind" (read) and "Delete what Curb keeps on this
+      machine" (destructive).
+- [ ] FAQ entries: why a transcript secret means rotate now; that no command
+      prints a value; what `--validate` sends, and to whom; what `forget`
+      deletes.
+- [ ] Troubleshooting: "the leak sweep needs Kingfisher"; files over 64 MB
+      under Not checked.
 - [ ] Privacy policy: an opted-in check sends a found key straight to its own
       issuer. Needs the owner's approval.
 - [ ] The date in `lib/legal.ts`.
