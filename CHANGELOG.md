@@ -142,6 +142,19 @@ versioning follows [SemVer](https://semver.org/).
     and Codex. An agent runs the redacted Curb commands in its shell, and is
     told to ask the person to open `flanner curb show` for names and
     locations, which never come back to it.
+  - `flanner curb attribution --setup` gives each agent its own Ed25519
+    signing key, kept only in the OS credential store, and routes the
+    agent's commits through `flanner-curb-sign`, which signs only inside an
+    agent session the hooks recorded and logs each commit. Keys are
+    registered with the organization with a proof of possession, and
+    `--rotate` replaces them every 90 days, deleting the retired private
+    half. `flanner curb verify` gives each commit one of five states:
+    attributed, attributed with a retired key, untrusted because revoked,
+    key status unknown, or unattributed, checked against the organization's
+    signed key registry, which a device refuses when it is older, changed
+    without a new version, moves a key or drops a revocation. Signatures are
+    OpenSSH's, so git, ssh-keygen and GitHub read them too. A signature shows
+    which key signed, not who wrote the code.
 - **Messages between teammates.** Ask a teammate something from the CLI,
   the web UI or your agent, and it goes straight to their devices, never
   through a server.

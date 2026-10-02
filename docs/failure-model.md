@@ -187,6 +187,11 @@ Curb reads; the only files it writes are its own redacted reports and digest key
 | A workflow file will not parse | `curb ci` lists it | The other workflows are still checked |
 | `curb ci --fix` would leave a workflow that does not parse | That file is left as it was | Make the change by hand |
 | An app file will not parse, or calls a model through a wrapper Curb does not know | `curb app` lists the file; the call is not found | Every app result is assumed; Semgrep or CodeQL go further |
+| No OS credential store | `curb attribution --setup` refuses | Attribution stays off: a key on disk would be readable by the agent it labels |
+| A commit outside a recorded agent session reaches the broker | git says signing failed, with the reason | Nothing is signed; turn on `flanner curb log` if agent sessions are not being recorded |
+| The attribution registry cannot be refreshed | `curb verify` uses the one held here | Known revocations still apply; other signed commits are "key status unknown" until a fresh registry |
+| A registry is older, changed without a new version, moves a key, or drops a revocation | Refused and alerted | The registry held here stays |
+| An agent key's private half is lost | The broker refuses to sign | `flanner curb attribution --rotate` makes a new key; old commits stay attributed |
 
 ## Known gaps
 

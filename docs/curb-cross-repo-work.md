@@ -4,8 +4,8 @@ Every Curb release lands in more than one repo (Curb PRD §12.2, §12.3). The
 flanner client work is on `feat/curb-r1`. This page lists what the other
 repos still need for each release, so nothing is left behind.
 
-**Status: none of this is started.** Each section is filled in with the
-specifics once that release's client work is done.
+**Status: the flanner client work for R1 to R7 is done. None of the work
+below, in the other repos, is started.**
 
 Rules that apply to every release (PRD §12.3):
 
@@ -264,24 +264,60 @@ every tag.
 
 ## R7: commit attribution
 
+Client work is done. Commands: `flanner curb attribution [--setup|--rotate]
+[--github] [--json]`, `flanner curb verify [REVISION] [--json]`; git's signing
+program `flanner-curb-sign` (a new console script). Registration, the
+registry and the five states are in `docs/curb-wire-contract.md`, with test
+vectors; the design and threat model are ADR 0008.
+
+**flanner (before release):** the threat model in ADR 0008 needs a review by
+a person, an R7 exit criterion.
+
 **flanner-cloud:**
 
-- [ ] `POST /v1/curb/attribution-keys`: both signatures checked, nonces
-      through `replay.py`, each fingerprint bound to one device for good.
-- [ ] Model and migration for keys; revocation on device removal; console
-      revocation; revocations never undone.
-- [ ] `POST /v1/curb/attribution-registry`: signed registry, version always
-      rising, re-signed daily, 7-day expiry.
+- [ ] Plans: add `curb_attribution` to the free Curb plan and `managed_mesh`,
+      and `curb-attribution/1` to `curb_capabilities`.
+- [ ] `POST /v1/curb/attribution-keys`: verify the device envelope and the
+      key's `proof` over the canonical `curb_attribution_proof` document;
+      refuse a reused nonce through `replay.py` (`replayed`), a bad proof
+      (`bad_proof`), a fingerprint registered to another device
+      (`key_owned`, enforced by a unique constraint), and a replacement that
+      names no active key of the same device (`replaces_unknown`). Mark the
+      replaced key retired.
+- [ ] Model and migration for keys: fingerprint (OpenSSH `SHA256:` form),
+      public key, agent, device, status and when it changed.
+- [ ] Revocation: removing a device revokes every key it registered,
+      retired ones included, and no other device's; an admin can revoke one
+      key from the console; revocations are never undone.
+- [ ] `POST /v1/curb/attribution-registry`: the signed
+      `curb_attribution_registry`, scoped to the caller's organization,
+      signed by the issuer key; the version rises with every change; re-signed
+      daily and on each change, with a 7-day expiry.
 - [ ] Console privacy page, docs, changelog.
 
 **flanner-meshlab:**
 
-- [ ] A `curb-attribution` scenario covering registration, rotation,
-      revocation, refused cross-device registration, expiry and replay.
+- [ ] A `curb-attribution` scenario: A and B register keys and A rotates
+      one; a fresh C verifies A's active and retired keys; removing A revokes
+      A's keys and no one else's; A cannot register or replace B's key; with
+      the control plane stopped and the registry expired, B's commits show
+      "key status unknown" and A's stay revoked, and a device that never
+      fetched one shows "key status unknown"; a replayed older registry and
+      one that drops A's revocation are refused; a fresh registry resolves
+      the unknown results.
+- [ ] The lab-only approval stand-in also covers
+      `flanner curb attribution --setup`.
 
 **flanner-landing** (gated on `SHIPS_IN.curbAttribution`):
 
-- [ ] Docs, including the verification states.
-- [ ] Privacy policy lines on keys registered through GitHub, and on the key
-      registry. Need the owner's approval.
+- [ ] Docs: setup (one approval; the agent settings it writes; `--github`),
+      rotation, `curb verify` and its five states, what a signature does and
+      does not show, and that the developer or malware running as the same
+      user can still call the broker.
+- [ ] CLI rows for `curb attribution` and `curb verify`.
+- [ ] `lib/operations.json` regenerated: "Give each agent its own
+      commit-signing key, rotate or list them" (write) and "See which agent
+      key signed each commit" (read).
+- [ ] Privacy policy lines on public keys registered through the person's
+      own GitHub sign-in, and on the key registry. Need the owner's approval.
 - [ ] A security page section.

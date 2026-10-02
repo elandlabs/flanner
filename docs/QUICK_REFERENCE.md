@@ -120,6 +120,14 @@ flanner curb ci --fix             # the one-line fixes that are safe to make bli
 flanner curb app --sarif app.sarif
 ```
 
+```bash
+# Sign each agent's commits with a key of its own (asks your OS once)
+flanner curb attribution --setup --github   # --github adds the public keys with your gh
+flanner curb attribution                    # the keys, and whether rotation is due
+flanner curb attribution --rotate           # every 90 days; old commits stay attributed
+flanner curb verify main..HEAD              # attributed, retired key, revoked, unknown, unattributed
+```
+
 In CI, use the action: `uses: elandlabs/flanner/actions/curb-ci@<tag>`
 (see `actions/curb-ci/README.md`). `flanner init` also installs the
 `agent-blast-radius` skill, which runs the redacted commands for an agent.

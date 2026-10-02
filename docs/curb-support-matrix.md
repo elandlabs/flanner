@@ -142,6 +142,24 @@ Not checked:
   libraries outside the list.
 - A real agent running the skill: by hand, before each release.
 
+## Commit attribution (R7)
+
+| Gate | How it is checked | At this commit |
+|---|---|---|
+| An agent commit verifies with its key | `tests/test_curb_attribution.py`, in a real git repository | Attributed; git's own object id matches the one the broker logs |
+| The broker refuses a commit outside an agent session | `tests/test_curb_attribution.py` | Refused, with no signature written, and the refusal logged |
+| Registration carries a proof of possession | `tests/test_curb_attribution.py`, `tests/test_curb_wire.py` | The key's signature over device, key, nonce and replacement verifies; the vector matches |
+| The registry's acceptance rules | `tests/test_curb_attribution.py`, `tests/test_curb_team.py` | Older, same-version-changed, key-moving and revocation-dropping registries refused |
+| Known revocations hold offline; no fresh registry is "key status unknown" | `tests/test_curb_attribution.py` | As stated |
+| Signatures interoperate | `ssh-keygen -Y verify` accepts the broker's signatures, and Curb verifies ssh-keygen's | Checked where ssh-keygen is installed |
+| The threat model is reviewed | ADR 0008 | **Not yet**: a review by a person, before R7 ships |
+| The meshlab `curb-attribution` scenario | meshlab | **Not run yet:** the control plane's R7 work is not built |
+
+Not checked:
+
+- Signing inside Codex's sandbox, which must reach the OS credential store.
+- GitHub showing "Verified", which needs each public key added there.
+
 ## Scan time
 
 Inventory plus reach now must take under 10 seconds at the 95th percentile
