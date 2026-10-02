@@ -33,6 +33,7 @@ STATIC_PAGES = (
     "/actions",
     "/settings",
     "/setup",
+    "/curb",
 )
 
 WIDTHS = (1280, 1024, 375)
