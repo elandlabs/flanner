@@ -144,6 +144,37 @@ def test_the_window_runs_in_a_detached_process_of_its_own():
 # --- the inventory ------------------------------------------------------------------
 
 
+@pytest.mark.skipif(sys.version_info < (3, 11), reason="Python 3.10 has no tomllib")
+def test_inventory_lists_what_was_planted_and_marks_an_untested_version(machine, monkeypatch):
+    # PRD §10.1: each planted agent, MCP server, hook, skill and scheduled job
+    # (the jobs have their own tests below, one per scheduler).
+    versions = {"claude": "2.1.290 (Claude Code)\n", "codex": "codex-cli 0.154.0\n"}
+    monkeypatch.setattr(curb_inventory.shutil, "which", lambda name: f"/opt/bin/{name}")
+    monkeypatch.setattr(
+        curb_inventory,
+        "run",
+        lambda argv: versions.get(Path(argv[0]).name) if argv[-1] == "--version" else None,
+    )
+    hook = {"matcher": "Bash", "hooks": [{"type": "command", "command": "check"}]}
+    (machine.claude / "settings.json").write_text(
+        json.dumps({"hooks": {"PreToolUse": [hook]}}), encoding="utf-8"
+    )
+    (machine.codex / "config.toml").write_text(
+        '[mcp_servers.docs]\ncommand = "docs-server"\n', encoding="utf-8"
+    )
+    for folder in ("project/.claude/skills/review", "project/.agents/skills/tidy"):
+        skill = machine.project.parent / folder
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text("---\nname: x\n---\n", encoding="utf-8")
+
+    claude, codex = json.loads(invoke("inventory", "--json").output)["agents"]
+    assert (claude["version"], claude["supported"]) == ("2.1.290", False)
+    assert (codex["version"], codex["supported"]) == ("0.154.0", True)
+    assert [(h["event"], h["count"]) for h in claude["hooks"]] == [("PreToolUse", 1)]
+    assert claude["skills"] == {"project": 1} and codex["skills"] == {"project": 1}
+    assert [s["name"] for s in codex["mcp_servers"]] == ["docs"]
+
+
 def test_inventory_lists_servers_and_counts_their_secrets(machine):
     result = invoke("inventory", "--json")
     assert result.exit_code == 0, result.output
