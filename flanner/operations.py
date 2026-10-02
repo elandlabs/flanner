@@ -916,6 +916,14 @@ OPERATIONS: tuple[Operation, ...] = (
     ),
     _op(
         "curb",
+        "Find the LLM calls in an application's code, and their shapes",
+        "read",
+        cli=("curb app",),
+        why="It points at the code an injected agent would most want to change.",
+        since="0.16.0",
+    ),
+    _op(
+        "curb",
         "Log tool calls and re-check org policy from an agent hook",
         "write",
         cli=("hook curb-record", "hook curb-session"),

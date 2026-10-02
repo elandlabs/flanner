@@ -366,6 +366,7 @@ ALLOWED = {
     # judged; the only output is SARIF and the terminal.
     "curb_sarif": set(),
     "curb_ci": {"curb_sarif"},
+    "curb_app": {"curb_sarif"},
     # The list of every operation and the surfaces that offer it. Data only,
     # imported by the tests that check it against the CLI, web app and MCP
     # server, and by nothing that would make it a dependency.
@@ -599,6 +600,7 @@ ALLOWED = {
         "curb_team",
         "curb_wire",
         # Curb in pipelines and code (R6).
+        "curb_app",
         "curb_ci",
         "curb_sarif",
         # `doctor` reports how far this machine's clock is from the server's,
@@ -691,6 +693,7 @@ def test_no_read_path_can_reach_the_network():
         # the composition root passes to the team pass.
         "curb_team",
         "curb_ci",
+        "curb_app",
     ):
         assert "account" not in closure(module), (
             f"{module} can reach the network through account; "

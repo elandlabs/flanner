@@ -9460,6 +9460,10 @@ EXAMPLES: dict[str, tuple[str, ...]] = {
         "flanner curb ci                   agent steps in this repository's workflows",
         "flanner curb ci --sarif curb.sarif --fail-on high",
     ),
+    "curb app": (
+        "flanner curb app                  LLM calls in this app's Python code",
+        "flanner curb app --sarif app.sarif",
+    ),
     "curb policy": (
         "flanner curb policy               the org policy here, and what waits for you",
         "flanner curb policy --enrol       let signed policy make changes that only tighten",
@@ -10671,6 +10675,62 @@ def curb_ci_command(
     threshold = {"high": 3, "medium": 2, "low": 1}.get(fail_on)
     if threshold and any(_SEVERITY_RANK[r.rule.severity] >= threshold for r in found):
         raise SystemExit(1)
+
+
+@curb.command("app")
+@click.argument("path", type=click.Path(file_okay=False, exists=True, path_type=Path), default=".")
+@click.option(
+    "--sarif",
+    "sarif_to",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=None,
+    help="Also write the findings as SARIF, for Semgrep, CodeQL or code scanning",
+)
+@click.option("--json", "as_json", is_flag=True, help="The calls as JSON")
+def curb_app_command(path: Path, sarif_to: Path | None, as_json: bool) -> None:
+    """LLM calls in an application's Python code, and their shapes
+
+    Finds calls into openai, anthropic, google.genai, langchain, langgraph,
+    litellm, pydantic_ai and mcp, and labels each a single call, tool-using
+    or a loop. Flags untrusted input beside tool-using calls, and model
+    output that reaches eval, a shell or SQL. Every result is assumed: it
+    is pattern matching, a starting point for a deeper review.
+    """
+    from . import curb_app
+
+    calls, problems = curb_app.audit(path)
+    if sarif_to is not None:
+        _curb_write_sarif(sarif_to, curb_app.results(calls), list(curb_app.RULES.values()))
+    if as_json:
+        click.echo(
+            json.dumps(
+                [
+                    {
+                        "path": c.path,
+                        "line": c.line,
+                        "library": c.library,
+                        "shape": c.shape,
+                        "untrusted_input": c.untrusted_input,
+                        "unchecked_output": c.unchecked_output,
+                    }
+                    for c in calls
+                ],
+                indent=2,
+            )
+        )
+    else:
+        if not calls:
+            tui.note("No LLM calls found in this folder's Python code.")
+        for call in calls:
+            console.print(f"  {call.path}:{call.line} {call.shape} ({call.library})")
+            if call.untrusted_input:
+                tui.warn("    untrusted input in the same function")
+            for sink in call.unchecked_output:
+                tui.warn(f"    model output reaches {sink}")
+        if calls:
+            tui.note("Every result is assumed: pattern matching, not proof.")
+    for problem in problems:
+        tui.warn(problem)
 
 
 @curb.command("show")
