@@ -924,6 +924,25 @@ OPERATIONS: tuple[Operation, ...] = (
     ),
     _op(
         "curb",
+        "Give each agent its own commit-signing key, rotate or list them",
+        "write",
+        cli=("curb attribution",),
+        why=(
+            "It changes agent settings and holds signing keys; a key an agent could ask for "
+            "would attribute nothing."
+        ),
+        since="0.16.0",
+    ),
+    _op(
+        "curb",
+        "See which agent key signed each commit",
+        "read",
+        cli=("curb verify",),
+        why="A person reads it in a terminal or CI; it needs no agent in the loop.",
+        since="0.16.0",
+    ),
+    _op(
+        "curb",
         "Log tool calls and re-check org policy from an agent hook",
         "write",
         cli=("hook curb-record", "hook curb-session"),

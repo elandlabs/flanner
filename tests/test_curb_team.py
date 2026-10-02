@@ -13,6 +13,7 @@ import pytest
 
 from flanner import (
     curb_alerts,
+    curb_attribution,
     curb_log,
     curb_policy,
     curb_settings,
@@ -21,7 +22,8 @@ from flanner import (
     curb_wire,
     identity,
 )
-from flanner.entitlements import CURB_ALERTS, CURB_FLEET, CURB_POLICY, Claims
+from flanner.entitlements import CURB_ALERTS, CURB_ATTRIBUTION, CURB_FLEET, CURB_POLICY, Claims
+from tests.test_curb_attribution import A, entry, registry
 from tests.test_curb_policy import (  # noqa: F401 - box is a fixture
     ISSUER_RING,
     NOW,
@@ -54,6 +56,8 @@ class Plane:
         self.reports = []
         self.delivered = []
         self.collected = []
+        self.registered = []
+        self.registry = registry(1, [])
 
     def call(self, name, body):
         self.calls.append(name)
@@ -86,6 +90,11 @@ class Plane:
             self.last_sequence[fields["device_id"]] = fields["sequence"]
             self.reports.append(fields)
             return {}
+        if name == "attribution-keys":
+            self.registered.append(body)
+            return {"status": "active"}
+        if name == "attribution-registry":
+            return {"registry": self.registry}
         if name == "alerts":
             ids = [a["event_id"] for a in body["alerts"]]
             self.delivered += [i for i in ids if i not in self.delivered]
@@ -104,7 +113,7 @@ def device(offered=curb_wire.CAPABILITIES):
         "iss",
         "2026-01-01T00:00:00Z",
         "2027-01-01T00:00:00Z",
-        features=(CURB_POLICY, CURB_FLEET, CURB_ALERTS),
+        features=(CURB_POLICY, CURB_FLEET, CURB_ALERTS, CURB_ATTRIBUTION),
     )
     return curb_team.Device(
         device_id=identity.device_id(),
@@ -294,3 +303,24 @@ def test_a_pass_is_due_after_six_hours():
     curb_store.write_state("team", {"last": 1000})
     assert not curb_team.due(now=1000 + 3600)
     assert curb_team.due(now=1000 + 6 * 3600)
+
+
+def test_the_pass_registers_new_attribution_keys_and_refreshes_the_registry(plane, box):  # noqa: F811
+    curb_attribution.create("claude")
+    run(plane, box)
+    (body,) = plane.registered
+    assert body["agent"] == "claude" and body["proof"] and body["replaces"] == ""
+    assert curb_attribution.keys()["keys"]["claude"]["registered"] is True
+    assert curb_attribution.registry(ISSUER_RING)["version"] == 1
+    run(plane, box)
+    assert len(plane.registered) == 1  # registered once
+
+
+def test_a_registry_that_drops_a_revocation_is_refused_and_alerted(plane, box):  # noqa: F811
+    plane.registry = registry(1, [entry(A, "revoked")])
+    run(plane, box)
+    plane.registry = registry(2, [entry(A)])
+    outcome = run(plane, box)
+    assert any("drops a known revocation" in p for p in outcome.problems)
+    assert curb_attribution.registry(ISSUER_RING)["version"] == 1
+    assert len(plane.delivered) == 1

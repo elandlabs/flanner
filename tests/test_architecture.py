@@ -353,6 +353,7 @@ ALLOWED = {
     "curb_export": {"curb_context", "curb_log", "curb_store"},
     "curb_team": {
         "curb_alerts",
+        "curb_attribution",
         "curb_export",
         "curb_fleet",
         "curb_policy",
@@ -620,6 +621,8 @@ ALLOWED = {
         "curb_app",
         "curb_ci",
         "curb_sarif",
+        # Curb commit attribution (R7).
+        "curb_attribution",
         # `doctor` reports how far this machine's clock is from the server's,
         # and the threshold it compares against is the peer freshness window.
         # Naming the module that owns that rule is better than copying the

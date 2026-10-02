@@ -37,6 +37,7 @@ POLICY_REFUSED = "policy_refused"
 POLICY_INTEGRITY = "policy_integrity"
 POLICY_ROLLBACK = "policy_rollback"
 AUTHORITY_REFUSED = "authority_refused"
+REGISTRY_REFUSED = "registry_refused"
 
 SAY = {
     MCP_ADDED: "an MCP server was added",
@@ -47,6 +48,7 @@ SAY = {
     POLICY_INTEGRITY: "an org policy failed its integrity check",
     POLICY_ROLLBACK: "an older org policy was refused",
     AUTHORITY_REFUSED: "a policy authority list was refused",
+    REGISTRY_REFUSED: "an attribution registry was refused",
 }
 KEEP_DAYS = 7
 SECRET_DAYS = 90

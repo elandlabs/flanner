@@ -26,9 +26,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Protocol
 
-from . import curb_alerts, curb_export, curb_fleet, curb_policy, curb_store, curb_wire
+from . import (
+    curb_alerts,
+    curb_attribution,
+    curb_export,
+    curb_fleet,
+    curb_policy,
+    curb_store,
+    curb_wire,
+)
 from .curb_reach import AgentReport
-from .entitlements import CURB_ALERTS, CURB_FLEET, CURB_POLICY, Claims
+from .entitlements import CURB_ALERTS, CURB_ATTRIBUTION, CURB_FLEET, CURB_POLICY, Claims
 
 #: How often the background receiver runs a pass, and the least time between two.
 EVERY = 6 * 3600
@@ -140,6 +148,31 @@ def _apply(
     return bool(change.written)
 
 
+def _attribution(client: Client, device: Device, out: Outcome) -> list[dict[str, str]]:
+    """Register this device's new attribution keys, and refresh the registry."""
+    for agent, entry in curb_attribution.keys()["keys"].items():
+        if entry.get("registered"):
+            continue
+        try:
+            client.call("attribution-keys", curb_attribution.registration(agent, device.device_id))
+        except Exception as e:  # noqa: BLE001
+            out.problems.append(f"an attribution key was not registered: {e}")
+            continue
+        curb_attribution.mark_registered(agent)
+    try:
+        token = str(client.call("attribution-registry", {}).get("registry") or "")
+    except Exception as e:  # noqa: BLE001
+        out.problems.append(f"the attribution registry could not be fetched: {e}")
+        return []
+    _, problem = curb_attribution.accept_registry(
+        token, device.issuer_keyring, device.organization_id
+    )
+    if not problem:
+        return []
+    out.problems.append(problem)
+    return [curb_alerts.policy(curb_alerts.REGISTRY_REFUSED, None, problem)]
+
+
 def reconcile(
     reports: Sequence[AgentReport],
     device_id: str,
@@ -234,6 +267,8 @@ def cycle(
         raised = _check_in(client, device, moment, out)
         if _apply(reports, home, environment, platform, out):
             reports = assess()
+    if device.offers(CURB_ATTRIBUTION):
+        raised += _attribution(client, device, out)
     alerts = reconcile(
         reports, device.device_id, home=home, env=environment, platform=platform, raised=raised
     )

@@ -9464,6 +9464,15 @@ EXAMPLES: dict[str, tuple[str, ...]] = {
         "flanner curb app                  LLM calls in this app's Python code",
         "flanner curb app --sarif app.sarif",
     ),
+    "curb attribution": (
+        "flanner curb attribution          each agent's key, and the registry",
+        "flanner curb attribution --setup  give each agent a key (asks first)",
+        "flanner curb attribution --rotate  replace the keys every 90 days",
+    ),
+    "curb verify": (
+        "flanner curb verify               the last commit's attribution",
+        "flanner curb verify main..HEAD    every commit on this branch",
+    ),
     "curb policy": (
         "flanner curb policy               the org policy here, and what waits for you",
         "flanner curb policy --enrol       let signed policy make changes that only tighten",
@@ -10731,6 +10740,244 @@ def curb_app_command(path: Path, sarif_to: Path | None, as_json: bool) -> None:
             tui.note("Every result is assumed: pattern matching, not proof.")
     for problem in problems:
         tui.warn(problem)
+
+
+# --- Curb commit attribution (R7) --------------------------------------------------------------
+
+
+def _curb_installed_agents() -> list[str]:
+    from . import agent_paths
+
+    found = []
+    if agent_paths.claude_config_dir().exists():
+        found.append("claude")
+    if agent_paths.codex_home().exists():
+        found.append("codex")
+    return found
+
+
+def _curb_github_keys(agents: list[str], *, add: bool) -> None:
+    """Add each agent's new public key to GitHub with the person's own gh, or say how."""
+    import shutil
+    import subprocess
+
+    from . import curb_attribution, curb_store
+
+    for agent in agents:
+        entry = curb_attribution.keys()["keys"].get(agent)
+        if not entry:
+            continue
+        path = curb_store.curb_dir() / f"{agent}-signing.pub"
+        path.write_text(entry["public"] + "\n", encoding="utf-8")
+        command = ["gh", "ssh-key", "add", str(path), "--type", "signing", "--title"]
+        command.append(f"flanner curb {agent}")
+        if add and shutil.which("gh"):
+            done = subprocess.run(command, capture_output=True, text=True, check=False)  # noqa: S603 - gh, with a path flanner wrote
+            if done.returncode == 0:
+                tui.ok(f"Added the {agent} signing key to GitHub.")
+                continue
+            tui.warn(f"gh could not add the {agent} key: {done.stderr.strip()}")
+        tui.hint("  " + tui.command(" ".join(command)))
+
+
+def _curb_register(agents: list[str]) -> None:
+    from . import curb_attribution, curb_wire
+    from .entitlements import CURB_ATTRIBUTION
+
+    device = _curb_device()
+    if device is None or not curb_wire.usable(CURB_ATTRIBUTION, device.claims, device.offered):
+        tui.note("Keys are registered with your organization at the next check-in.")
+        return
+    from . import account
+
+    for agent in agents:
+        try:
+            _CurbClient().call(
+                "attribution-keys", curb_attribution.registration(agent, device.device_id)
+            )
+        except account.SessionError as error:
+            tui.warn(f"The {agent} key was not registered: {error}.")
+            continue
+        curb_attribution.mark_registered(agent)
+        tui.ok(f"Registered the {agent} key with your organization.")
+
+
+@curb.command("attribution")
+@click.option("--setup", is_flag=True, help="Give each agent a signing key and sign its commits")
+@click.option("--rotate", is_flag=True, help="Replace each agent's key; the old one is retired")
+@click.option("--github", is_flag=True, help="Also add the new public keys to GitHub with gh")
+@click.option("--json", "as_json", is_flag=True, help="The keys and the registry as JSON")
+def curb_attribution_command(setup: bool, rotate: bool, github: bool, as_json: bool) -> None:
+    """Sign your agents' commits with keys of their own
+
+    Each agent gets a random Ed25519 key, kept only in your OS credential
+    store. git signs an agent's commits through flanner, which signs only
+    inside an agent session its hooks recorded, and logs each one. A
+    signature shows which key signed, not who wrote the code: you, or
+    anything running as you, can still use the broker. `flanner curb
+    verify` reads the result.
+    """
+    from datetime import datetime, timezone
+
+    from . import curb_approval, curb_attribution, curb_fix
+
+    if setup:
+        agents = _curb_installed_agents()
+        if not agents:
+            tui.note("Neither Claude Code nor Codex is set up on this machine.")
+            return
+        signer = curb_attribution.signer_path()
+        if signer is None:
+            tui.bad("The flanner-curb-sign program is missing: reinstall flanner.")
+            raise SystemExit(1)
+        made = []
+        try:
+            for agent in agents:
+                if agent not in curb_attribution.keys()["keys"]:
+                    curb_attribution.create(agent)
+                    made.append(agent)
+        except curb_attribution.NoKeychain as error:
+            tui.bad(f"{str(error)[0].upper()}{str(error)[1:]}.")
+            raise SystemExit(1) from None
+        plan = curb_attribution.setup_plan(agents, signer)
+        for line in plan.guided:
+            tui.note(line)
+        if plan.edits:
+            console.print("[bold]Changes[/]")
+            for edit in plan.edits:
+                console.print(f"  {edit.where}: " + "; ".join(edit.actions) + ".")
+            broker, grant = _curb_grant(plan.summary(), plan.change())
+            try:
+                curb_fix.apply(plan, broker, grant)
+            except (curb_fix.FixFailed, curb_approval.NoGrant) as failure:
+                tui.bad(f"Nothing changed: {failure}.")
+                raise SystemExit(1) from None
+        tui.ok("Agent commits are now signed with each agent's own key.")
+        _curb_register(agents)
+        _curb_github_keys(made, add=github)
+        return
+    if rotate:
+        rotated = []
+        for agent in list(curb_attribution.keys()["keys"]):
+            try:
+                retired, _ = curb_attribution.rotate(agent)
+            except curb_attribution.NoKeychain as error:
+                tui.bad(f"{error}.")
+                raise SystemExit(1) from None
+            rotated.append(agent)
+            tui.ok(f"Rotated the {agent} key; {retired} is retired and can sign nothing new.")
+        if not rotated:
+            tui.note(f"No keys yet: {tui.command('flanner curb attribution --setup')}")
+            return
+        _curb_register(rotated)
+        _curb_github_keys(rotated, add=github)
+        return
+    held = curb_attribution.keys()
+    from . import session as cache
+
+    session = cache.load()
+    listing = curb_attribution.registry(dict(session.keyring)) if session else None
+    now = datetime.now(timezone.utc)
+    due = curb_attribution.due()
+    if as_json:
+        click.echo(
+            json.dumps(
+                {
+                    **held,
+                    "rotation_due": due,
+                    "registry_version": listing.get("version") if listing else None,
+                    "registry_fresh": curb_attribution.fresh(listing, now),
+                    "known_revocations": len(curb_attribution.revoked()),
+                },
+                indent=2,
+            )
+        )
+        return
+    if not held["keys"]:
+        tui.note("No agent has an attribution key yet.")
+        tui.hint(f"  {tui.command('flanner curb attribution --setup')} sets one up for each.")
+        return
+    for agent, entry in held["keys"].items():
+        state = "registered" if entry.get("registered") else "not registered yet"
+        console.print(f"  {agent}: {entry['fingerprint']} ({state})")
+    for agent in due:
+        tui.warn(f"The {agent} key is over 90 days old: `flanner curb attribution --rotate`.")
+    if listing is None:
+        tui.note("No attribution registry yet, so signed commits show as key status unknown.")
+    elif not curb_attribution.fresh(listing, now):
+        tui.warn("The attribution registry has expired; check in to refresh it.")
+
+
+@curb.command("verify")
+@click.argument("revision", default="HEAD")
+@click.option("--json", "as_json", is_flag=True, help="Each commit's state as JSON")
+def curb_verify_command(revision: str, as_json: bool) -> None:
+    """Which agent key signed each commit, and whether to trust it
+
+    REVISION is a commit, or a range such as main..HEAD. Each commit is
+    attributed, attributed with a retired key, untrusted because its key was
+    revoked, key status unknown (no fresh registry to check against), or
+    unattributed. Known revocations always apply, even offline.
+    """
+    from datetime import datetime, timezone
+
+    from . import account, curb_attribution, curb_wire
+    from .entitlements import CURB_ATTRIBUTION
+
+    device = _curb_device()
+    issuer = dict(device.issuer_keyring) if device else {}
+    if device is not None and curb_wire.usable(CURB_ATTRIBUTION, device.claims, device.offered):
+        try:
+            token = str(_CurbClient().call("attribution-registry", {}).get("registry") or "")
+            _, problem = curb_attribution.accept_registry(token, issuer, device.organization_id)
+            if problem:
+                tui.warn(problem[0].upper() + problem[1:] + ".")
+        except account.SessionError as error:
+            tui.note(f"Using the registry held here: {error}.")
+    listing = curb_attribution.registry(issuer) if issuer else None
+    known = curb_attribution.revoked()
+    now = datetime.now(timezone.utc)
+    try:
+        shas = curb_attribution.commits(revision, Path.cwd())
+        verdicts = [
+            (
+                sha,
+                curb_attribution.state_of(
+                    curb_attribution.raw_commit(sha, Path.cwd()), listing, known, now
+                ),
+            )
+            for sha in shas
+        ]
+    except ValueError as error:
+        tui.bad(f"git: {error}")
+        raise SystemExit(1) from None
+    if as_json:
+        click.echo(
+            json.dumps(
+                [
+                    {
+                        "commit": sha,
+                        "state": v.state,
+                        "fingerprint": v.fingerprint,
+                        "agent": v.agent,
+                        "device_id": v.device_id,
+                    }
+                    for sha, v in verdicts
+                ],
+                indent=2,
+            )
+        )
+        return
+    styles = {
+        curb_attribution.ATTRIBUTED: "green",
+        curb_attribution.RETIRED: "green",
+        curb_attribution.REVOKED: "red",
+        curb_attribution.UNKNOWN: "yellow",
+    }
+    for sha, verdict in verdicts:
+        owner = f" ({verdict.agent}, {verdict.device_id})" if verdict.agent else ""
+        style = styles.get(verdict.state, "muted")
+        console.print(f"  {sha[:12]} [{style}]{verdict.state}[/]{owner}")
 
 
 @curb.command("show")
