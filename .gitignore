@@ -87,3 +87,6 @@ test-results/
 # The desktop shell: Rust build output and files tauri-build generates
 desktop/src-tauri/target/
 desktop/src-tauri/gen/
+
+# Flanner memory
+.flanner/memory/
