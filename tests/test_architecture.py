@@ -242,6 +242,9 @@ ALLOWED = {
         "skills_mesh",
         "skills_ops",
     },
+    # Curb: what an agent launch can reach. Each piece reads files only.
+    # The launch parser is pure, so it imports nothing.
+    "curb_context": set(),
     # The list of every operation and the surfaces that offer it. Data only,
     # imported by the tests that check it against the CLI, web app and MCP
     # server, and by nothing that would make it a dependency.
