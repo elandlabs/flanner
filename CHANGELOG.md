@@ -65,6 +65,12 @@ versioning follows [SemVer](https://semver.org/).
     yes, and deletes the test transcript. `flanner curb decoys` lists,
     renews and removes the decoys, which expire after 30 days and never go
     inside a git working tree.
+  - `flanner curb scrub FILE` replaces each secret the sweep finds in a file
+    with a placeholder of the same length, after you have rotated it. Every
+    changed line must still parse, no escaped copy may remain, and the file
+    must not have changed since it was read, or it is left exactly as it
+    was. No backup is kept, because a backup would be another copy of the
+    secret, so it asks your operating system for a yes per file.
   - Local: nothing is changed, and nothing leaves the machine unless you
     ask an issuer to check a secret.
 - **Messages between teammates.** Ask a teammate something from the CLI,

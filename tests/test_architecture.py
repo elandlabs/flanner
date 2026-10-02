@@ -288,6 +288,8 @@ ALLOWED = {
         "curb_severity",
         "curb_store",
     },
+    # Scrubbing: Kingfisher finds, the grant permits, one rename writes.
+    "curb_scrub": {"curb_approval", "curb_kingfisher", "curb_settings"},
     # Fix writers: plan from an assessment, check tighten-only, write with a grant.
     "curb_fix": {
         "agent_paths",
@@ -505,6 +507,7 @@ ALLOWED = {
         "curb_inventory",
         "curb_kingfisher",
         "curb_reach",
+        "curb_scrub",
         "curb_settings",
         "curb_severity",
         "curb_store",

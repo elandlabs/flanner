@@ -88,6 +88,10 @@ flanner curb test                 # states the token cost and asks first
 flanner curb decoys               # how many, and when they expire
 flanner curb decoys --remove
 
+# After rotating a secret, replace it in a file the sweep found (no backup, no undo)
+flanner curb scrub FILE --dry-run
+flanner curb scrub FILE
+
 # Delete Curb's stored reports and its digest key
 flanner curb forget
 ```

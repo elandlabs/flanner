@@ -857,6 +857,17 @@ OPERATIONS: tuple[Operation, ...] = (
     ),
     _op(
         "curb",
+        "Scrub rotated secrets out of a file",
+        "destructive",
+        cli=("curb scrub",),
+        why=(
+            "It rewrites the file with no backup, since a backup would be another copy of the "
+            "secret, so each file needs a person's yes."
+        ),
+        since="0.16.0",
+    ),
+    _op(
+        "curb",
         "Delete what Curb keeps on this machine",
         "destructive",
         cli=("curb forget",),

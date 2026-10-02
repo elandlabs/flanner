@@ -167,6 +167,8 @@ Curb reads; the only files it writes are its own redacted reports and digest key
 | A rule names one existing file outside the project | "not tested" | Curb never moves or edits a real file to test it |
 | The credential's folder is inside a git working tree | "not tested" | A decoy there could be committed |
 | Settings change after a test | The channel goes back to "configured" | A proof holds only for the settings it ran against |
+| A scrubbed line would no longer parse, a secret also appears escaped, or the file changed since it was read | `curb scrub` says why and exits 1 | The file is left exactly as it was |
+| A scrub succeeds | The secrets are placeholders | There is no undo: no copy of the secret is kept anywhere |
 
 ## Known gaps
 

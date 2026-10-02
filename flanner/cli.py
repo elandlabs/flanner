@@ -9367,6 +9367,10 @@ EXAMPLES: dict[str, tuple[str, ...]] = {
     "curb test": (
         "flanner curb test                 prove each block with decoys (costs tokens)",
     ),
+    "curb scrub": (
+        "flanner curb scrub FILE --dry-run  check a file can be scrubbed",
+        "flanner curb scrub FILE            replace its secrets, after rotating them",
+    ),
     "curb decoys": (
         "flanner curb decoys               how many decoys, and when they expire",
         "flanner curb decoys --remove      delete them all",
@@ -10066,6 +10070,47 @@ def _curb_change_hash(change: Any) -> str:
     from . import curb_approval
 
     return curb_approval.change_hash(change)
+
+
+@curb.command("scrub")
+@click.argument("path", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option("--dry-run", is_flag=True, help="Check the file can be scrubbed, change nothing")
+def curb_scrub_command(path: Path, dry_run: bool) -> None:
+    """Replace the secrets in one file, after you have rotated them
+
+    Each secret the sweep finds in PATH is replaced by a placeholder of the
+    same length. Every changed line must still parse, or the file is left
+    as it was. No backup is kept, because a backup would be another copy of
+    the secret, so this cannot be undone; it asks your operating system for
+    a yes first. Find the files with `flanner curb show --sweep`.
+    """
+    from . import curb_approval, curb_kingfisher, curb_scrub
+
+    _curb_sweep_unavailable()
+    try:
+        planned = curb_scrub.plan(path, curb_kingfisher.Detector())
+    except curb_scrub.ScrubFailed as failure:
+        tui.bad(f"Not scrubbed: {failure}. The file is unchanged.")
+        raise SystemExit(1) from None
+    if not planned.secrets:
+        tui.note("No secret found in that file.")
+        return
+    console.print(
+        f"  {planned.secrets} secret(s) on {planned.lines} line(s) would become placeholders."
+    )
+    tui.warn("Rotate them first: scrubbing hides a secret here, but cannot unsend it.")
+    if dry_run:
+        tui.note("Dry run: the file is unchanged.")
+        return
+    broker, grant = _curb_grant(
+        f"Replace {planned.secrets} secret(s) in {path.name}, with no backup", planned.change()
+    )
+    try:
+        curb_scrub.apply(planned, broker, grant)
+    except (curb_scrub.ScrubFailed, curb_approval.NoGrant) as failure:
+        tui.bad(f"Not scrubbed: {failure}. The file is unchanged.")
+        raise SystemExit(1) from None
+    tui.ok(f"Replaced {planned.secrets} secret(s); no copy of them was kept.")
 
 
 @curb.command("decoys")
