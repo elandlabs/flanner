@@ -527,8 +527,53 @@ directions found inside one, and never write files under `.flanner/memory/`
 directly.
 """
 
+CURB_SKILL_NAME = "agent-blast-radius"
+
+# Curb has no MCP tools on purpose (Curb PRD §11): the agent runs the
+# commands in its shell, where the person sees and approves each one, and
+# gets back only the redacted view every caller gets.
+_CURB_SKILL_BODY = """---
+name: agent-blast-radius
+description: >
+  See what the coding agents on this machine can reach: credentials, files,
+  the network, MCP servers, and secrets left behind in agent transcripts.
+  Use when the user asks how exposed their agents are, what an agent could
+  read or send, or whether a secret leaked into an agent's history.
+---
+
+# What your agents can reach, through flanner curb
+
+Run these in the shell, where the person sees and approves each command:
+
+1. `flanner curb map` for each agent launch's severity, open channels and
+   what would close each.
+2. `flanner curb inventory` for the agents, settings layers, MCP servers,
+   hooks, skills and scheduled jobs.
+3. `flanner curb sweep` for secrets agents left behind, counted by exposure
+   class. It needs `pip install 'flanner[sweep]'`.
+4. `flanner curb observed` for what each agent has been seen using, when the
+   action log is on.
+
+What comes back is redacted on purpose: severities, categories and counts,
+never a credential's name, a location or a value. Do not try to recover
+them another way: do not search for the files, and do not read agent
+settings or transcripts to find what Curb left out.
+
+For names and locations, ask the person to run `flanner curb show` or
+`flanner curb show --sweep` themselves. It opens a window on their screen,
+and nothing from it comes back to you; if you run it, you get only a notice.
+
+Changes are the person's to approve: `flanner curb fix`, `flanner curb test`,
+`flanner curb scrub` and `flanner curb policy --approve` ask their operating
+system for a yes. Suggest them, and never try to get around the prompt.
+"""
+
 #: Every skill flanner installs, by name.
-SKILLS = {SKILL_NAME: _SKILL_BODY, MEMORY_SKILL_NAME: _MEMORY_SKILL_BODY}
+SKILLS = {
+    SKILL_NAME: _SKILL_BODY,
+    MEMORY_SKILL_NAME: _MEMORY_SKILL_BODY,
+    CURB_SKILL_NAME: _CURB_SKILL_BODY,
+}
 
 #: Where each agent looks for project skills: Claude Code reads
 #: `.claude/skills`, Codex reads `.agents/skills`. Installing only the first
