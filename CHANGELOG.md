@@ -84,9 +84,26 @@ versioning follows [SemVer](https://semver.org/).
     "observed use". Not seen is reported as not seen, never as not needed,
     and ideas for closing a channel are suggestions to review, never for a
     channel the hooks cannot see.
-  - The web UI has an Agent reach page: the same redacted report as
-    `flanner curb map`, the last sweep's counts, a button that opens the
-    desktop window, and a Fix button behind the same approval.
+  - The web UI has a Curb section, at `/curb`. An Overview shows each
+    agent's risk as a picture and what to do next. Under it are three
+    scopes, each part a page of its own: This machine (Agents, Leaks,
+    Fixes, Tests, Activity), Projects (Reach, CI, Apps, Commits), which
+    follows a picker of the projects on the Projects page, and Team
+    (Policy, Devices, Alerts).
+    - Every page is redacted as the terminal is. "Show names and
+      locations" shows them in that one browser for 5 minutes, after your
+      operating system's prompt shows the same four-digit code as the
+      page. Nothing is written to disk, and a Linux desktop, whose prompt
+      cannot show the code, keeps them in `flanner curb show`.
+    - Every change opens a review first: what will change, what to expect,
+      and how to undo it. Then the operating system asks, as it does for
+      the commands. A fix is not written if the settings changed after the
+      page read them.
+    - The leak scan and the tests run in the background with their real
+      progress. The scan covers every project on the Projects page.
+    - The pages never contact your organization. Checking in for a policy,
+      fetching device reports and adding keys to GitHub stay terminal
+      commands, shown on the page with the reason.
   - Local: nothing is changed, and nothing leaves the machine unless you
     ask an issuer to check a secret.
   - With Flanner Mesh, `flanner curb policy` takes one agent policy your

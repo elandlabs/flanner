@@ -88,12 +88,35 @@ Client work is done. Commands: `flanner curb sweep`, `flanner curb show
 
 **flanner-cloud:** none. **flanner-meshlab:** none.
 
+## The web UI
+
+Client work is done (PRD §11.3). One section at `/curb`, built from
+`curb_page` (what each page shows), `curb_do` (what each button does),
+`curb_live` (what the process holds in memory) and `curb_reveal` (which
+browser may see names). It ships part by part with the release each part
+belongs to. Nothing in the control plane changes: the pages never reach it.
+
+**flanner-landing:**
+
+- [ ] `app/docs/web/page.tsx`: the Overview, the three scopes and their
+      parts, the project picker, and "Add a project".
+- [ ] Names and locations: the four-digit code, the 5 minutes, "Hide names",
+      and that a Linux desktop keeps them in `flanner curb show`.
+- [ ] The review before each change, and that nothing changes without the
+      operating system's prompt.
+- [ ] What stays in the terminal and why: check-in, `flanner curb fleet`,
+      policy export, a launch command, and adding keys to GitHub.
+- [ ] `lib/operations.json` regenerated: every Curb operation now lists its
+      web routes, and "See each change that widened what an agent can
+      reach" is new, on the web only.
+- [ ] Screenshots of the Overview, Leaks and Fixes, in both themes.
+
 ## R3: fixes, tester, scrubbing and approvals
 
 Client work is done. Commands: `flanner curb fix [--dry-run|--undo]`,
 `flanner curb test`, `flanner curb decoys [--renew|--remove]`, `flanner curb
-scrub FILE [--dry-run]`, `flanner curb forget --backups`. Web: the Agent
-reach page at `/curb`.
+scrub FILE [--dry-run]`, `flanner curb forget --backups`. Web: the Curb
+section at `/curb` (see "The web UI" below).
 
 **flanner-landing** (gated on `SHIPS_IN.curbFix`):
 
@@ -106,11 +129,10 @@ reach page at `/curb`.
       the pause after three refusals; no method means read-only.
 - [ ] CLI rows for the five commands above.
 - [ ] `lib/operations.json` regenerated: "Fix what each agent can reach"
-      (write, also `POST /curb/fix`), "Prove a block by asking the agent to
-      get past it", "List, renew or remove the tester's decoys", "Scrub
-      rotated secrets out of a file" (destructive); `GET /curb` and
-      `POST /curb/show` added to "See what each agent launch can reach".
-- [ ] `app/docs/web/page.tsx`: the Agent reach page.
+      (write), "Prove a block by asking the agent to get past it", "List,
+      renew or remove the tester's decoys", "Scrub rotated secrets out of a
+      file" (destructive), each with its web routes under `/curb`.
+- [ ] `app/docs/web/page.tsx`: the Curb section (see "The web UI" below).
 - [ ] Troubleshooting: "No approval method on this machine", "Not approved",
       the pause, "inconclusive" results, a Codex config edited by hand.
 - [ ] Security page: approvals and grants, backups denied to agents.

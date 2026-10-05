@@ -165,6 +165,32 @@ Not checked:
 - Signing inside Codex's sandbox, which must reach the OS credential store.
 - GitHub showing "Verified", which needs each public key added there.
 
+## The web UI
+
+| Gate | How it is checked | At this commit |
+|---|---|---|
+| No page names a credential or a location without a reveal | `tests/test_curb_web.py`, with a planted credential and a planted secret | All 13 pages; no secret value on any page, with or without a reveal |
+| A reveal is one browser's, for five minutes, after a yes to the page's code | `tests/test_curb_reveal.py`, `tests/test_curb_web.py` | A second browser sees nothing; a prompt that cannot show the code is never asked |
+| Nothing changes without the operating system's yes | `tests/test_curb_web.py` | A fix, an undo, logging, signing, a policy approval, the delegation, a CI fix, a test run and "forget" each change nothing without it. A removal also needs a live reveal |
+| A fix is written only if the settings are as the page read them | `tests/test_curb_web.py` | A settings file edited after the check is left alone, and nobody is asked |
+| No link can put words in a page | `tests/test_curb_web.py` | A message in the address is not shown, and is not carried into the page's links |
+| Each part has at most one main button | `tests/test_curb_web.py` | All 13 pages |
+| Text contrast is at least 4.5:1, in both themes | `tests/browser/journeys/test_accessibility.py` | All 13 pages, in a real browser |
+| On a phone, every scope tab is in view and every control is 40px tall | `tests/browser/journeys/test_curb_journeys.py`, at 320px | All 13 pages |
+| A review opens with scripts on, and with scripts off | `tests/browser/journeys/test_curb_journeys.py` | Over the page with scripts; as the same page with the review open without |
+| No page reaches the control plane | `tests/test_architecture.py` | `web`, `curb_page`, `curb_do` and `curb_ops` cannot import `account` |
+
+Not checked:
+
+- The operating system's own prompt, for a reveal or for a change from a
+  page. The tests use a stand-in. On Windows, the page was run against this
+  machine's real agents and a real scan, without approving a prompt.
+- A screen reader, and keyboard-only use of each part.
+- The progress redraw and the names countdown in the page script. They
+  were watched in a browser during a real scan, and have no test.
+- Agent states the test machine does not have, such as an agent on a
+  version Curb was tested with, or a scheduled job.
+
 ## Scan time
 
 Inventory plus reach now must take under 10 seconds at the 95th percentile
