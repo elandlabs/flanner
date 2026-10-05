@@ -385,6 +385,8 @@ ALLOWED = {
         "identity",
     },
     "curb_signer": {"curb_attribution", "curb_log", "curb_sshsig"},
+    # Which browser may see names in the web UI, and for how long.
+    "curb_reveal": {"curb_approval"},
     # What Curb's two surfaces share. The team pass is handed its client, so
     # this never reaches `account`.
     "curb_ops": {

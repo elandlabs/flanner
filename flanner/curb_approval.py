@@ -60,6 +60,9 @@ def change_hash(change: Any) -> str:
 class Presence(Protocol):
     name: str
     weak: bool
+    #: Whether the prompt shows the reason it was given. The web UI's reveal
+    #: needs one that does: its code is in the reason (Curb PRD §11.3).
+    shows_reason: bool
 
     def available(self) -> bool: ...
 
@@ -102,6 +105,7 @@ Write-Output "result:$r"
 class WindowsHello:
     name: str = "Windows Hello"
     weak: bool = False
+    shows_reason: bool = True
     run: Callable[..., subprocess.CompletedProcess[str]] = field(default=_run, repr=False)
 
     def _ask(self, ask: bool, reason: str = "") -> str:
@@ -125,6 +129,7 @@ class WindowsPassword:
 
     name: str = "the Windows account password"
     weak: bool = True
+    shows_reason: bool = True
 
     def available(self) -> bool:
         return sys.platform == "win32"
@@ -155,6 +160,7 @@ class MacOwner:
 
     name: str = "Touch ID or the account password"
     weak: bool = False
+    shows_reason: bool = True
     run: Callable[..., subprocess.CompletedProcess[str]] = field(default=_run, repr=False)
 
     def _ask(self, reason: str) -> str:
@@ -176,6 +182,8 @@ class LinuxPolkit:
 
     name: str = "polkit (security key or password)"
     weak: bool = False
+    #: polkit shows its action's own text, never the reason.
+    shows_reason: bool = False
     run: Callable[..., subprocess.CompletedProcess[str]] = field(default=_run, repr=False)
 
     def available(self) -> bool:
