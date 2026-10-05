@@ -90,6 +90,28 @@ def state(rep, key):
 # --- Claude Code ------------------------------------------------------------------------
 
 
+@pytest.mark.parametrize("above", [0, 1])
+def test_a_fix_planned_from_home_or_above_names_each_credentials_place_in_home(box, above):
+    """From there every home credential is inside the launch folder. It is still a place in
+    home, so it gets that place as its rule. Only a project .env keeps a bare name."""
+    env_file = box.home / "notes" / ".env"
+    env_file.parent.mkdir()
+    env_file.write_text("API_KEY=x\n", encoding="utf-8")
+    box.creds.append(
+        Credential("dotenv", "project .env", "Project .env files", (env_file,), names=("API_KEY",))
+    )
+    box.project = box.home.parents[above - 1] if above else box.home
+    planned = plan(box, "claude")
+    (edit,) = planned.edits
+    assert not planned.refused
+    deny = edit.after["permissions"]["deny"]
+    assert "Read(~/.aws/**)" in deny and "Read(credentials)" not in deny
+    assert "Read(.env)" in deny
+    kept_out = edit.after["sandbox"]["filesystem"]["denyRead"]
+    assert "~/.aws" in kept_out and "~/.aws/credentials" not in kept_out
+    assert "~/notes/.env" in kept_out
+
+
 def test_a_claude_fix_closes_the_file_channels_and_backs_up_first(box):
     settings = box.claude / "settings.json"
     settings.write_text(json.dumps({"model": "opus"}, indent=4) + "\n", encoding="utf-8")

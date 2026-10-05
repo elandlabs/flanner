@@ -159,9 +159,22 @@ def _under(path: Path, root: Path) -> Path | None:
         return None
 
 
-def _claude_rule(path: Path, home: Path, cwd: Path) -> str:
+def _own(credential: Credential, path: Path, home: Path, cwd: Path) -> bool:
+    """Whether a credential's file is one of the project's own.
+
+    A launch from the home folder, or from above it, has every home
+    credential inside its folder. Those are still places in home, and a
+    bare file name would be the wrong rule for them. There, only a project
+    `.env` file is the project's own.
+    """
+    if _under(path, cwd) is None:
+        return False
+    return credential.kind == "dotenv" or _under(home, cwd) is None
+
+
+def _claude_rule(path: Path, home: Path, own: bool) -> str:
     """A Read rule for a credential: its folder, or the file when it sits in home."""
-    if _under(path, cwd) is not None:
+    if own:
         return f"Read({path.name})"  # a bare name matches at any depth
     relative = _under(path, home)
     if relative is not None:
@@ -176,10 +189,10 @@ def _home_form(path: Path, home: Path) -> str:
     return f"~/{relative.as_posix()}" if relative is not None else str(path)
 
 
-def _sandbox_entry(path: Path, home: Path, cwd: Path) -> str:
+def _sandbox_entry(path: Path, home: Path, own: bool) -> str:
     """A sandbox entry for a credential: its folder in home, or the file itself."""
     relative = _under(path, home)
-    if relative is not None and len(relative.parts) > 1 and _under(path, cwd) is None:
+    if relative is not None and len(relative.parts) > 1 and not own:
         return _home_form(path.parent, home)
     return _home_form(path, home)
 
@@ -258,7 +271,7 @@ def _claude_channels(
     by_shell = [r for r in report.readable if curb_reach.SHELL_FILES in r.via]
     rules = sorted(
         {
-            _claude_rule(p, home, cwd)
+            _claude_rule(p, home, _own(r.credential, p, home, cwd))
             for r in by_read
             if r.credential.kind != "env"
             for p in r.credential.paths
@@ -286,7 +299,7 @@ def _claude_channels(
             )
         files = sorted(
             {
-                _sandbox_entry(p, home, cwd)
+                _sandbox_entry(p, home, _own(r.credential, p, home, cwd))
                 for r in by_shell
                 if r.credential.kind != "env"
                 for p in r.credential.paths
@@ -410,7 +423,7 @@ def _codex_channels(
     by_shell = [r for r in report.readable if curb_reach.SHELL_FILES in r.via]
     files = sorted(
         {
-            _sandbox_entry(p, home, report.context.cwd)
+            _sandbox_entry(p, home, _own(r.credential, p, home, report.context.cwd))
             for r in by_shell
             if r.credential.kind not in ("env", "ssh-agent")
             for p in r.credential.paths
