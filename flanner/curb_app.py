@@ -21,6 +21,7 @@ TypeScript are not read.
 from __future__ import annotations
 
 import ast
+import os
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -253,9 +254,12 @@ def audit(root: Path) -> tuple[list[Call], list[str]]:
     calls: list[Call] = []
     problems: list[str] = []
     skip = {".git", ".venv", "venv", "node_modules", "__pycache__", ".tox", "site-packages"}
-    for path in sorted(root.rglob("*.py")):
-        if skip & set(path.relative_to(root).parts):
-            continue
+    found: list[Path] = []
+    # Pruned as it walks: a virtualenv or node_modules is never entered at all.
+    for folder, folders, files in os.walk(root):
+        folders[:] = [name for name in folders if name not in skip]
+        found += [Path(folder) / name for name in files if name.endswith(".py")]
+    for path in sorted(found):
         try:
             calls += audit_file(path, root)
         except (ValueError, OSError) as e:
