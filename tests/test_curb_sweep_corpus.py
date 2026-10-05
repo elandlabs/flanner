@@ -8,7 +8,9 @@ class, from the PRD's definitions:
 - in a transcript or prompt history: A, whatever the settings;
 - elsewhere, readable by the agent: B;
 - elsewhere, denied: C. On native Windows Claude Code's sandbox does not
-  run (E12), so its shell still reads the file: B.
+  run (E12), so its shell still reads the file: B. On Python 3.10, which
+  has no TOML reader, Curb cannot read Codex's config, and a setting it
+  could not read is never a control (§9.4): B.
 
 The gates: recall of at least 95% per stratum (found, in the right class),
 false positives at most 5%, and no planted value in any output.
@@ -25,6 +27,7 @@ import json
 import re
 import secrets
 import string
+import sys
 import zlib
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -220,7 +223,8 @@ def _locked(agent: str, w: SimpleNamespace) -> None:
 def expected(agent: str, kind: str, locked: bool, platform: str) -> str:
     if kind in SENT_TYPES:
         return curb_sweep.SENT
-    if not locked or (agent == CLAUDE and platform == "win32"):
+    unread = agent == CODEX and sys.version_info < (3, 11)  # its lock is in config.toml
+    if not locked or unread or (agent == CLAUDE and platform == "win32"):
         return curb_sweep.READABLE
     return curb_sweep.BLOCKED
 
