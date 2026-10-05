@@ -180,6 +180,7 @@ def forget() -> list[str]:
             "alerts-notices",
             "alerts-history",
             "export",
+            "fleet-view",
         )
     ]
     if any(path.is_file() for path in derived):

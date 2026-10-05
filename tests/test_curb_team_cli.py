@@ -171,6 +171,9 @@ def test_the_fleet_shows_only_what_verifies(box, monkeypatch):  # noqa: F811
     assert "stranger: NOT verified" in result.output
     rows = json.loads(run("fleet", "--json").output)
     assert [r["verified"] for r in rows] == [True, False]
+    # Kept for the web UI's Devices page, which never fetches them itself.
+    kept = curb_store.read_state("fleet-view")
+    assert kept["rows"] == rows and kept["fetched_at"]
 
 
 def test_the_session_hook_starts_a_pass_in_the_background_and_shows_notices(box, monkeypatch):  # noqa: F811

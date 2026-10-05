@@ -10524,7 +10524,7 @@ def curb_fleet_command(as_json: bool) -> None:
     """
     from datetime import datetime, timezone
 
-    from . import account, curb_fleet
+    from . import account, curb_fleet, curb_store
 
     device = _curb_device()
     if device is None:
@@ -10538,6 +10538,8 @@ def curb_fleet_command(as_json: bool) -> None:
         tui.bad(f"{error}.")
         raise SystemExit(1) from None
     rows = curb_fleet.view(curb_fleet.verify(devices, keyring, now=datetime.now(timezone.utc)))
+    # Kept for the web UI's Devices page, which never reaches the control plane.
+    curb_store.write_state("fleet-view", {"rows": rows, "fetched_at": time.time()})
     if as_json:
         click.echo(json.dumps(rows, indent=2))
         return
