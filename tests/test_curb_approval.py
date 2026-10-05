@@ -1,5 +1,6 @@
 """Approvals and grants (Curb PRD §11.2). No test draws a real prompt."""
 
+import shutil
 import subprocess
 import sys
 
@@ -7,6 +8,9 @@ import pytest
 
 from flanner import curb_approval
 from flanner.curb_approval import Broker, NoGrant, Paused
+
+#: Kept before the `quiet` fixture below replaces it for every test.
+real_process_chain = curb_approval.process_chain
 
 
 class Person:
@@ -173,7 +177,20 @@ def test_polkit_needs_a_desktop_session(monkeypatch):
     assert curb_approval.LinuxPolkit().available()
 
 
+@pytest.mark.skipif(
+    sys.platform != "win32" and shutil.which("ps") is None,
+    reason="no ps here, as on a minimal Linux install",
+)
 def test_the_chain_starts_from_this_python():
     walk = curb_approval._windows_chain if sys.platform == "win32" else curb_approval._posix_chain
     names = walk(3)
     assert names and "python" in names[0].lower()
+
+
+def test_without_ps_there_is_no_chain_and_no_crash(monkeypatch):
+    def no_ps(*args, **kwargs):
+        raise FileNotFoundError(2, "No such file or directory", "ps")
+
+    monkeypatch.setattr(curb_approval.sys, "platform", "linux")
+    monkeypatch.setattr(curb_approval.subprocess, "run", no_ps)
+    assert real_process_chain() == []
