@@ -9798,25 +9798,11 @@ def curb_map(
 
 def _curb_sweep(directory: Path | None, *, validate: bool) -> Any:
     """Run the leak sweep for a project folder. The caller checked Kingfisher is here."""
-    from . import curb_inventory, curb_kingfisher, curb_settings, curb_store, curb_sweep
+    from . import curb_ops, curb_sweep
 
-    cwd, contexts, _ = _curb_contexts(directory, None, None, ())
-    agents = dict.fromkeys(c.agent for c in contexts)
-    versions = {name: curb_inventory.version_of(name)[1] for name in agents}
-    launches = [(c, curb_settings.resolve(c), versions[c.agent]) for c in contexts]
+    cwd, _, _ = _curb_contexts(directory, None, None, ())
     curb_sweep.lower_priority()
-    report = curb_sweep.run(
-        cwd,
-        curb_kingfisher.Detector(),
-        launches,
-        home=Path.home(),
-        env=dict(os.environ),
-        platform=sys.platform,
-        key=curb_store.digest_key(),
-    )
-    if validate:
-        curb_sweep.validate(report, curb_kingfisher.validate)
-    return report
+    return curb_ops.sweep([cwd], validate=validate)
 
 
 def _curb_sweep_unavailable() -> None:
@@ -10312,52 +10298,31 @@ class _CurbClient:
 
 def _curb_device() -> Any:
     """This device as the team pass sees it, or None when it is not signed in."""
-    from . import __version__, curb_team, identity
-    from . import session as cache
+    from . import curb_ops
 
-    held = cache.load()
-    if held is None:
-        return None
-    return curb_team.Device(
-        device_id=held.device_id,
-        organization_id=held.organization_id,
-        issuer_keyring=dict(held.keyring),
-        claims=held.status().claims,
-        offered=tuple(held.curb_capabilities),
-        sign=identity.sign,
-        version=__version__,
-    )
+    return curb_ops.device()
 
 
 def _curb_home_reports() -> list[Any]:
-    """Each agent's default launch from the home folder: the team view of this device.
+    """Each agent's default launch from the home folder: the team view of this device."""
+    from . import curb_ops
 
-    Not the current folder, so the fleet view and the policy's drift do not
-    change with whichever project a session last started in.
-    """
-    _, contexts, _ = _curb_contexts(Path.home(), None, None, ())
-    return _curb_assess([c for c in contexts if c.source == "default"])
+    return curb_ops.home_reports()
 
 
 def _curb_team_pass() -> Any:
     """One team pass, or None when this device is not signed in."""
-    from . import curb_team
+    from . import curb_ops
 
     device = _curb_device()
-    if device is None:
-        return None
-    return curb_team.cycle(
-        _CurbClient(), device, _curb_home_reports, home=Path.home(), platform=sys.platform
-    )
+    return None if device is None else curb_ops.team_pass(device, _CurbClient())
 
 
 def _curb_enrolled() -> bool:
     """Whether the person turned Curb's team checks on (`flanner curb policy --enrol`)."""
-    from . import curb_observe, curb_policy
+    from . import curb_ops
 
-    return curb_policy.load().delegated_at is not None or any(
-        curb_observe.hooks_on(agent, session=True) for agent in ("claude", "codex")
-    )
+    return curb_ops.enrolled()
 
 
 def curb_background() -> None:

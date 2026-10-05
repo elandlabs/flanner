@@ -385,6 +385,23 @@ ALLOWED = {
         "identity",
     },
     "curb_signer": {"curb_attribution", "curb_log", "curb_sshsig"},
+    # What Curb's two surfaces share. The team pass is handed its client, so
+    # this never reaches `account`.
+    "curb_ops": {
+        "identity",
+        "session",
+        "curb_context",
+        "curb_inventory",
+        "curb_kingfisher",
+        "curb_observe",
+        "curb_policy",
+        "curb_reach",
+        "curb_report",
+        "curb_settings",
+        "curb_store",
+        "curb_sweep",
+        "curb_team",
+    },
     # The list of every operation and the surfaces that offer it. Data only,
     # imported by the tests that check it against the CLI, web app and MCP
     # server, and by nothing that would make it a dependency.
@@ -592,6 +609,7 @@ ALLOWED = {
         # Seeding a known catalog, behind the hidden `demo` group.
         "demo",
         # The Curb commands: assessment, inventory and the detail window.
+        "curb_ops",
         "curb_approval",
         "curb_context",
         "curb_credentials",
@@ -716,6 +734,8 @@ def test_no_read_path_can_reach_the_network():
         "curb_app",
         "curb_signer",
         "curb_attribution",
+        # What both surfaces share: the team pass is handed its client.
+        "curb_ops",
     ):
         assert "account" not in closure(module), (
             f"{module} can reach the network through account; "
