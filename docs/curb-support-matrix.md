@@ -128,8 +128,9 @@ Not checked:
   Codex.
 - A device writes each agent's user settings. Admin-owned settings come
   from `flanner curb policy --export` and device management.
-- Team checks read each agent's launch from the home folder, so a
-  project's own settings are not part of drift, the fleet view or alerts.
+- Team checks read each agent's launch outside any project, from an empty
+  folder of Curb's own. So a project's own settings and `.env` files are
+  not part of drift, the fleet view or alerts.
 
 ## CI check, app audit and the skill (R6)
 

@@ -1,6 +1,6 @@
 """What Curb's surfaces share: this device, its assessments, and whole passes.
 
-The CLI and the web UI both assess the home folder, run the leak sweep and
+The CLI and the web UI both assess this device, run the leak sweep and
 read this device's team identity. Each of those is written once here, and
 prints nothing, so neither surface has to import the other.
 
@@ -55,18 +55,20 @@ def default_reports(folder: Path) -> list[AgentReport]:
     return curb_report.assess([c for c in contexts if c.source == "default"])
 
 
-def home_reports() -> list[AgentReport]:
-    """Each agent's default launch from the home folder: the team view of this device.
+def device_reports() -> list[AgentReport]:
+    """Each agent's default launch outside any project: the team view of this device.
 
     Not the current folder, so the fleet view and the policy's drift do not
-    change with whichever project a session last started in.
+    change with whichever project a session last started in. And not the
+    home folder: it is no project, and looking for its `.env` files walks
+    every folder in it, at each session start.
     """
-    return default_reports(Path.home())
+    return default_reports(curb_store.outside())
 
 
 def team_pass(asking: curb_team.Device, client: curb_team.Client) -> curb_team.Outcome:
     """One team pass for a signed-in device: policy, alerts, reports."""
-    return curb_team.cycle(client, asking, home_reports, home=Path.home(), platform=sys.platform)
+    return curb_team.cycle(client, asking, device_reports, home=Path.home(), platform=sys.platform)
 
 
 def enrolled() -> bool:

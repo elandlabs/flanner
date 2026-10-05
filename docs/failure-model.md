@@ -204,8 +204,8 @@ Stated rather than left to be discovered:
   an enrolment, which spends a one-shot code.
 - **`.plans/` is git-ignored by default**, so an unsynced, uncommitted plan
   that is deleted is unrecoverable.
-- **Curb's team checks read each agent's launch from the home folder.** A
-  project's own settings are not part of the policy's drift, the fleet
-  view or alerts.
+- **Curb's team checks read each agent's launch outside any project.** A
+  project's own settings and `.env` files are not part of the policy's
+  drift, the fleet view or alerts.
 - **No integrity check on read.** `doctor` verifies on demand, not on every
   open, so a corrupt row is noticed when somebody looks.

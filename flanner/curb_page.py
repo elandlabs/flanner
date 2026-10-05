@@ -147,21 +147,10 @@ class Machine:
         return [r for r in self.reports if r.context.source == "default"]
 
 
-def outside() -> Path:
-    """An empty folder of Curb's own: an agent started here is in no project.
-
-    Not the home folder. From there every credential counts as inside the
-    project, so a fix would name a bare file instead of its place in home.
-    """
-    folder = curb_store.curb_dir() / "outside"
-    folder.mkdir(parents=True, exist_ok=True)
-    return folder
-
-
 def machine() -> Machine:
     """Assess each agent as it starts outside any project, and plan its fixes."""
     home = Path.home()
-    _, contexts, skipped = curb_report.contexts(outside(), None, None, ())
+    _, contexts, skipped = curb_report.contexts(curb_store.outside(), None, None, ())
     reports = curb_report.assess(contexts)
     defaults = [r for r in reports if r.context.source == "default"]
     jobs = curb_inventory.scheduled_jobs(home)

@@ -99,7 +99,7 @@ def test_the_status_shows_what_waits_and_names_no_path(box, monkeypatch):  # noq
 
 
 def test_approving_applies_the_waiting_change(box, approves, monkeypatch):  # noqa: F811
-    monkeypatch.setattr(cli_module, "_curb_home_reports", lambda: reports(box))
+    monkeypatch.setattr(cli_module, "_curb_device_reports", lambda: reports(box))
     arrived(policy(1))
     curb_policy.apply_received(reports(box), home=box.home, platform="linux", env={})
     result = run("policy", "--approve")

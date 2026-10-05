@@ -2168,7 +2168,7 @@ def curb_session_hook(agent: str) -> None:
             release.spawn_detached(_CURB_BACKGROUND)
         else:
             curb_team.reconcile(
-                _curb_home_reports(),
+                _curb_device_reports(),
                 identity.device_id(),
                 home=Path.home(),
                 env=os.environ,
@@ -7647,7 +7647,7 @@ def _curb_upkeep_in_background() -> None:
                         _curb_team_pass()
                     elif seen is not None and stamp != seen:
                         curb_team.reconcile(
-                            _curb_home_reports(),
+                            _curb_device_reports(),
                             identity.device_id(),
                             home=Path.home(),
                             env=os.environ,
@@ -10303,11 +10303,11 @@ def _curb_device() -> Any:
     return curb_ops.device()
 
 
-def _curb_home_reports() -> list[Any]:
-    """Each agent's default launch from the home folder: the team view of this device."""
+def _curb_device_reports() -> list[Any]:
+    """Each agent's default launch outside any project: the team view of this device."""
     from . import curb_ops
 
-    return curb_ops.home_reports()
+    return curb_ops.device_reports()
 
 
 def _curb_team_pass() -> Any:
@@ -10459,7 +10459,7 @@ def curb_policy_command(
         with tui.working("assessing each agent's launch"):
             change = curb_policy.plan(
                 state.received,
-                _curb_home_reports(),
+                _curb_device_reports(),
                 home=Path.home(),
                 platform=sys.platform,
                 env=os.environ,

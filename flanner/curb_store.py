@@ -34,6 +34,17 @@ def curb_dir() -> Path:
     return identity.flanner_home() / "curb"
 
 
+def outside() -> Path:
+    """An empty folder of Curb's own: an agent started here is in no project.
+
+    Not the home folder. From there every credential counts as inside the
+    project, and looking for the project's `.env` files walks all of home.
+    """
+    folder = curb_dir() / "outside"
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder
+
+
 def _key_file() -> Path:
     return curb_dir() / "digest.key"
 
