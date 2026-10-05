@@ -52,6 +52,8 @@ SAY = {
 }
 KEEP_DAYS = 7
 SECRET_DAYS = 90
+#: How long the developer's own list of alerts is kept, like the reports.
+HISTORY_DAYS = 30
 
 
 def _sandboxed(report: AgentReport) -> bool:
@@ -185,8 +187,37 @@ def raise_alerts(
     text = "flanner curb: " + "; ".join(told) + ". Run `flanner curb policy` for what changed."
     notices = curb_store.read_state("alerts-notices").get("notices") or []
     curb_store.write_state("alerts-notices", {"notices": [*notices, text][-20:]})
+    kept = [a for a in _held_history() if stamp - float(a["created_at"]) <= HISTORY_DAYS * 86400]
+    curb_store.write_state("alerts-history", {"alerts": [*kept, *alerts]})
     notify.desktop("flanner curb: an agent can reach more", "; ".join(told).capitalize())
     return alerts
+
+
+def _held_history() -> list[dict[str, Any]]:
+    held = curb_store.read_state("alerts-history").get("alerts") or []
+    return [a for a in held if isinstance(a, dict) and "created_at" in a]
+
+
+def history(*, now: float | None = None) -> list[dict[str, Any]]:
+    """The developer's own list: each alert of the last 30 days, newest first.
+
+    `queued` says the alert still waits to reach the organization. Types,
+    agents and redacted locations only, as the alerts themselves carry.
+    """
+    stamp = now or time.time()
+    waiting = {
+        a.get("event_id") for a in curb_store.read_state("alerts-outbox").get("alerts") or []
+    }
+    fresh = [
+        {
+            **a,
+            "said": SAY.get(str(a.get("type")), str(a.get("type"))),
+            "queued": a.get("event_id") in waiting,
+        }
+        for a in _held_history()
+        if stamp - float(a["created_at"]) <= HISTORY_DAYS * 86400
+    ]
+    return sorted(fresh, key=lambda a: float(a["created_at"]), reverse=True)
 
 
 def due(*, now: float | None = None) -> list[dict[str, Any]]:

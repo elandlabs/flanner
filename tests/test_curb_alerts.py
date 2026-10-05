@@ -105,6 +105,23 @@ def test_the_developer_is_told_once():
     assert curb_alerts.take_notices() == []
 
 
+def test_raised_alerts_are_listed_for_thirty_days_newest_first():
+    import time
+
+    now = time.time()
+    old = now - (curb_alerts.HISTORY_DAYS + 1) * 86400
+    curb_alerts.raise_alerts([finding()], device_id="dev_a", now=old)
+    curb_alerts.raise_alerts([finding(curb_alerts.MCP_ADDED)], device_id="dev_a", now=now - 60)
+    sent = curb_alerts.raise_alerts([finding()], device_id="dev_a", now=now)
+    curb_alerts.settle([sent[0]["event_id"]], [], now=now)
+    held = curb_alerts.history(now=now)
+    assert [a["said"] for a in held] == ["the sandbox was turned off", "an MCP server was added"]
+    assert [a["queued"] for a in held] == [False, True]
+    assert set(held[0]) - {"said", "queued"} == set(sent[0])
+    curb_store.forget()
+    assert curb_alerts.history(now=now) == []
+
+
 def test_an_alert_carries_only_the_contract_fields():
     alert = curb_alerts.raise_alerts([finding()], device_id="dev_a", now=1000)[0]
     assert set(alert) == {

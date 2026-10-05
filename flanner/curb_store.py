@@ -173,7 +173,14 @@ def forget() -> list[str]:
     # both go with them. The org policy, the authority list and the fleet
     # report sequence stay: they are what refuses a rollback or a replay.
     derived = [
-        curb_dir() / f"{n}.json" for n in ("alerts", "alerts-outbox", "alerts-notices", "export")
+        curb_dir() / f"{n}.json"
+        for n in (
+            "alerts",
+            "alerts-outbox",
+            "alerts-notices",
+            "alerts-history",
+            "export",
+        )
     ]
     if any(path.is_file() for path in derived):
         for path in derived:
