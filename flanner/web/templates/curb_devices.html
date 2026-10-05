@@ -1,0 +1,73 @@
+{% extends "curb_base.html" %}
+
+{# Team › Devices: each device's newest report, as the terminal last fetched and checked them. #}
+{% block part %}
+{% if not joined %}
+  {% call empty.state("team", "See every device's risk in one place") %}
+    <p>With Flanner Mesh, each device signs a report of counts, and an admin sees them here.
+      This machine has not joined a team, so there is nothing here yet.</p>
+    <a class="btn btn-primary" href="/mesh">Join a team</a>
+  {% endcall %}
+{% else %}
+<div class="tab-stack">
+  {% set src = "A report holds counts only: no paths, names or repositories."
+               ~ ((" Fetched " ~ ago(view.fetched_at) ~ ".") if view.fetched_at else "") %}
+  {% call k.head("Each device's risk and policy, from reports the devices sign.", src) %}{% endcall %}
+
+  {% if not view.fetched_at %}
+  {% call empty.state("team", "No device reports on this machine yet") %}
+    <p>An admin fetches them in a terminal. Each report's signature is checked on this machine,
+      with the device's own key.</p>
+    {{ k.cmd("flanner curb fleet") }}
+  {% endcall %}
+  {% else %}
+  <div class="stat-grid">
+    <div class="stat"><div class="v tnum">{{ view.rows | length }}</div><div class="k">Devices</div></div>
+    <div class="stat"><div class="v tnum"><span class="dot" style="background:var(--suspect)"></span>{{ view.drift }}</div><div class="k">No longer meet the policy</div></div>
+    <div class="stat"><div class="v tnum"><span class="dot" style="background:var(--aging)"></span>{{ view.quiet }}</div><div class="k">Have gone quiet</div></div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">Devices {{ k.tally() }}
+      {% call k.tools("Search devices") %}
+        <select class="btn btn-sm" name="needs" aria-label="Show" data-auto-submit>
+          {{ k.option("", "Every device", needs) }}{{ k.option("1", "Needs attention", needs) }}
+        </select>
+      {% endcall %}</div>
+    <div class="tablewrap">
+      <div class="grid-head cols-k-devices"><span>Device</span><span>Policy</span><span>Worst risk</span><span>Leaked secrets</span><span>Last report</span><span>Report</span></div>
+      {% for row in table.rows %}
+      <div class="grid-row cols-k-devices">
+        <span><span class="name">{{ row.name }}</span>
+          <span class="sub">{% if row.mine %}This machine · {% endif %}{{ row.agents or "No agent reported" }}</span></span>
+        <span data-cell="meta"><span class="pill pill-{{ row.tone }}">{{ row.policy }}</span></span>
+        <span data-cell="meta">{% if row.worst %}{{ k.risk(row.worst, row.worst_tone) }}{% else %}{{ k.st("quiet", "Not known") }}{% endif %}</span>
+        <span class="tnum" data-cell="meta">{{ "Not scanned" if row.leaked is none else row.leaked }}<span class="m-only"> leaked</span></span>
+        <span class="when" data-cell="meta">{{ ago(row.last) | capitalize if row.last else "Never" }}
+          {% if row.quiet %}<span class="sub">Gone quiet</span>{% endif %}</span>
+        <span data-cell="meta">{% if row.verified %}{{ k.st("on", "Verified") }}{% else %}<span class="pill pill-stale">Not verified</span>
+          <span class="sub">{{ row.problems | join(" ") }}</span>{% endif %}</span>
+      </div>
+      {% endfor %}
+      {{ k.foot("No device matches that search.") }}
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="card card-pad">
+    {{ k.terminal("Fetch the newest reports",
+                  "For admins. The web UI never contacts your organization. The terminal does, and this page then shows what it fetched.",
+                  "flanner curb fleet") }}
+  </div>
+
+  {% call k.explain("How to read this", "Every report is checked on this machine, against the device's own key.") %}
+    <dl class="words">
+      <dt>Not verified</dt><dd>The report was replayed, arrived out of order, or is not signed by that device. Its numbers are not trusted.</dd>
+      <dt>Gone quiet</dt><dd>No report for more than a day, or a report went missing.</dd>
+      <dt>No longer meets</dt><dd>The device's settings changed after the policy was applied.</dd>
+    </dl>
+    {{ k.cmd("flanner curb fleet") }}
+  {% endcall %}
+</div>
+{% endif %}
+{% endblock %}

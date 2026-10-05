@@ -1,0 +1,126 @@
+{% extends "curb_base.html" %}
+
+{# This machine › Activity: logging per agent, what each was seen using, and the records. #}
+{% block part %}
+<div class="tab-stack">
+  {% call k.head("A log of each tool call your agents make.",
+                 "It records the tool and the kind of thing it touched, never the content. Kept 30 days.") %}
+    {% if view.total %}<a class="btn" href="{{ path }}?verify=1" data-curb-busy>{{ ico.icon('shield', 14) }} Check the log is intact</a>{% endif %}
+  {% endcall %}
+
+  {% if checked %}
+  <div class="notice {{ 'good' if checked.ok else 'bad' }}" role="{{ 'status' if checked.ok else 'alert' }}">
+    {% if checked.ok %}<b>The log is intact.</b> {{ checked.said }}
+    {% else %}<b>The log was changed.</b> {{ checked.said }} Records after that one cannot be trusted.{% endif %}
+  </div>
+  {% endif %}
+
+  {% if view.logging %}
+  <div class="card">
+    <div class="card-head">Logging <span class="note">adds Curb's logging hooks to the agent's settings</span></div>
+    <div class="card-pad">
+      {% for item in view.logging %}
+      <div class="switch-row">
+        <div class="body">{{ item.label }}
+          <span>{% if item.on %}{{ k.st("on", "On") }}
+            {% if item.records %}{{ "{:,}".format(item.records) }} records since {{ day(item.since) }}{% else %}Records start with its next session.{% endif %}
+            {% else %}Off, so Curb knows nothing about what it uses.{% endif %}</span></div>
+        {% if item.on %}{{ k.act("Turn off…", "logging-off", "btn-sm", "&key=" ~ item.agent) }}
+        {% else %}{{ k.act("Turn on…", "logging-on", "btn-sm", "&key=" ~ item.agent) }}{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% for agent in view.used %}
+  <div class="card">
+    <div class="card-head">What {{ agent.label }} used
+      <span class="note">{{ agent.days }} {{ "day" if agent.days == 1 else "days" }} · {{ agent.sessions }} {{ "session" if agent.sessions == 1 else "sessions" }}</span></div>
+    {% if not agent.whole %}
+    <div class="card-pad card-top"><div class="notice warn" role="status">This is part of the picture.
+      {{ agent.gaps | join(" ") }} Not seen is not the same as not needed.</div></div>
+    {% endif %}
+    <div class="grid-head cols-k-used"><span>What</span><span>Used</span><span>Worth knowing</span></div>
+    {% for row in agent.rows %}
+    <div class="grid-row cols-k-used"><span class="name">{{ row.what }}</span>
+      <span data-cell="meta">{{ row.used }}</span>
+      <span data-cell="meta">{% if row.blind %}Its hooks cannot see this.{% endif %}</span></div>
+    {% endfor %}
+    {% if agent.ideas %}
+    <div class="card-pad card-foot"><p class="hint">Worth a look: {{ agent.ideas | join(" ") }}</p></div>
+    {% endif %}
+  </div>
+  {% endfor %}
+
+  {% if view.rows %}
+  <div class="card">
+    <div class="card-head">Records {{ k.tally() }}
+      {% call k.tools("Search records") %}
+        <select class="btn btn-sm" name="kind" aria-label="Kind" data-auto-submit>
+          {{ k.option("", "Every kind", kind) }}{{ k.option("files", "Files", kind) }}
+          {{ k.option("shell", "Shell commands", kind) }}{{ k.option("web", "Web", kind) }}
+          {{ k.option("mcp", "MCP tools", kind) }}{{ k.option("approval", "Approvals", kind) }}
+        </select>
+        <select class="btn btn-sm" name="decision" aria-label="Decision" data-auto-submit>
+          {{ k.option("", "Every decision", decision) }}{{ k.option("Ran", "Ran", decision) }}
+          {{ k.option("Denied", "Denied", decision) }}{{ k.option("Asked", "Asked", decision) }}
+          {{ k.option("Failed", "Failed", decision) }}
+        </select>
+      {% endcall %}</div>
+    <div class="tablewrap">
+      <div class="grid-head cols-k-records"><span>Time</span><span>Tool</span><span>What it touched</span><span>Decision</span></div>
+      {% for row in table.rows %}
+      <div class="grid-row cols-k-records">
+        <span class="when tnum">{{ row.when }}</span>
+        <span><span class="name mono">{{ row.tool }}</span><span class="sub">{{ row.agent }}</span></span>
+        <span data-cell="meta">{{ row.what }}</span>
+        <span data-cell="chip">{% if row.bad %}<span class="pill pill-stale">{{ row.decision }}</span>{% else %}{{ k.st("quiet", row.decision) }}{% endif %}</span>
+      </div>
+      {% endfor %}
+      {{ k.foot("No record matches that search.") }}
+    </div>
+  </div>
+  {% elif not view.any_on %}
+  {% call empty.state("", "Nothing logged yet") %}
+    <p>Turn on the log for an agent above. Its next session starts the log, and what it uses
+      shows here.</p>
+  {% endcall %}
+  {% else %}
+  {% call empty.state("", "No records yet") %}
+    <p>Logging is on. Records start with the agent's next session.</p>
+  {% endcall %}
+  {% endif %}
+
+  {% call k.explain("What the log is for", "It shows what your agents really use, so you can close the rest.") %}
+    <p>Each record is chained to the one before it and signed by this machine. If anyone edits,
+      removes or reorders a record, <b>Check the log is intact</b> names the record.</p>
+    <p>The log covers every session on this machine. It does not record which project a
+      session was in, and it never holds a path, a command or any content.</p>
+    <p>Curb needs 14 days and 20 sessions before it suggests closing anything.</p>
+    {{ k.cmd("flanner curb log --verify") }}
+  {% endcall %}
+</div>
+{% endblock %}
+
+{% block reviews %}
+{% set key = request.query_params.get("key", "") %}
+{% set who = {"claude": "Claude Code", "codex": "Codex"}.get(key, "this agent") %}
+{% call k.review_box("logging-on", "Log what " ~ who ~ " uses?", "/curb/machine/activity/logging", {"agent": key, "on": "1"}) %}
+  <p>Curb adds its logging hooks to {{ who }}'s own settings.</p>
+  <ul>
+    <li>Each tool call is recorded: the tool, the kind of thing it touched, and the decision.</li>
+    <li>No path, command or content is recorded.</li>
+    <li>Records start with its next session, and are kept 30 days on this machine.</li>
+  </ul>
+  <p class="hint">Curb backs up the settings file for 7 days. Turn the log off here at any time.</p>
+{% endcall %}
+{% call k.review_box("logging-off", "Stop logging " ~ who ~ "?", "/curb/machine/activity/logging", {"agent": key, "on": ""}) %}
+  <p>Curb removes its logging hooks from {{ who }}'s own settings.</p>
+  <ul>
+    <li>New tool calls are no longer recorded.</li>
+    <li>The records already made stay for 30 days.</li>
+  </ul>
+  <p class="hint">Curb backs up the settings file for 7 days.</p>
+{% endcall %}
+{% endblock %}

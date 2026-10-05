@@ -394,6 +394,11 @@ class Broker:
             )
 
 
+def paused_until() -> float | None:
+    """When Curb asks again after too many refusals, or None while it still asks."""
+    return Broker()._paused_until()
+
+
 # --- the Windows password prompt -----------------------------------------------------------
 
 

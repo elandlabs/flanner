@@ -800,6 +800,7 @@ OPERATIONS: tuple[Operation, ...] = (
         "List the agents here and what each one loads",
         "read",
         cli=("curb inventory",),
+        web=("GET /curb/machine/agents",),
         why="Lists what each agent loads; an agent that could read it could plan around it.",
         since="0.16.0",
     ),
@@ -808,10 +809,17 @@ OPERATIONS: tuple[Operation, ...] = (
         "See what each agent launch can reach",
         "read",
         cli=("curb map", "curb show"),
-        web=("GET /curb", "POST /curb/show"),
+        web=(
+            "GET /curb",
+            "GET /curb/machine",
+            "GET /curb/projects",
+            "GET /curb/projects/reach",
+            "POST /curb/reveal",
+            "POST /curb/hide",
+        ),
         why=(
             "A map of reachable credentials is a target list for an injected agent, "
-            "so even the redacted report stays in the terminal."
+            "so even the redacted report is kept from agents."
         ),
         since="0.16.0",
     ),
@@ -820,6 +828,7 @@ OPERATIONS: tuple[Operation, ...] = (
         "Find secrets agents left behind",
         "read",
         cli=("curb sweep",),
+        web=("GET /curb/machine/leaks", "POST /curb/machine/leaks/scan"),
         why=(
             "Where secrets sit is a target list for an injected agent, and checking one "
             "with its issuer needs a person's yes each run."
@@ -831,7 +840,11 @@ OPERATIONS: tuple[Operation, ...] = (
         "Fix what each agent can reach",
         "write",
         cli=("curb fix",),
-        web=("POST /curb/fix",),
+        web=(
+            "GET /curb/machine/fixes",
+            "POST /curb/machine/fixes/apply",
+            "POST /curb/machine/fixes/undo",
+        ),
         why=(
             "Each fix needs a person's yes in the operating system's own prompt, which an "
             "agent cannot give."
@@ -843,6 +856,7 @@ OPERATIONS: tuple[Operation, ...] = (
         "Prove a block by asking the agent to get past it",
         "write",
         cli=("curb test",),
+        web=("GET /curb/machine/tests", "POST /curb/machine/tests/run"),
         why=(
             "It plants decoys and spends the person's tokens, so it needs their yes in the "
             "operating system's own prompt."
@@ -854,7 +868,8 @@ OPERATIONS: tuple[Operation, ...] = (
         "List, renew or remove the tester's decoys",
         "write",
         cli=("curb decoys",),
-        why="Where a decoy sits says where credentials sit, so the list stays in the terminal.",
+        web=("POST /curb/machine/tests/decoys",),
+        why="Where a decoy sits says where credentials sit, so the list is kept from agents.",
         since="0.16.0",
     ),
     _op(
@@ -862,6 +877,7 @@ OPERATIONS: tuple[Operation, ...] = (
         "Scrub rotated secrets out of a file",
         "destructive",
         cli=("curb scrub",),
+        web=("POST /curb/machine/leaks/remove",),
         why=(
             "It rewrites the file with no backup, since a backup would be another copy of the "
             "secret, so each file needs a person's yes."
@@ -873,6 +889,7 @@ OPERATIONS: tuple[Operation, ...] = (
         "Turn Curb's action log on or off, or check it",
         "write",
         cli=("curb log",),
+        web=("GET /curb/machine/activity", "POST /curb/machine/activity/logging"),
         why="Turning it on or off changes agent settings, so it needs a person's yes.",
         since="0.16.0",
     ),
@@ -889,6 +906,12 @@ OPERATIONS: tuple[Operation, ...] = (
         "See, apply or approve your organization's agent policy",
         "write",
         cli=("curb policy",),
+        web=(
+            "GET /curb/team",
+            "GET /curb/team/policy",
+            "POST /curb/team/policy/approve",
+            "POST /curb/team/policy/delegation",
+        ),
         why=(
             "It changes agent settings: only changes that tighten, under the person's standing "
             "approval, and anything else after their own yes, which an agent cannot give."
@@ -900,7 +923,16 @@ OPERATIONS: tuple[Operation, ...] = (
         "Check your organization's devices: policy, drift and exposure",
         "read",
         cli=("curb fleet",),
+        web=("GET /curb/team/devices",),
         why="It is for admins, and where the fleet has gaps is what an injected agent looks for.",
+        since="0.16.0",
+    ),
+    _op(
+        "curb",
+        "See each change that widened what an agent can reach",
+        "read",
+        web=("GET /curb/team/alerts",),
+        why="What changed, and when, tells an injected agent what a person has noticed.",
         since="0.16.0",
     ),
     _op(
@@ -908,6 +940,11 @@ OPERATIONS: tuple[Operation, ...] = (
         "Check the agent steps in a repository's CI workflows",
         "write",
         cli=("curb ci",),
+        web=(
+            "GET /curb/projects/ci",
+            "GET /curb/projects/ci/export",
+            "POST /curb/projects/ci/fix",
+        ),
         why=(
             "A workflow's weak spots tell an injected agent how to reach a repository's "
             "secrets, so findings go to code scanning; --fix edits workflows for a review."
@@ -919,6 +956,7 @@ OPERATIONS: tuple[Operation, ...] = (
         "Find the LLM calls in an application's code, and their shapes",
         "read",
         cli=("curb app",),
+        web=("GET /curb/projects/apps", "GET /curb/projects/apps/export"),
         why="It points at the code an injected agent would most want to change.",
         since="0.16.0",
     ),
@@ -927,6 +965,7 @@ OPERATIONS: tuple[Operation, ...] = (
         "Give each agent its own commit-signing key, rotate or list them",
         "write",
         cli=("curb attribution",),
+        web=("POST /curb/projects/commits/signing",),
         why=(
             "It changes agent settings and holds signing keys; a key an agent could ask for "
             "would attribute nothing."
@@ -938,7 +977,8 @@ OPERATIONS: tuple[Operation, ...] = (
         "See which agent key signed each commit",
         "read",
         cli=("curb verify",),
-        why="A person reads it in a terminal or CI; it needs no agent in the loop.",
+        web=("GET /curb/projects/commits",),
+        why="A person reads it in a terminal, a page or CI; it needs no agent in the loop.",
         since="0.16.0",
     ),
     _op(
@@ -957,6 +997,7 @@ OPERATIONS: tuple[Operation, ...] = (
         "Delete what Curb keeps on this machine",
         "destructive",
         cli=("curb forget",),
+        web=("POST /curb/forget",),
         why="Deleting the reports and digest key is a person's decision, not an agent's.",
         since="0.16.0",
     ),

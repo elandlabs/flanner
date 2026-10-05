@@ -1,0 +1,120 @@
+{% extends "curb_base.html" %}
+
+{# Projects › Reach: risk per project and agent; for one project, each way and credential. #}
+{% block scope %}{{ k.picker(project) }}{% endblock %}
+
+{% block part %}
+<div class="tab-stack">
+  {% call k.head("What each agent can read, and where it can send, when you start it in a project.",
+                 "Read from the project's own agent settings, on top of this machine's.", held if one else machine_held) %}
+    {{ k.again() }}
+  {% endcall %}
+
+  {% if not projects %}
+  {% call empty.state("project", "No projects yet") %}
+    <p>Curb checks the projects on your Projects page. Add one there, or run this inside a repository:</p>
+    {{ k.cmd("flanner init") }}
+    <a class="btn btn-primary" href="/projects/new">New project</a>
+  {% endcall %}
+
+  {% elif one %}
+    {% if held.value is none %}
+      {% if held.error %}{{ k.failed(held.error) }}{% else %}{{ k.checking("Checking what your agents can reach in " ~ one.name ~ "…") }}{% endif %}
+    {% else %}
+    <div class="curb-cols">
+      {% for card in cards %}
+      <div class="card" data-curb-agent="{{ card.agent }}">
+        <div class="card-head">{{ card.label }} in {{ one.name }} {{ k.risk(card.level, card.tone, true) }}
+          {% if card.guess %}<span class="pill pill-aging">Best guess</span>{% endif %}</div>
+        <div class="card-pad">
+          {{ k.picture(card) }}
+          <p class="card-lede">{{ card.lede }}</p>
+          {{ k.ways(card) }}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% if not cards %}
+    {% call empty.state("search", "No agent found") %}
+      <p>Curb checks Claude Code and Codex. Neither is set up on this machine yet.</p>
+    {% endcall %}
+    {% endif %}
+
+    {% if table.of %}
+    <div class="card">
+      <div class="card-head">Credentials in reach {{ k.tally() }}
+        {% call k.tools("Search credentials", {"project": project}) %}{% endcall %}</div>
+      {% if not shown %}
+      <p class="card-note">Names and locations are a target list for an agent, so they stay hidden.
+        {{ k.ask_names() }}</p>
+      {% endif %}
+      <div class="tablewrap">
+        <div class="grid-head cols-k-creds"><span>Kind</span><span>Name</span><span>Where</span><span>Who can read it</span></div>
+        {% for row in table.rows %}
+        <div class="grid-row cols-k-creds">
+          <span><span class="name">{{ row.kind }}</span><span class="sub">{{ row.category }}</span></span>
+          <span data-cell="meta">{{ k.slot(row.name) }}</span>
+          <span data-cell="meta">{{ k.slot(row.where) }}</span>
+          <span data-cell="meta">{% if row.readers %}{{ k.st("open", row.readers | join(", ")) }}{% else %}{{ k.st("closed", "Blocked") }}{% endif %}</span>
+        </div>
+        {% endfor %}
+        {{ k.foot("No credential matches that search.") }}
+      </div>
+    </div>
+    {% endif %}
+    {% endif %}
+
+  {% else %}
+  <div class="card">
+    <div class="card-head">By project {{ k.tally() }}
+      {% call k.tools("Search projects") %}{% endcall %}</div>
+    <div class="tablewrap">
+      <div class="grid-head cols-k-reach"><span>Project</span><span>Risk</span><span>What differs here</span><span></span></div>
+      {% for row in table.rows %}
+      <div class="grid-row cols-k-reach">
+        <span><a class="name" href="{{ path }}?project={{ row.id }}">{{ row.name }}</a></span>
+        <span data-cell="meta">
+          {% if row.checking %}<span class="pill pill-quiet"><span class="spin" aria-hidden="true"></span> Checking…</span>
+          {% elif row.error %}<span class="pill pill-stale">Could not check</span>
+          {% else %}{% for label, level, tone in row.levels %}<span class="lvl">{{ label }} {{ k.risk(level, tone) }}</span>{% endfor %}{% endif %}</span>
+        <span data-cell="meta">{{ row.error or row.differs }}</span>
+        <span><a class="btn btn-sm" href="{{ path }}?project={{ row.id }}">Open</a></span>
+      </div>
+      {% endfor %}
+      {% if base and not table.q %}
+      <div class="grid-row cols-k-reach">
+        <span><span class="name">No project</span><span class="sub">Started outside any project</span></span>
+        <span data-cell="meta">{% for label, level, tone in base %}<span class="lvl">{{ label }} {{ k.risk(level, tone) }}</span>{% endfor %}</span>
+        <span data-cell="meta">The starting point for every project.</span>
+        <span><a class="btn btn-sm" href="/curb">Open</a></span>
+      </div>
+      {% endif %}
+      {{ k.foot("No project matches that search.") }}
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="card card-pad">
+    {{ k.terminal("Check a different way of starting an agent",
+                  "With extra flags, for example, or as a scheduled job starts it. A launch command can hold anything, so Curb reads it only where you type it.",
+                  "flanner curb map -- claude --dangerously-skip-permissions") }}
+  </div>
+
+  {% call k.explain("How risk is rated", "Two questions: can it read credentials, and can it send data out?") %}
+    <dl class="words">
+      <dt>High</dt><dd>It can read a credential and send data out.</dd>
+      <dt>Medium</dt><dd>It can read a credential, but every way out is closed. Or it can only read minor ones.</dd>
+      <dt>Low</dt><dd>It cannot read any credential.</dd>
+    </dl>
+    <dl class="words">
+      <dt>Open</dt><dd>Nothing stops the agent.</dd>
+      <dt>Closed</dt><dd>A setting stops it. Curb read the setting, and has not tested it.</dd>
+      <dt>Closed, proved</dt><dd>A test showed the agent being stopped.</dd>
+      <dt>Sandbox</dt><dd>A fence around the commands an agent runs. It limits the files and sites they can reach.</dd>
+    </dl>
+    <p>Curb takes three things for granted: no extra flags or settings files, no settings from
+      device management it cannot see, and no MCP servers that plugins add.</p>
+    {{ k.cmd("flanner curb map") }}
+  {% endcall %}
+</div>
+{% endblock %}

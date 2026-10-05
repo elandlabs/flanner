@@ -1,0 +1,116 @@
+{% extends "curb_base.html" %}
+
+{# This machine › Tests: each block and its result, and the fake credentials a test plants. #}
+{% block part %}
+{% if machine_held.value is none %}
+  {% if machine_held.error %}{{ k.failed(machine_held.error) }}{% else %}{{ k.checking("Finding the blocks a test can try…") }}{% endif %}
+{% else %}
+<div class="tab-stack">
+  {% set src = "Curb plants fake credentials, then asks each agent to read them. " ~ (view.cost | join(" ")) %}
+  {% call k.head("Check that each block really stops the agent.", src) %}
+    {% if view.runnable and not job.running %}{{ k.act("Run tests", "tests", "btn-primary") }}{% endif %}
+  {% endcall %}
+
+  {% if job.running %}
+  <div class="card card-pad" role="status" data-curb-progress>
+    <p class="card-lede"><span class="spin" aria-hidden="true"></span>
+      Testing: <b class="tnum">{{ job.done }}</b> of <span class="tnum">{{ job.total or view.runnable }}</span> done.
+      {{ job.label }}</p>
+    <progress class="curb-progress" value="{{ job.done }}" max="{{ job.total or view.runnable }}" aria-label="Test progress"></progress>
+    <p class="hint">Each test starts the agent itself, so one can take a few minutes. You can leave this page.</p>
+  </div>
+  {% elif job.state == "failed" %}
+  <div class="notice bad" role="alert"><p><b>The test run stopped.</b> {{ job.error }}.
+    The terminal that runs <span class="mono">flanner web</span> has the details.</p>
+    <p>The results so far are below. Run the tests again to retry.</p></div>
+  {% endif %}
+
+  {% if view.rows %}
+  <div class="card">
+    <div class="card-head">Blocks {{ k.tally() }}
+      <span class="note">{% if view.tested %}{{ view.proved }} of {{ view.runnable }} proved{% else %}none tested yet{% endif %}</span>
+      {% call k.tools("Search blocks") %}
+        <select class="btn btn-sm" name="agent" aria-label="Agent" data-auto-submit>
+          {{ k.option("", "Every agent", agent) }}{{ k.option("claude", "Claude Code", agent) }}{{ k.option("codex", "Codex", agent) }}
+        </select>
+      {% endcall %}</div>
+    <div class="tablewrap">
+      <div class="grid-head cols-k-blocks"><span>Block</span><span>Result</span><span>Last run</span></div>
+      {% for row in table.rows %}
+      <div class="grid-row cols-k-blocks">
+        <span><span class="name">{{ row.name }}</span><span class="sub">{{ row.agent }}</span></span>
+        <span data-cell="meta"><span class="pill pill-{{ row.tone }}">{{ row.result }}</span><span class="sub">{{ row.why }}</span></span>
+        <span class="when" data-cell="meta"><span class="m-only">Last run: </span>{{ ago(row.at) | capitalize if row.at else "Never" }}</span>
+        {% if row.tries %}<details class="row-more"><summary>What the agent tried</summary>
+          <ul>{% for line in row.tries %}<li>{{ line }}</li>{% endfor %}</ul></details>{% endif %}
+      </div>
+      {% endfor %}
+      {{ k.foot("No block matches that search.") }}
+    </div>
+  </div>
+  {% else %}
+  {% call empty.state("clear", "Nothing to test yet") %}
+    <p>A test proves that a block holds, and no setting blocks anything yet. Apply the fixes
+      first, then come back.</p>
+    <a class="btn btn-primary" href="/curb/machine/fixes">Open fixes</a>
+  {% endcall %}
+  {% endif %}
+
+  {% if view.decoys %}
+  <div class="card">
+    <div class="card-head">Fake credentials <span class="pill pill-quiet tnum">{{ view.decoys }}</span>
+      <div class="tools">
+        <form method="post" action="/curb/machine/tests/decoys">
+          <button type="submit" name="action" value="renew" class="btn btn-sm">Keep 30 more days</button>
+        </form>
+        <form method="post" action="/curb/machine/tests/decoys">
+          <input type="hidden" name="action" value="remove">
+          <button type="submit" class="btn btn-sm btn-danger" data-hold-confirm>Remove all</button>
+        </form>
+      </div></div>
+    <div class="card-pad">
+      <p class="card-lede">A test needs something safe to steal. These look like real credentials and work
+        nowhere. They are never placed inside a git repository, and they remove themselves
+        {% if view.decoys_until %}on {{ day(view.decoys_until) }}{% else %}after 30 days{% endif %}.</p>
+      <details class="row-more"{{ " open" if shown }}><summary>Show where they are</summary>
+        {% if shown %}
+        <ul>{% for place in view.decoy_places %}<li class="mono">{{ place }}</li>{% endfor %}</ul>
+        {% else %}
+        <p class="hint">Where a fake credential sits says where real ones sit. {{ k.ask_names() }} to see them.</p>
+        {% endif %}
+      </details>
+    </div>
+  </div>
+  {% endif %}
+
+  {% call k.explain("What the results mean", "Proved means the agent itself tried, and failed.") %}
+    <dl class="words">
+      <dt>Block</dt><dd>A setting that should stop an agent.</dd>
+      <dt>Proved</dt><dd>The agent tried every way Curb knows, and each one was stopped.</dd>
+      <dt>Held in a copy</dt><dd>The block is a project rule. It held in a scratch copy of the project.</dd>
+      <dt>Not proved</dt><dd>At least one way got through. The row says which.</dd>
+      <dt>Unclear</dt><dd>The agent declined, failed, or stopped to ask. Nothing was learned.</dd>
+      <dt>Out of date</dt><dd>The settings changed after the test, so it proves nothing now.</dd>
+    </dl>
+    <p>A test runs each agent in a scratch folder, never in your projects. The test's own
+      transcript is deleted afterwards.</p>
+    {{ k.cmd("flanner curb test") }}
+  {% endcall %}
+</div>
+{% endif %}
+{% endblock %}
+
+{% block reviews %}
+{% if machine_held.value is not none %}
+{% call k.review_box("tests", "Run " ~ view.runnable ~ (" test?" if view.runnable == 1 else " tests?"), "/curb/machine/tests/run") %}
+  <p>Curb plants a fake credential beside each file a block protects. Then it starts each
+    agent and asks it to read the fake.</p>
+  <ul>
+    {% for line in view.cost %}<li>{{ line }}</li>{% endfor %}
+    <li>Each agent runs in a scratch folder, never in your projects.</li>
+    <li>The fake credentials stay for 30 days, then remove themselves.</li>
+  </ul>
+  <p class="hint">Nothing in your agents' settings changes.</p>
+{% endcall %}
+{% endif %}
+{% endblock %}

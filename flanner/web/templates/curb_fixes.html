@@ -1,0 +1,118 @@
+{% extends "curb_base.html" %}
+
+{# This machine › Fixes: what Curb can change, what only the person can, and the undo. #}
+{% block part %}
+{% if machine_held.value is none %}
+  {% if machine_held.error %}{{ k.failed(machine_held.error) }}{% else %}{{ k.checking("Working out what Curb can fix…") }}{% endif %}
+{% else %}
+{% set ready = view.ready | length %}
+<div class="tab-stack">
+  {% call k.head("Changes that close what your agents can reach. Each one only makes a setting stricter.",
+                 "They change each agent's own settings, so they apply in every project.", machine_held) %}
+    {% if ready %}{{ k.act("Apply " ~ ready ~ (" fix" if ready == 1 else " fixes"), "fixes", "btn-primary") }}{% endif %}
+  {% endcall %}
+
+  {% if ready %}
+  <div class="card">
+    <div class="card-head">Ready to apply <span class="pill pill-quiet tnum">{{ ready }}</span></div>
+    <div class="grid-head cols-k-fixes"><span>Fix</span><span>Agent</span></div>
+    {% for fix in view.ready %}
+    <div class="grid-row cols-k-fixes">
+      <span class="name">{{ fix.text }}</span>
+      <span data-cell="meta">{{ fix.agent }}</span>
+    </div>
+    {% endfor %}
+    <div class="card-pad card-foot">
+      <details class="row-more"{{ " open" if shown }}>
+        <summary>See the exact lines</summary>
+        {% if shown %}
+          {% for edit in view.lines %}
+          <p class="mono path-full">{{ edit.file }}</p>
+          <pre class="diff-lines">{% for line in edit.lines %}<span{% if line.kind %} class="{{ line.kind }}"{% endif %}>{{ line.text }}</span>
+{% endfor %}</pre>
+          {% endfor %}
+        {% else %}
+        <p class="hint">The lines name credential locations. {{ k.ask_names() }} to read them.</p>
+        {% endif %}
+      </details>
+    </div>
+  </div>
+  {% else %}
+  {% call empty.state("clear", "Nothing left that Curb can fix for you") %}
+    <p>Every change Curb can make safely is in place. Test the blocks next, so you know they hold.</p>
+    <a class="btn btn-primary" href="/curb/machine/tests">Open tests</a>
+  {% endcall %}
+  {% endif %}
+
+  {% if view.yours %}
+  <div class="card">
+    <div class="card-head">Only you can do these <span class="pill pill-quiet tnum">{{ view.yours | length }}</span>
+      <span class="note">Curb says what to change, and cannot change it for you</span></div>
+    {% for line in view.yours %}
+    <div class="grid-row cols-k-todo"><span>{{ line }}</span></div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if view.refused %}
+  <div class="card">
+    <div class="card-head">Left out <span class="pill pill-quiet tnum">{{ view.refused | length }}</span>
+      <span class="note">Curb could not show these only make things stricter</span></div>
+    {% for line in view.refused %}
+    <div class="grid-row cols-k-todo"><span>{{ line }}</span></div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="card">
+    <div class="card-head">Applied <span class="note">each backup is kept 7 days</span></div>
+    {% if view.applied %}
+    <div class="grid-head cols-k-applied"><span>When</span><span>What changed</span><span>Undo until</span><span></span></div>
+    {% for row in view.applied %}
+    <div class="grid-row cols-k-applied">
+      <span class="when">{{ ago(row.at) | capitalize }}</span>
+      <span><span class="name">{{ row.what }}</span><span class="sub">{{ row.files }} {{ "file" if row.files == 1 else "files" }} backed up</span></span>
+      <span class="when" data-cell="meta"><span class="m-only">Undo until </span>{{ day(row.until) }}</span>
+      <span>{{ k.act("Undo", "undo", "btn-sm", "&backup=" ~ row.id) }}</span>
+    </div>
+    {% endfor %}
+    {% else %}
+    <p class="hint card-pad">Nothing applied yet. A fix you apply shows here, with its undo.</p>
+    {% endif %}
+  </div>
+
+  {% call k.explain("What a fix changes", "Only each agent's own settings, and only to make them stricter.") %}
+    <dl class="words">
+      <dt>Sandbox</dt><dd>A fence around the commands an agent runs. It limits the files and sites they can reach.</dd>
+    </dl>
+    <p>A fix edits the settings file that belongs to you, for one agent. It never edits a project,
+      and it never loosens anything. If Curb cannot show that a change only tightens, it leaves
+      the change out and says why.</p>
+    <p>Before it writes, Curb copies each file to a backup that no agent can read, and keeps it
+      for 7 days. <b>Undo</b> puts the copy back.</p>
+    <p>These fixes cover the credentials every project shares. To close one project's own
+      files too, such as its .env file, run this inside the project:</p>
+    {{ k.cmd("flanner curb fix") }}
+  {% endcall %}
+</div>
+{% endif %}
+{% endblock %}
+
+{% block reviews %}
+{% if machine_held.value is not none %}
+{% set ready = view.ready | length %}
+{% call k.review_box("fixes", "Apply " ~ ready ~ (" fix?" if ready == 1 else " fixes?"), "/curb/machine/fixes/apply") %}
+  <ul>{% for fix in view.ready %}<li>{{ fix.agent }}: {{ fix.text }}</li>{% endfor %}</ul>
+  <p>Afterwards, a command that needs a file or a site you have not allowed will fail until you allow it.</p>
+  <p class="hint">Curb backs up each file for 7 days. Undo puts it back.</p>
+{% endcall %}
+
+{% call k.review_box("undo", "Undo this fix?", "/curb/machine/fixes/undo", {"backup": backup}) %}
+  <p>Curb puts each file back as it was before the fix.</p>
+  <ul>
+    <li>Your agents can reach what they could reach before.</li>
+    <li>A file you changed after the fix is left alone.</li>
+  </ul>
+{% endcall %}
+{% endif %}
+{% endblock %}

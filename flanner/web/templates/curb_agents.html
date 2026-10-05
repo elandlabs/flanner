@@ -1,0 +1,84 @@
+{% extends "curb_base.html" %}
+
+{# This machine › Agents: installed agents, and what each loads at start. #}
+{% block part %}
+{% if machine_held.value is none %}
+  {% if machine_held.error %}{{ k.failed(machine_held.error) }}{% else %}{{ k.checking("Reading what your agents load…") }}{% endif %}
+{% else %}
+<div class="tab-stack">
+  {% call k.head("The agents installed here, and what each one loads when it starts.",
+                 "Read from each agent's settings files. Curb runs nothing.", machine_held) %}
+    {{ k.again() }}
+  {% endcall %}
+
+  {# What happened, why, and what to do about it, where it happened. #}
+  {% for problem in view.problems %}
+  <div class="notice {{ problem.tone }}" role="{{ 'alert' if problem.tone == 'bad' else 'status' }}">
+    <p><b>{{ problem.title }}</b> {{ problem.body }}</p>
+    {% if problem.command %}{{ k.cmd(problem.command) }}{% endif %}
+  </div>
+  {% endfor %}
+
+  {% if view.installed %}
+  <div class="card">
+    <div class="card-head">Installed <span class="pill pill-quiet tnum">{{ view.installed | length }}</span></div>
+    <div class="grid-head cols-k-installed"><span>Agent</span><span>Settings come from</span><span>Activity log</span><span>Signs its commits</span></div>
+    {% for agent in view.installed %}
+    <div class="grid-row cols-k-installed">
+      <span><span class="name">{{ agent.label }}</span><span class="sub">{{ agent.version }}</span></span>
+      <span data-cell="meta">{{ agent.owners }}</span>
+      <span data-cell="meta"><span class="m-only">Activity log: </span>
+        {%- if agent.logging %}{{ k.st("on", "On") }}{% else %}Off · <a class="jump" href="/curb/machine/activity">Turn on</a>{% endif %}</span>
+      <span data-cell="meta"><span class="m-only">Signs commits: </span>
+        {%- if agent.signs %}{{ k.st("on", "Yes") }}{% else %}No · <a class="jump" href="/curb/projects/commits">Set up</a>{% endif %}</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  {% call empty.state("search", "No agent found") %}
+    <p>Curb checks Claude Code and Codex. Neither is set up on this machine yet.</p>
+  {% endcall %}
+  {% endif %}
+
+  {% if view.loaded %}
+  <div class="card">
+    <div class="card-head">Loaded at start {{ k.tally() }}
+      {% call k.tools("Search what agents load") %}
+        <select class="btn btn-sm" name="kind" aria-label="Kind" data-auto-submit>
+          {{ k.option("", "Every kind", kind) }}{{ k.option("mcp", "MCP servers", kind) }}
+          {{ k.option("hook", "Hooks", kind) }}{{ k.option("job", "Scheduled jobs", kind) }}
+          {{ k.option("skill", "Skills", kind) }}
+        </select>
+      {% endcall %}</div>
+    <div class="tablewrap">
+      <div class="grid-head cols-k-loaded"><span>Name</span><span>Kind</span><span>Agent</span><span>Set by</span><span>Worth knowing</span></div>
+      {% for row in table.rows %}
+      <div class="grid-row cols-k-loaded">
+        <span class="name">{{ row.name }}</span>
+        <span data-cell="meta">{{ row.kind_label }}</span>
+        <span data-cell="meta">{{ row.agent }}</span>
+        <span data-cell="meta">{{ row.by }}</span>
+        <span data-cell="meta">{% if row.level %}{{ k.risk(row.level, row.tone) }} {% endif %}{{ row.note }}</span>
+      </div>
+      {% endfor %}
+      {{ k.foot() }}
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="footnote"><span class="i" aria-hidden="true">i</span>
+    Your other skills are on the <a href="/skills">Skills page</a>. Curb lists only its own guide for agents.</div>
+
+  {% call k.explain("How to read this", "Who set each thing decides who can change it.") %}
+    <dl class="words">
+      <dt>Set by you</dt><dd>It is in your own settings file. Only you can change it.</dd>
+      <dt>Set by a project</dt><dd>It is in a file in that repository. Anyone who can change the repository can change it.</dd>
+      <dt>Scheduled job</dt><dd>It starts an agent with nobody watching, so Curb rates it on its own.</dd>
+      <dt>Tested version</dt><dd>Curb knows this version's settings. With another version, every result is a best guess.</dd>
+    </dl>
+    <p>The same list, in a terminal:</p>
+    {{ k.cmd("flanner curb inventory") }}
+  {% endcall %}
+</div>
+{% endif %}
+{% endblock %}

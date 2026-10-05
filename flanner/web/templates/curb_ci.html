@@ -1,0 +1,78 @@
+{% extends "curb_base.html" %}
+
+{# Projects › CI: agent steps in each project's workflows, the export, and the safe fixes. #}
+{% block scope %}{{ k.picker(project) }}{% endblock %}
+
+{% block part %}
+{% set mine = view.fixable | selectattr("project", "equalto", one.name) | list if one else [] %}
+{% set fixes = mine | sum(attribute="fixes", start=[]) | length %}
+<div class="tab-stack">
+  {% call k.head("Agent steps in your GitHub Actions workflows, and what an outsider could make them do.",
+                 "Read from .github/workflows in each project. Nothing is run." ~ ("" if one or not projects else " Pick one project to export or fix.")) %}
+    {{ k.again() }}
+    {% if one and view.rows %}
+    <a class="btn" href="/curb/projects/ci/export?project={{ one.id }}" download="curb-ci.sarif">{{ ico.icon('download', 14) }} Export for code scanning</a>
+    {% endif %}
+    {% if one and fixes %}{{ k.act("Apply " ~ fixes ~ (" safe fix" if fixes == 1 else " safe fixes"), "cifix", "btn-primary") }}{% endif %}
+  {% endcall %}
+
+  {% for line in view.problems %}
+  <div class="notice warn" role="status"><b>Curb could not read a workflow.</b> {{ line }}</div>
+  {% endfor %}
+
+  {% if not projects %}
+  {% call empty.state("project", "No projects yet") %}
+    <p>Curb checks the projects on your Projects page. Add one there first.</p>
+    <a class="btn btn-primary" href="/projects/new">New project</a>
+  {% endcall %}
+  {% elif view.rows %}
+  <div class="card">
+    <div class="card-head">Findings {{ k.tally() }}
+      {% call k.tools("Search findings", {"project": project}) %}
+        <select class="btn btn-sm" name="risk" aria-label="Risk" data-auto-submit>
+          {{ k.option("", "Every risk", risk) }}{{ k.option("High", "High", risk) }}
+          {{ k.option("Medium", "Medium", risk) }}{{ k.option("Low", "Low", risk) }}
+        </select>
+      {% endcall %}</div>
+    <div class="tablewrap">
+      <div class="grid-head cols-k-ci{{ ' is-one' if one }}"><span>Risk</span><span>Workflow</span>{% if not one %}<span>Project</span>{% endif %}<span>Problem, and the fix</span></div>
+      {% for row in table.rows %}
+      <div class="grid-row cols-k-ci{{ ' is-one' if one }}">
+        <span data-cell="chip">{{ k.risk(row.level, row.tone) }}</span>
+        <span><span class="path">{{ row.where }}</span><span class="sub">{{ row.step }}</span></span>
+        {% if not one %}<span data-cell="meta">{{ row.project }}</span>{% endif %}
+        <span data-cell="meta">{{ row.why }}{% if row.fix %}<span class="sub">{{ row.fix }}</span>{% endif %}</span>
+      </div>
+      {% endfor %}
+      {{ k.foot("No finding matches that search.") }}
+    </div>
+  </div>
+  {% else %}
+  {% call empty.state("clear", "No agent steps found") %}
+    <p>No workflow in {{ one.name if one else "your projects" }} runs Claude Code, Codex or Gemini CLI.</p>
+  {% endcall %}
+  {% endif %}
+
+  {% call k.explain("Check every pull request", "The same check, as a GitHub Action.") %}
+    <p>Add this step to a workflow. It writes its findings to GitHub code scanning, so they
+      show on the pull request that causes them.</p>
+    {{ k.cmd("uses: elandlabs/flanner/actions/curb-ci@v" ~ app_version) }}
+    <p class="spaced"><b>Safe fixes</b> are one-line changes that cannot break a workflow, such as
+      removing a flag that skips permission checks. The rest need your judgement.</p>
+    {{ k.cmd("flanner curb ci --fix") }}
+  {% endcall %}
+</div>
+{% endblock %}
+
+{% block reviews %}
+{% if one %}
+{% set mine = view.fixable | selectattr("project", "equalto", one.name) | list %}
+{% call k.review_box("cifix", "Apply the safe fixes in " ~ one.name ~ "?", "/curb/projects/ci/fix", {"project": one.id}) %}
+  <ul>
+    {% for item in mine %}<li><span class="mono">{{ item.workflow }}</span>: {{ item.fixes | join("; ") }}.</li>{% endfor %}
+  </ul>
+  <p>Curb edits the workflow files in your working folder. It commits nothing.</p>
+  <p class="hint">To undo, discard the changes with git. Read them, then open a pull request.</p>
+{% endcall %}
+{% endif %}
+{% endblock %}

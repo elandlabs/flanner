@@ -1,0 +1,133 @@
+{% extends "curb_base.html" %}
+
+{# Team › Policy: what the org policy asks, whether this machine meets it, and what waits. #}
+{% block part %}
+{% if not joined %}
+  {% call empty.state("team", "Share one agent policy across your team") %}
+    <p>With Flanner Mesh, your organization signs one set of rules and every device applies it.
+      This machine has not joined a team, so there is nothing here yet.</p>
+    <a class="btn btn-primary" href="/mesh">Join a team</a>
+  {% endcall %}
+{% else %}
+<div class="tab-stack">
+  {% set src = "Signed by your organization, and checked here before anything changes."
+               ~ ((" Last checked " ~ ago(view.checked_at) ~ ".") if view.received and view.checked_at else "") %}
+  {% call k.head("Rules your organization sets for every agent. This machine applies them.", src) %}
+    {% if view.received and view.pending %}{{ k.act("Review version " ~ view.pending.version, "policy", "btn-primary") }}{% endif %}
+  {% endcall %}
+
+  {% if not view.received %}
+  {% call empty.state("team", "No policy has arrived yet") %}
+    <p>Your organization has not sent this device a policy, or this device has not asked for
+      one. Ask for it in a terminal:</p>
+    {{ k.cmd("flanner curb policy --check-in") }}
+  {% endcall %}
+  {% else %}
+
+  {% for flag in view.flags %}
+  <div class="notice warn" role="status"><b>About policy version {{ view.version }}.</b> {{ flag }}</div>
+  {% endfor %}
+  {% if view.rejected %}
+  <div class="notice bad" role="alert"><p><b>Curb refused a policy{% if view.rejected.version %}, version {{ view.rejected.version }}{% endif %}.</b>
+    {{ view.rejected.reason }}</p>
+    <p>The policy before it stays in force. Tell your administrator.</p></div>
+  {% endif %}
+
+  {% if view.pending %}
+  <div class="card needs is-waiting">
+    <div class="card-head">Version {{ view.pending.version }} waits for your yes
+      {% if view.pending.at %}<span class="note">received {{ ago(view.pending.at) }}</span>{% endif %}</div>
+    <div class="card-pad">
+      <p class="card-lede">{{ view.pending.summary }}</p>
+      {% for reason in view.pending.reasons %}<p class="hint">{{ reason }}</p>{% endfor %}
+      <p class="hint">Curb applies a change on its own only when it can show the change makes
+        things stricter, and you allowed that. Anything else waits for you.</p>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="curb-cols">
+    <div class="card card-pad">
+      <h2 class="card-title">What version {{ view.version }} asks</h2>
+      {% for label, value in view.asks %}
+      <div class="kv"><span>{{ label }}</span><b>{{ value }}</b></div>
+      {% endfor %}
+      {% if not shown %}<p class="hint">{{ k.ask_names() }} to see which locations.</p>{% endif %}
+    </div>
+    <div class="card card-pad">
+      <h2 class="card-title">Does this machine meet it?</h2>
+      {% if view.met %}
+      <div class="check"><span class="ok">{{ ico.icon('check', 14) }}</span> Every agent's settings meet the policy.</div>
+      {% elif not view.checked_at %}
+      <p class="hint">Not checked yet. It is checked at the next session start, or at the next check-in.</p>
+      {% endif %}
+      {% for item in view.unmet %}
+      <div class="check"><span class="no" aria-hidden="true">{{ ico.icon('close', 14) }}</span> <span>{{ item.label }}: {{ item.text }}</span></div>
+      {% endfor %}
+      {% if view.checked_at %}<p class="hint">Checked {{ ago(view.checked_at) }}, and again at each session start.</p>{% endif %}
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">Version {{ view.version }} on this machine
+      {% if view.applied and view.applied_by %}<span class="note">version {{ view.applied }}: {{ view.applied_by }}</span>{% endif %}</div>
+    <div class="card-pad">
+      <div class="steps">
+        {% for label, state in view.steps %}
+        <span class="step{{ ' ' ~ state if state }}">{% if state == "done" %}{{ ico.icon('check', 12) }} {% endif %}{{ label }}</span>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="card card-pad">
+    <div class="switch-row">
+      <div class="body">Apply stricter changes without asking
+        <span>{% if view.delegated %}{{ k.st("on", "On") }} A change Curb can show to be stricter applies on its own.
+          {% else %}Off. Every policy change waits for your yes.{% endif %}
+          Anything Curb cannot show to be stricter always waits for you.</span></div>
+      {% if view.delegated %}
+      <form method="post" action="/curb/team/policy/delegation"><button type="submit" class="btn btn-sm">Turn off</button></form>
+      {% else %}{{ k.act("Turn on…", "delegation", "btn-sm") }}{% endif %}
+    </div>
+    {{ k.terminal("Check in for the newest policy now",
+                  "The web UI never contacts your organization. The terminal does, and this page then shows what arrived.",
+                  "flanner curb policy --check-in") }}
+    {{ k.terminal("Export the policy for device management",
+                  "It writes admin-owned settings files to a folder you name.",
+                  "flanner curb policy --export ./policy-files") }}
+  </div>
+
+  {% call k.explain("How a policy reaches this machine", "Signed by your organization, checked here, and never loosened.") %}
+    <p>Your organization signs each policy version. This machine checks the signature and the
+      version number before anything changes. An older version is refused.</p>
+    <p>A policy only ever tightens an agent's own settings. A policy that expires stays in force
+      until a newer one arrives.</p>
+    <p>Policies are written in your organization's console, not here.</p>
+    {{ k.cmd("flanner curb policy") }}
+  {% endcall %}
+</div>
+{% endif %}
+{% endblock %}
+
+{% block reviews %}
+{% if joined and view.received and view.pending %}
+{% call k.review_box("policy", "Apply policy version " ~ view.pending.version ~ "?", "/curb/team/policy/approve") %}
+  <p>{{ view.pending.summary }}</p>
+  <ul>{% for reason in view.pending.reasons %}<li>{{ reason }}</li>{% endfor %}</ul>
+  <p>Afterwards, your agents may be stopped from doing something they could do before.</p>
+  <p class="hint">Curb backs up each settings file for 7 days. Undo is under Fixes.</p>
+{% endcall %}
+{% endif %}
+{% if joined %}
+{% call k.review_box("delegation", "Apply stricter changes without asking?", "/curb/team/policy/delegation", {"on": "1"}) %}
+  <ul>
+    <li>A signed policy change that only makes things stricter applies on its own.</li>
+    <li>Curb re-checks the policy at each session start, through a hook in each agent's settings.</li>
+    <li>Anything Curb cannot show to be stricter still waits for your yes.</li>
+  </ul>
+  <p class="hint">Turn this off here at any time. Turning it off needs no approval.</p>
+{% endcall %}
+{% endif %}
+{% endblock %}

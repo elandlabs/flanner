@@ -350,6 +350,11 @@ def commits(revision: str, cwd: Path) -> list[str]:
     return listed.decode("ascii").split()
 
 
+def recent(cwd: Path, limit: int) -> list[str]:
+    """The newest commits on the branch checked out, newest first."""
+    return _git(cwd, "rev-list", f"--max-count={limit}", "HEAD", "--").decode("ascii").split()
+
+
 def raw_commit(sha: str, cwd: Path) -> bytes:
     return _git(cwd, "cat-file", "commit", sha)
 

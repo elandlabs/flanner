@@ -1,0 +1,206 @@
+{#
+  The pieces every Curb page is built from (Curb PRD §11.3). Imported
+  `with context`, so a macro reads the page's own state: whether names are
+  shown, whether this machine can ask for an approval, and where the page is.
+#}
+{% import "_icon.html" as ico %}
+
+{% macro risk(level, tone, long=false) -%}
+<span class="pill pill-{{ tone or 'quiet' }}">{{ level }}{{ " risk" if long }}</span>
+{%- endmacro %}
+
+{# A state in words, with a mark, so it does not rest on colour. #}
+{% macro st(kind, text) -%}
+{%- if kind == "open" %}<span class="st st-open">{{ ico.icon('unlock', 12) }} {{ text }}</span>
+{%- elif kind == "closed" %}<span class="st st-closed">{{ ico.icon('lock', 12) }} {{ text }}</span>
+{%- elif kind == "proved" %}<span class="st st-proved">{{ ico.icon('shield', 12) }} {{ text }}</span>
+{%- elif kind == "on" %}<span class="st st-proved">{{ ico.icon('check', 12) }} {{ text }}</span>
+{%- else %}<span class="st st-quiet">{{ text }}</span>{% endif %}
+{%- endmacro %}
+
+{# A name or a location. The server sends it only to a browser with a live reveal. #}
+{% macro slot(value) -%}
+{%- if value %}<span class="val mono">{{ value }}</span>
+{%- else %}<span class="hid">{{ ico.icon('lock', 12) }} hidden</span>{% endif %}
+{%- endmacro %}
+
+{# The link that opens one review. Without scripts it loads this page with the review open. #}
+{% macro rev(name, extra="") -%}
+{{ here }}{{ "&" if "?" in here else "?" }}review={{ name }}{{ extra }}
+{%- endmacro %}
+
+{# A button that changes something: a review first, then the operating system asks. #}
+{% macro act(label, name, kind="", extra="", shield=true) -%}
+{%- if shield and (read_only or paused_until) -%}
+<button type="button" class="btn {{ kind }}" disabled>{{ ico.icon('shield', 14) }} {{ label }}</button>
+{%- else -%}
+<a class="btn {{ kind }}" href="{{ rev(name, extra) }}" data-curb-review data-no-boost>{% if shield %}{{ ico.icon('shield', 14) }} {% endif %}{{ label }}</a>
+{%- endif -%}
+{%- endmacro %}
+
+{# A check that only reads: it runs at once, and the button says it is working. #}
+{% macro again(label="Check again") -%}
+<a class="btn" href="{{ again_href }}" data-curb-busy>{{ ico.icon('refresh', 14) }} {{ label }}</a>
+{%- endmacro %}
+
+{% macro ask_names(text="Show names and locations") -%}
+<a class="linkish" href="{{ rev('reveal') }}" data-curb-review data-no-boost>{{ text }}</a>
+{%- endmacro %}
+
+{# When a slow check was last done, or that one is running now. #}
+{% macro checked(held) -%}
+{%- if held.busy %}<span class="spin" aria-hidden="true"></span> Checking again…
+{%- elif held.at %}Checked {{ ago(held.at) }}.{% endif %}
+{%- endmacro %}
+
+{# How every part opens: what it is for, where its facts come from, its actions. #}
+{% macro head(what, src, held=none) -%}
+<div class="curb-head">
+  <div class="say"><p class="what">{{ what }}</p>
+    <p class="from">{{ src }}{% if held %} {{ checked(held) }}{% endif %}</p></div>
+  <div class="acts">{{ caller() }}</div>
+</div>
+{%- endmacro %}
+
+{% macro explain(title, gist, open=false) -%}
+<details class="card explainer"{{ " open" if open }}>
+  <summary><h2 class="card-title">{{ title }}</h2><span class="gist">{{ gist }}</span></summary>
+  <div class="explainer-body">{{ caller() }}</div>
+</details>
+{%- endmacro %}
+
+{% macro cmd(command) -%}
+<div class="cmd"><span class="p" aria-hidden="true">$</span><span class="t">{{ command }}</span></div>
+{%- endmacro %}
+
+{# Something the page names and leaves to the terminal, and why. #}
+{% macro terminal(title, why, command) -%}
+<div class="switch-row cli-only" aria-disabled="true">
+  <div class="body">{{ title }}<span>{{ why }}</span></div>
+  <button class="btn btn-sm" type="button" disabled style="margin-left:auto">Terminal only</button>
+  <div class="cmd" style="flex-basis:100%"><span class="p" aria-hidden="true">$</span><span class="t">{{ command }}</span></div>
+</div>
+{%- endmacro %}
+
+{# One toolbar on top of every table: its search, then its filters. #}
+{% macro tools(label, keep={}) -%}
+<form method="get" action="{{ path }}" class="tools" role="search">
+  {% for key, value in keep.items() %}{% if value %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endif %}{% endfor %}
+  <input class="input input-sm sift" type="search" name="q" value="{{ table.q }}" data-search-submit
+         aria-label="{{ label }}" placeholder="Search" autocomplete="off">
+  {{ caller() }}
+  <noscript><button class="btn btn-sm" type="submit">Apply</button></noscript>
+</form>
+{%- endmacro %}
+
+{% macro option(value, label, chosen) -%}
+<option value="{{ value }}"{{ " selected" if value == chosen }}>{{ label }}</option>
+{%- endmacro %}
+
+{# A table's count: what is listed, and of how many when a filter is on. #}
+{% macro tally() -%}
+<span class="pill pill-quiet tnum">{{ "{:,}".format(table.total) }}</span>
+{%- if table.total != table.of %} <span class="note">of {{ "{:,}".format(table.of) }}</span>{% endif %}
+{%- endmacro %}
+
+{# Under every table: nothing matched, or the pages. #}
+{% macro foot(nothing="Nothing matches that search.") -%}
+{% if not table.rows %}<div class="empty-filter">{{ nothing }}
+  {% if table.total != table.of or table.q %}<a class="linkish" href="{{ path }}">Clear the search</a>{% endif %}</div>{% endif %}
+{% with pager=table.pager, pager_query=table.pager_query, pager_qs=table.pager_qs, per_choices=table.per_choices %}
+{% include "_pager.html" %}
+{% endwith %}
+{%- endmacro %}
+
+{# The project picker: it lists the Projects page, and starts on every project. #}
+{% macro picker(chosen, all=true) -%}
+<form method="get" action="{{ path }}" class="curb-scope">
+  <label for="curb-project">{{ ico.icon('projects', 14) }} Project</label>
+  <select class="btn btn-sm" id="curb-project" name="project" data-auto-submit>
+    {% if all %}<option value="">All projects ({{ projects | length }})</option>{% endif %}
+    {% for item in projects %}{{ option(item.id, item.name, chosen) }}{% endfor %}
+  </select>
+  <noscript><button class="btn btn-sm" type="submit">Show</button></noscript>
+  <a href="/projects">from your Projects page</a>
+  <a class="btn btn-sm" href="{{ rev('add') }}" data-curb-review data-no-boost>{{ ico.icon('plus', 12) }} Add a project</a>
+</form>
+{%- endmacro %}
+
+{# The picture: what it can read, the agent, and where it can send. #}
+{% macro gate(state, verb) -%}
+<span class="gate is-{{ "open" if state == "open" else "closed" }}{{ " is-proved" if state == "proved" }}">
+  <span class="line"><span class="badge">{{ ico.icon('unlock' if state == 'open' else 'shield' if state == 'proved' else 'lock', 12) }}</span></span>
+  <em>{{ verb if state == "open" else "blocked" }}</em>
+</span>
+{%- endmacro %}
+
+{% macro picture(card) -%}
+<div class="reach" role="img" aria-label="{{ card.label }}: reading credentials is {{ 'open' if card.read_gate == 'open' else 'blocked' }}, sending data out is {{ 'open' if card.send_gate == 'open' else 'blocked' }}.">
+  <span class="node"><b><span class="tnum">{{ card.credentials }}</span> credential{{ "" if card.credentials == 1 else "s" }}</b><i>in its reach</i></span>
+  {{ gate(card.read_gate, "reads") }}
+  <span class="node me"><b>{{ card.label }}</b></span>
+  {{ gate(card.send_gate, "sends") }}
+  <span class="node"><b>The internet</b><i>anywhere online</i></span>
+</div>
+{%- endmacro %}
+
+{# Each way in and out for one agent, in words. #}
+{% macro ways(card) -%}
+<div class="ways">
+  {% for title, list in (("It reads through", card.reads), ("It sends out through", card.sends)) %}
+  <div><h3>{{ title }}</h3>
+    {% for way in list %}
+    <div class="way"><span class="name">{{ way.name }}</span>{{ st(way.kind, way.state) }}
+      <span class="do">{{ way.why }}
+        {% if way.link %}<a class="jump" href="/curb/machine/{{ way.link[1] }}">{{ way.link[0] }}</a>{% endif %}
+        {% if way.close %}<span class="close">To close it: {{ way.close }}</span>{% endif %}</span></div>
+    {% endfor %}
+  </div>
+  {% endfor %}
+</div>
+{% if card.assumed or card.not_checked %}
+<dl class="words taken">
+  {% if card.assumed %}<dt>Curb assumed</dt><dd>{{ card.assumed | join(" ") }}</dd>{% endif %}
+  {% if card.not_checked %}<dt>Curb did not check</dt><dd>{{ card.not_checked | join(" ") }}</dd>{% endif %}
+</dl>
+{% endif %}
+{%- endmacro %}
+
+{# The first check has not come back: say so, and show the shape of what is coming. #}
+{% macro checking(what="Checking what your agents can reach…") -%}
+<div class="tab-stack" aria-busy="true">
+  <div class="curb-head"><div class="say">
+    <p class="what headline"><span class="spin" aria-hidden="true"></span> {{ what }}</p>
+    <p class="from">Curb is reading each agent's settings, and looking for credentials on this machine.
+      It takes a few seconds, and this page updates when it is done.</p>
+  </div></div>
+  <div class="curb-cols">
+    {% for n in range(2) %}
+    <div class="card card-pad"><span class="skel" style="width:40%"></span><span class="skel" style="width:90%"></span><span class="skel" style="width:70%"></span></div>
+    {% endfor %}
+  </div>
+</div>
+{%- endmacro %}
+
+{% macro failed(error) -%}
+<div class="notice bad" role="alert">
+  <p><b>Curb could not check this machine.</b> {{ error }}.
+    The terminal that runs <span class="mono">flanner web</span> has the details.</p>
+  <p>{{ again("Check again") }}</p>
+</div>
+{%- endmacro %}
+
+{# The review before a change: what will change, what to expect, how to undo it. #}
+{% macro review_box(name, title, action, fields={}, go="", shield=true, wide=true) -%}
+{% if review == name %}
+<dialog class="help-dialog{{ ' wide' if wide }}" data-curb-dialog open aria-labelledby="curb-review-title">
+  <h2 id="curb-review-title">{{ title }}</h2>
+  {{ caller() }}
+  <form method="post" action="{{ action }}" class="form-actions"{% if shield %} data-curb-ask="Waiting for {{ asker }}…"{% endif %}>
+    {% for key, value in fields.items() %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
+    <a class="btn" href="{{ here }}" data-curb-close>Cancel</a>
+    <button type="submit" class="btn btn-primary">{% if shield %}{{ ico.icon('shield', 14) }} {% endif %}{{ go or "Ask " ~ asker }}</button>
+  </form>
+</dialog>
+{% endif %}
+{%- endmacro %}

@@ -1,0 +1,58 @@
+{% extends "curb_base.html" %}
+
+{# Team › Alerts: each change that widened what an agent can reach, and where to act on it. #}
+{% block part %}
+{% if not joined %}
+  {% call empty.state("team", "Hear when an agent can suddenly reach more") %}
+    <p>On a device that has joined a team, Curb checks at each session start and tells you, and
+      your organization, when something widens. This machine has not joined a team.</p>
+    <a class="btn btn-primary" href="/mesh">Join a team</a>
+  {% endcall %}
+{% else %}
+<div class="tab-stack">
+  {% call k.head("Curb tells you when an agent can suddenly reach more.",
+                 "Checked at each session start, and at each check-in. You get a desktop notification, and your organization hears through its own channel.") %}{% endcall %}
+
+  {% if table.of %}
+  <div class="card">
+    <div class="card-head">Alerts {{ k.tally() }}
+      <span class="note">last 30 days</span>
+      {% call k.tools("Search alerts") %}
+        <select class="btn btn-sm" name="risk" aria-label="Risk" data-auto-submit>
+          {{ k.option("", "Every risk", risk) }}{{ k.option("High", "High", risk) }}{{ k.option("Medium", "Medium", risk) }}
+        </select>
+      {% endcall %}</div>
+    <div class="tablewrap">
+      <div class="grid-head cols-k-alerts"><span>When</span><span>What changed</span><span>Risk</span><span>Who was told</span><span></span></div>
+      {% for row in table.rows %}
+      <div class="grid-row cols-k-alerts">
+        <span class="when">{{ ago(row.at) | capitalize }}</span>
+        <span><span class="name">{{ row.what }}</span><span class="sub">{{ row.who }}</span></span>
+        <span data-cell="chip">{{ k.risk(row.level, row.tone) }}</span>
+        <span data-cell="meta">{{ row.told }}</span>
+        <span><a class="jump" href="/curb/{{ row.part }}">{{ row.go }}</a></span>
+      </div>
+      {% endfor %}
+      {{ k.foot("No alert matches that search.") }}
+    </div>
+  </div>
+  {% else %}
+  {% call empty.state("clear", "No alerts yet") %}
+    <p>Curb is watching. When an agent can suddenly reach more, the change shows here and you
+      get a desktop notification.</p>
+  {% endcall %}
+  {% endif %}
+
+  {% call k.explain("What raises an alert", "Four kinds of change, and nothing else.") %}
+    <ul>
+      <li>An MCP server is added.</li>
+      <li>A “do not read” rule is removed, or a sandbox is turned off.</li>
+      <li>A new secret is sent to a model provider.</li>
+      <li>An organization policy, or one of its key lists, is refused.</li>
+    </ul>
+    <p>You get one alert for each change, and one for each secret. An alert says what kind of
+      thing changed, never its name.</p>
+  {% endcall %}
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,116 @@
+{% extends "curb_base.html" %}
+
+{# Projects › Commits: each agent's signing key, and which key signed each commit. #}
+{% block scope %}{{ k.picker(project) }}{% endblock %}
+
+{% block part %}
+<div class="tab-stack">
+  {% call k.head("See which commits an agent signed, and with which key.",
+                 "Read from git in each project. A signature shows which key signed, not who wrote the code.") %}
+    {% if unsigned %}{{ k.act("Set up signing for " ~ unsigned | join(" and "), "signing", "btn-primary") }}{% endif %}
+  {% endcall %}
+
+  {% if keys %}
+  <div class="card">
+    <div class="card-head">Signing keys <span class="scope-chip">{{ ico.icon('devices', 12) }} This machine</span>
+      <span class="note">kept in your operating system's credential store</span></div>
+    <div class="grid-head cols-k-keys"><span>Agent</span><span>Key</span><span>Known to</span><span>Replace by</span><span></span></div>
+    {% for row in keys %}
+    <div class="grid-row cols-k-keys"><span class="name">{{ row.label }}</span>
+      {% if row.fingerprint %}
+      <span class="path" data-cell="meta">{{ row.fingerprint }}</span>
+      <span data-cell="meta">{{ row.known }}</span>
+      <span class="when" data-cell="meta"><span class="m-only">Replace by </span>{{ day(row.replace_by) }}
+        {% if row.due %}<span class="pill pill-aging">Due</span>{% endif %}</span>
+      <span>{{ k.act("Replace", "replace", "btn-sm", "&key=" ~ row.agent) }}</span>
+      {% else %}
+      <span data-cell="meta">{{ k.st("quiet", "No key yet") }}</span><span></span><span></span><span></span>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if not projects %}
+  {% call empty.state("project", "No projects yet") %}
+    <p>Curb reads the commits of the projects on your Projects page. Add one there first.</p>
+    <a class="btn btn-primary" href="/projects/new">New project</a>
+  {% endcall %}
+  {% else %}
+  <div class="card">
+    <div class="card-head">Commits {{ k.tally() }}
+      {% call k.tools("Search commits", {"project": project}) %}
+        <select class="btn btn-sm" name="state" aria-label="Signature" data-auto-submit>
+          {{ k.option("", "Every signature", state) }}{{ k.option("signed", "Signed by an agent", state) }}
+          {{ k.option("untrusted", "Not trusted", state) }}{{ k.option("unknown", "Cannot tell", state) }}
+          {{ k.option("none", "Not signed by an agent", state) }}
+        </select>
+        <input class="input input-sm mono revision" name="revision" value="{{ revision }}" placeholder="main..HEAD"
+               aria-label="Commit or range" {% if view.error %}aria-invalid="true" aria-describedby="revision-error"{% endif %}
+               autocomplete="off" spellcheck="false">
+        <button class="btn btn-sm" type="submit">Show</button>
+      {% endcall %}</div>
+    {% if view.error %}
+    <p class="card-note bad" id="revision-error" role="alert">{{ view.error }}</p>
+    {% elif not revision %}
+    <p class="card-note">The newest 15 commits of {{ "this project" if one else "each project" }}. Enter a commit or a range, such as
+      <span class="mono">main..HEAD</span>, to see others.</p>
+    {% endif %}
+    {% for line in view.problems %}<p class="card-note bad" role="alert">{{ line }}</p>{% endfor %}
+    <div class="tablewrap">
+      <div class="grid-head cols-k-commits{{ ' is-one' if one }}"><span>Commit</span><span>Subject</span>{% if not one %}<span>Project</span>{% endif %}<span>Signed by</span></div>
+      {% for row in table.rows %}
+      <div class="grid-row cols-k-commits{{ ' is-one' if one }}">
+        <span class="path">{{ row.sha }}</span>
+        <span class="name">{{ row.subject }}</span>
+        {% if not one %}<span data-cell="meta">{{ row.project }}</span>{% endif %}
+        <span data-cell="meta"><span class="pill pill-{{ row.tone }}">{{ row.label }}</span><span class="sub">{{ row.who }}</span></span>
+      </div>
+      {% endfor %}
+      {{ k.foot("No commit matches that.") }}
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="card card-pad">
+    {{ k.terminal("Add the keys to GitHub, so it shows the commits as verified",
+                  "It runs your own gh command, with your GitHub login.",
+                  "flanner curb attribution --setup --github") }}
+    {{ k.terminal("Fetch your organization's newest key list",
+                  "The web UI never contacts your organization. The terminal does, and this page then uses the list it saved.",
+                  "flanner curb verify main..HEAD") }}
+  </div>
+
+  {% call k.explain("What a signature tells you", "Which key signed a commit. Not who wrote the code.") %}
+    <p>Each agent gets its own signing key, so its commits can be told apart from yours. You,
+      or anything running as you, can still sign inside an agent's session.</p>
+    <dl class="words">
+      <dt>Agent key</dt><dd>The commit was signed by a key your organization lists for an agent.</dd>
+      <dt>Not trusted</dt><dd>The key was revoked. This holds even offline.</dd>
+      <dt>Cannot tell</dt><dd>The commit is signed, but this machine has no fresh key list.</dd>
+    </dl>
+    {{ k.cmd("flanner curb verify main..HEAD") }}
+  {% endcall %}
+</div>
+{% endblock %}
+
+{% block reviews %}
+{% call k.review_box("signing", "Set up commit signing?", "/curb/projects/commits/signing") %}
+  <p>Curb gives each agent a signing key of its own, kept in your operating system's credential store.</p>
+  <ul>
+    <li>Each agent's settings change, so git signs its commits with that key.</li>
+    <li>Curb's logging hooks are added too: a key signs only inside a session they recorded.</li>
+    <li>Your own commits are not changed.</li>
+  </ul>
+  <p class="hint">Curb backs up each settings file for 7 days. Undo is under Fixes.</p>
+{% endcall %}
+{% set who = {"claude": "Claude Code", "codex": "Codex"}.get(key, "this agent") %}
+{% call k.review_box("replace", "Replace the " ~ who ~ " key?", "/curb/projects/commits/signing", {"replace": key}) %}
+  <ul>
+    <li>{{ who }} gets a new signing key.</li>
+    <li>The old key can sign nothing new. The commits it signed stay valid.</li>
+    <li>Your organization hears about the new key at this device's next check-in.</li>
+  </ul>
+  <p class="hint">This cannot be undone: the old key is deleted.</p>
+{% endcall %}
+{% endblock %}

@@ -1876,3 +1876,126 @@ onPage(function () {
     });
 });
 
+// --- Curb -------------------------------------------------------------------
+//
+// The Curb pages work with this off: a review is a link to the same page with
+// the review open, a check is a link, and a running scan reloads the page.
+// These add what a script can: the review opens over the page, a waiting
+// button says so, the names' countdown ticks, and progress redraws in place.
+
+// A review opens over the page it belongs to. The server draws it; this
+// fetches the page the link names and lifts the review out of it.
+once('curb-review', function () {
+    document.addEventListener('click', async function (event) {
+        const link = event.target.closest('a[data-curb-review]');
+        if (!link || event.defaultPrevented || event.button !== 0) return;
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        event.preventDefault();
+        link.classList.add('is-busy');
+        try {
+            const res = await fetch(link.href, { credentials: 'same-origin' });
+            const next = new DOMParser().parseFromString(await res.text(), 'text/html');
+            const dialog = next.querySelector('dialog[data-curb-dialog]');
+            const main = document.getElementById('main');
+            if (!res.ok || !dialog || !main) { location.href = link.href; return; }
+            document.querySelectorAll('dialog[data-curb-dialog]').forEach(function (old) { old.remove(); });
+            dialog.removeAttribute('open');
+            main.appendChild(dialog);
+            dialog.showModal();
+        } catch (e) {
+            location.href = link.href;
+        } finally {
+            link.classList.remove('is-busy');
+        }
+    });
+
+    // Cancel is a link back to the page. Over the page, it only has to close.
+    document.addEventListener('click', function (event) {
+        const cancel = event.target.closest('[data-curb-close]');
+        const dialog = cancel && cancel.closest('dialog');
+        if (!dialog || !dialog.matches(':modal') || dialog.dataset.curbLoaded !== undefined) return;
+        event.preventDefault();
+        dialog.close();
+        dialog.remove();
+    });
+
+    // The operating system is asking: the button says so until the answer.
+    document.addEventListener('submit', function (event) {
+        const form = event.target;
+        if (!(form instanceof HTMLFormElement) || form.dataset.curbAsk === undefined) return;
+        if (event.defaultPrevented) return;
+        const button = event.submitter || form.querySelector('button[type="submit"]');
+        if (button) setTimeout(function () { button.textContent = form.dataset.curbAsk; }, 0);
+    });
+
+    // A check that only reads runs at once: the button shows it is working.
+    document.addEventListener('click', function (event) {
+        const link = event.target.closest('a[data-curb-busy]');
+        if (link && !event.defaultPrevented && event.button === 0) link.classList.add('is-busy');
+    });
+
+    // "/" goes to the search box of the table on the page.
+    document.addEventListener('keydown', function (event) {
+        if (event.key !== '/' || event.ctrlKey || event.metaKey || event.altKey) return;
+        if (/^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName) || event.target.isContentEditable) return;
+        const box = document.querySelector('.curb .tools input[type="search"]');
+        if (!box) return;
+        event.preventDefault();
+        box.focus();
+    });
+});
+
+onPage(function () {
+    // The page was loaded with a review already open: put it over the page.
+    // Its Cancel stays a link, since the address still names the review.
+    const open = document.querySelector('dialog[data-curb-dialog][open]');
+    if (open && !open.matches(':modal')) {
+        open.removeAttribute('open');
+        open.dataset.curbLoaded = '';
+        open.showModal();
+    }
+
+    // How long names stay on the page. At zero the server has already stopped
+    // sending them, so the page is drawn again without them.
+    const left = document.querySelector('[data-curb-left]');
+    if (left) {
+        const end = Date.now() + Number(left.dataset.curbLeft) * 1000;
+        const timer = setInterval(function () {
+            if (!document.body.contains(left)) { clearInterval(timer); return; }
+            const seconds = Math.max(0, Math.round((end - Date.now()) / 1000));
+            left.textContent = Math.floor(seconds / 60) + ':' + String(seconds % 60).padStart(2, '0');
+            if (seconds <= 0) { clearInterval(timer); location.reload(); }
+        }, 1000);
+    }
+
+    // A check, a scan or a test run is still going. Ask again shortly, and
+    // redraw when it has moved. Nothing is redrawn under an open review, or
+    // under somebody typing.
+    const waiting = document.querySelector('[data-curb-wait]');
+    if (!waiting) return;
+    const url = location.href;
+    const mark = waiting.dataset.curbWait;
+    async function ask() {
+        if (location.href !== url || !document.body.contains(waiting)) return;
+        const typing = document.activeElement && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
+        if (document.querySelector('dialog[open]') || typing) { setTimeout(ask, 2000); return; }
+        let next;
+        try {
+            const res = await fetch(url, { credentials: 'same-origin' });
+            next = new DOMParser().parseFromString(await res.text(), 'text/html');
+        } catch (e) { setTimeout(ask, 4000); return; }
+        if (location.href !== url || !document.body.contains(waiting)) return;
+        const now = next.querySelector('[data-curb-wait]');
+        if (now && now.dataset.curbWait === mark) { setTimeout(ask, 2000); return; }
+        // The whole shell, as a click on a link swaps it, so every part of
+        // the page is wired once. Unlike a click, the scroll position holds.
+        const shell = document.querySelector('.shell');
+        const fresh = next.querySelector('.shell');
+        if (!shell || !fresh) { location.reload(); return; }
+        const top = window.scrollY;
+        shell.replaceWith(fresh);
+        document.dispatchEvent(new CustomEvent('flanner:page'));
+        window.scrollTo(0, top);
+    }
+    setTimeout(ask, 2000);
+});

@@ -391,8 +391,11 @@ _FIXES = (
 )
 
 
-def fix(path: Path) -> list[str]:
-    """Make the one-line fixes that are safe without a person, if the file still parses."""
+def fix(path: Path, *, write: bool = True) -> list[str]:
+    """Make the one-line fixes that are safe without a person, if the file still parses.
+
+    With `write` off, only says what it would do.
+    """
     original = path.read_text(encoding="utf-8")
     text, done = original, []
     for pattern, replacement, said in _FIXES:
@@ -405,5 +408,6 @@ def fix(path: Path) -> list[str]:
         yaml.load(text, Loader=_Lines)  # noqa: S506 - SafeLoader subclass
     except yaml.YAMLError:
         return []
-    path.write_text(text, encoding="utf-8")
+    if write:
+        path.write_text(text, encoding="utf-8")
     return done

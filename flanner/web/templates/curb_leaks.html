@@ -1,0 +1,157 @@
+{% extends "curb_base.html" %}
+
+{# This machine › Leaks: secrets found, by exposure; scanning; removing one from its file. #}
+{% block part %}
+<div class="tab-stack">
+  {% set src = ("Scanned " ~ "{:,}".format(view.files) ~ " files " ~ ago(view.at) ~ ": "
+                ~ "{:,}".format(view.secrets) ~ (" secret" if view.secrets == 1 else " secrets") ~ ", in "
+                ~ "{:,}".format(view.rows | length) ~ (" place" if view.rows | length == 1 else " places")
+                ~ ". Curb never shows the value of a secret.")
+               if view.scanned else ("The first scan is running. Nothing leaves this machine." if job.running
+               else "No scan has run yet. Nothing leaves this machine.") %}
+  {% call k.head("Secrets found in files your agents wrote, or can read.", src) %}
+    {# With no scan yet, the one main button is in the empty state below. #}
+    {% if view.scanned and not job.running and not missing %}
+    {{ k.act("Check which still work…", "validate", "", "", false) }}
+    <form method="post" action="/curb/machine/leaks/scan">
+      <button type="submit" class="btn btn-primary">{{ ico.icon('refresh', 14) }} Scan again</button>
+    </form>
+    {% endif %}
+  {% endcall %}
+
+  {% if missing %}
+  <div class="notice bad" role="alert">
+    <p><b>The leak scan cannot run.</b> It needs a scanner called Kingfisher, which is not installed.</p>
+    <p>Install it in a terminal, then open this page again:</p>
+    {{ k.cmd("pip install 'flanner[sweep]'") }}
+  </div>
+  {% endif %}
+
+  {% if job.running %}
+  <div class="card card-pad" role="status" data-curb-progress>
+    <p class="card-lede"><span class="spin" aria-hidden="true"></span>
+      {% if job.total %}Scanning: <b class="tnum">{{ "{:,}".format(job.done) }}</b> of <span class="tnum">{{ "{:,}".format(job.total) }}</span> files read.
+      {% else %}Finding the files to read…{% endif %}</p>
+    <progress class="curb-progress" {% if job.total %}value="{{ job.done }}" max="{{ job.total }}"{% endif %}
+              aria-label="Scan progress"></progress>
+    <p class="hint">Nothing leaves this machine. You can leave this page: the scan carries on.</p>
+  </div>
+  {% elif job.state == "failed" %}
+  <div class="notice bad" role="alert"><p><b>The scan stopped.</b> {{ job.error }}.
+    The terminal that runs <span class="mono">flanner web</span> has the details.</p>
+    <p>Nothing was changed. Scan again to retry.</p></div>
+  {% endif %}
+
+  {% if not view.scanned and not job.running %}
+  {% call empty.state("search", "No scan yet") %}
+    <p>A scan reads agent transcripts, your shell history and project .env files, and lists
+      the secrets it finds. It takes a few minutes, and nothing leaves this machine.</p>
+    {% if not missing %}
+    <form method="post" action="/curb/machine/leaks/scan">
+      <button type="submit" class="btn btn-primary">{{ ico.icon('refresh', 14) }} Scan now</button>
+    </form>
+    {% endif %}
+  {% endcall %}
+  {% endif %}
+
+  {% if view.scanned %}
+  <div class="stat-grid">
+    {% for stat in view.stats %}
+    <a class="stat" href="{{ path }}{% if exposure != stat.key %}?exposure={{ stat.key }}{% endif %}"
+       {% if exposure == stat.key %}aria-current="true"{% endif %}>
+      <span class="v tnum"><span class="dot" style="background:var(--{{ stat.colour }})"></span>{{ "{:,}".format(stat.value) }}</span>
+      <span class="k">{{ stat.text | safe }}</span>
+      <span class="show">{{ "Showing" if exposure == stat.key else "Show" }}</span></a>
+    {% endfor %}
+  </div>
+
+  {% if view.no_agent %}
+  <div class="notice info" role="status">No supported agent was found, so nothing counts as readable by one.</div>
+  {% endif %}
+
+  <div class="card" id="leaks">
+    <div class="card-head">Places found {{ k.tally() }}
+      {% call k.tools("Search secrets") %}
+        <select class="btn btn-sm" name="exposure" aria-label="Exposure" data-auto-submit>
+          {{ k.option("", "Every exposure", exposure) }}{{ k.option("sent", "Sent", exposure) }}
+          {{ k.option("readable", "Readable", exposure) }}{{ k.option("blocked", "Blocked", exposure) }}
+        </select>
+      {% endcall %}</div>
+    {% if not view.live %}
+    <p class="card-note">Curb never stores where a secret is, so the places went when flanner restarted.
+      Scan again to see them, and to remove a secret from its file.</p>
+    {% elif not shown %}
+    <p class="card-note">Where each secret is stays hidden.
+      {{ k.ask_names() }} to see the file and line, and to remove a secret from its file.</p>
+    {% endif %}
+    <div class="tablewrap">
+      <div class="grid-head cols-k-leaks"><span>Secret</span><span>Exposure</span><span>Project</span><span>Still works?</span><span></span></div>
+      {% for row in table.rows %}
+      <div class="grid-row cols-k-leaks">
+        <span><span class="name">{{ row.type }}</span>
+          <span class="sub">In: {{ row.category }}{% if row.where %}<span class="val mono"> · {{ row.where }}</span>{% endif %}</span></span>
+        <span data-cell="meta"><span class="st st-closed"><i class="d" style="background:var(--{{ row.colour }})"></i> {{ row.exposure_label }}</span></span>
+        <span data-cell="meta">{% if view.live %}{{ k.slot(row.project) }}{% endif %}</span>
+        <span data-cell="meta">{{ k.st(row.works_kind, row.works) }}</span>
+        <span>{% if row.removable and shown %}{{ k.act("Remove from file…", "remove", "btn-sm btn-quiet", "&file=" ~ row.file) }}{% endif %}</span>
+      </div>
+      {% endfor %}
+      {{ k.foot("No secret matches that search.") }}
+    </div>
+  </div>
+
+  {% if view.not_checked %}
+  <div class="footnote"><span class="i" aria-hidden="true">i</span>
+    Not checked: {{ view.not_checked | join(" ") }}</div>
+  {% endif %}
+  {% endif %}
+
+  {% call k.explain("What to do with a leaked secret", "Rotate it first. Then remove it from the file.") %}
+    <p><b>Rotate it.</b> Make a new one at the service that issued it, and switch the old one off.
+      A secret that was sent to a model provider has left this machine, so removing the file does not help.</p>
+    <p><b>Then remove it from the file.</b> Curb replaces the secret with a placeholder of the same
+      length. There is no backup and no undo, because a backup would be another copy of the secret.</p>
+    <p><b>Check which still work</b> sends each secret to its own issuer, and nowhere else. It asks you first.</p>
+    <dl class="words">
+      <dt>Sent</dt><dd>It is in an agent's transcript, so the model provider received it.</dd>
+      <dt>Readable</dt><dd>It is in a file an agent can read, but no agent has sent it.</dd>
+      <dt>Blocked</dt><dd>It is on disk, and a setting stops every agent reading it.</dd>
+    </dl>
+    <p>The same scan, in a terminal:</p>
+    {{ k.cmd("flanner curb sweep") }}
+  {% endcall %}
+</div>
+{% endblock %}
+
+{% block reviews %}
+{% call k.review_box("validate", "Check which secrets still work?", "/curb/machine/leaks/scan", {"check": "1"}, "Scan and check", false) %}
+  <p>Curb scans again. Then it sends each secret it finds to the service that issued it, to ask
+    whether it still works.</p>
+  <ul>
+    <li>Each secret goes to its own issuer, and nowhere else.</li>
+    <li>The issuer may log the check.</li>
+    <li>Nothing on this machine changes.</li>
+  </ul>
+{% endcall %}
+
+{% if review == "remove" %}
+  {% if removal is defined and removal.secrets is defined %}
+  {% call k.review_box("remove", "Remove " ~ removal.secrets ~ (" secret" if removal.secrets == 1 else " secrets") ~ " from this file?",
+                       "/curb/machine/leaks/remove", {"file": removal_file}) %}
+    <p class="mono path-full">{{ removal.path }}</p>
+    <ul>
+      <li>{{ removal.secrets }} {{ "secret becomes a placeholder" if removal.secrets == 1 else "secrets become placeholders" }} of the same length, on {{ removal.lines }} {{ "line" if removal.lines == 1 else "lines" }}.</li>
+      <li>Every changed line must still parse, or the file is left as it was.</li>
+    </ul>
+    <p><b>Rotate first.</b> Removing a secret hides it here. It cannot unsend it.</p>
+    <p class="hint">There is no backup and no undo: a backup would be another copy of the secret.</p>
+  {% endcall %}
+  {% else %}
+  <dialog class="help-dialog" data-curb-dialog open aria-labelledby="curb-review-title">
+    <h2 id="curb-review-title">Curb cannot remove that</h2>
+    <p>{{ removal.said if removal is defined else "Show names and locations first, so you can see which file this is." }}</p>
+    <div class="form-actions"><a class="btn" href="{{ here }}" data-curb-close>Close</a></div>
+  </dialog>
+  {% endif %}
+{% endif %}
+{% endblock %}

@@ -385,8 +385,6 @@ ALLOWED = {
         "identity",
     },
     "curb_signer": {"curb_attribution", "curb_log", "curb_sshsig"},
-    # Which browser may see names in the web UI, and for how long.
-    "curb_reveal": {"curb_approval"},
     # What Curb's two surfaces share. The team pass is handed its client, so
     # this never reaches `account`.
     "curb_ops": {
@@ -403,6 +401,49 @@ ALLOWED = {
         "curb_store",
         "curb_sweep",
         "curb_team",
+    },
+    # The web UI's Curb section: which browser may see names, what the
+    # process holds in memory, what each page shows and what each button does.
+    "curb_reveal": {"curb_approval"},
+    "curb_live": set(),
+    "curb_page": {
+        "agent_paths",
+        "curb_app",
+        "curb_attribution",
+        "curb_ci",
+        "curb_context",
+        "curb_fix",
+        "curb_inventory",
+        "curb_log",
+        "curb_observe",
+        "curb_policy",
+        "curb_reach",
+        "curb_report",
+        "curb_severity",
+        "curb_store",
+        "curb_sweep",
+        "curb_tester",
+    },
+    "curb_do": {
+        "agent_paths",
+        "curb_approval",
+        "curb_attribution",
+        "curb_ci",
+        "curb_context",
+        "curb_fix",
+        "curb_kingfisher",
+        "curb_live",
+        "curb_observe",
+        "curb_ops",
+        "curb_page",
+        "curb_policy",
+        "curb_reach",
+        "curb_reveal",
+        "curb_scrub",
+        "curb_store",
+        "curb_sweep",
+        "curb_tester",
+        "curb_tighten",
     },
     # The list of every operation and the surfaces that offer it. Data only,
     # imported by the tests that check it against the CLI, web app and MCP
@@ -443,15 +484,26 @@ ALLOWED = {
     "web": FOUNDATION
     | {
         "crash",
-        # The Agent reach page: the same redacted reports `curb map` prints,
-        # the window launcher, and fixes behind the operating system's yes.
+        # The Curb section (Curb PRD §11.3): `curb_page` says what each page
+        # shows, `curb_do` what each button does, `curb_live` what is held
+        # between requests, and `curb_reveal` which browser may see names.
+        # `account` stays out: what needs the control plane is shown as a
+        # terminal command, and the reachability test below holds web to it.
+        "curb_alerts",
+        "curb_app",
         "curb_approval",
-        "curb_fix",
-        "curb_kingfisher",
-        "curb_reach",
+        "curb_attribution",
+        "curb_ci",
+        "curb_do",
+        "curb_live",
+        "curb_log",
+        "curb_observe",
+        "curb_page",
+        "curb_policy",
         "curb_report",
+        "curb_reveal",
+        "curb_sarif",
         "curb_store",
-        "curb_window",
         "database",
         "paging",
         "actions",
@@ -736,8 +788,11 @@ def test_no_read_path_can_reach_the_network():
         "curb_app",
         "curb_signer",
         "curb_attribution",
-        # What both surfaces share: the team pass is handed its client.
+        # The web UI and what it is built from: no page reaches the control plane.
         "curb_ops",
+        "curb_page",
+        "curb_do",
+        "web",
     ):
         assert "account" not in closure(module), (
             f"{module} can reach the network through account; "
