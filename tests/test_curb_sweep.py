@@ -112,6 +112,26 @@ def test_every_kind_of_artifact_is_read_once(box):
     assert all(a.transcript == (a.category in sent) for a in found)
 
 
+def test_more_project_folders_are_swept_in_one_pass_with_progress(box, tmp_path):
+    other = tmp_path / "other-project"
+    write(box.project / ".env", f"A={token(1)}\n")
+    write(other / ".env", f"B={token(2)}\n")
+    steps = []
+    report = curb_sweep.run(
+        box.project,
+        detect,
+        [],
+        home=box.home,
+        env={},
+        platform="linux",
+        key=b"k" * 32,
+        also=[other],
+        progress=lambda done, total: steps.append((done, total)),
+    )
+    assert {f.artifact.path.parent for f in report.findings} == {box.project, other}
+    assert steps == [(n, report.scanned) for n in range(1, report.scanned + 1)]
+
+
 def test_powershell_history_is_read_where_windows_keeps_it(box):
     roaming = box.home / "AppData" / "Roaming"
     history = roaming / "Microsoft" / "Windows" / "PowerShell" / "PSReadLine"

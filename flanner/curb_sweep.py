@@ -94,8 +94,19 @@ class SweepReport:
 # --- where to look ----------------------------------------------------------------
 
 
-def artifacts(cwd: Path, *, home: Path, env: Mapping[str, str], platform: str) -> list[Artifact]:
-    """Every file the sweep reads, each once, with its category."""
+def artifacts(
+    cwd: Path,
+    *,
+    home: Path,
+    env: Mapping[str, str],
+    platform: str,
+    also: Sequence[Path] = (),
+) -> list[Artifact]:
+    """Every file the sweep reads, each once, with its category.
+
+    `also` names more project folders to read beside `cwd`: the web UI
+    sweeps every project flanner knows in one pass.
+    """
     claude = agent_paths.claude_config_dir()
     codex = agent_paths.codex_home()
     found: dict[str, Artifact] = {}
@@ -111,24 +122,25 @@ def artifacts(cwd: Path, *, home: Path, env: Mapping[str, str], platform: str) -
     add(_tree(codex / "archived_sessions", "*.jsonl"), "Codex session", transcript=True)
     add([codex / "history.jsonl"], "Codex prompt history", transcript=True)
     instructions = ("CLAUDE.md", "CLAUDE.local.md", ".claude/CLAUDE.md")
-    add([claude / "CLAUDE.md", *(cwd / name for name in instructions)], "CLAUDE.md")
-    add([codex / "AGENTS.md", cwd / "AGENTS.md"], "AGENTS.md")
-    add(_skill_files(cwd), "skill")
-    add([agent_paths.claude_user_config(), cwd / ".mcp.json"], "MCP config")
-    add(
-        [
-            claude / "settings.json",
-            cwd / ".claude" / "settings.json",
-            cwd / ".claude" / "settings.local.json",
-        ],
-        "Claude Code settings",
-    )
+    add([claude / "CLAUDE.md"], "CLAUDE.md")
+    add([codex / "AGENTS.md"], "AGENTS.md")
+    add([agent_paths.claude_user_config()], "MCP config")
+    add([claude / "settings.json"], "Claude Code settings")
     add([codex / "config.toml"], "Codex config")
     add(_histories(home, env, platform), "shell history")
-    add(dotenv_files(cwd), "project .env")
-    add(_tree(cwd / ".plans", "*.md"), "flanner plan")
     add(_tree(identity.flanner_home() / "memory" / "personal", "*.md"), "flanner memory")
-    add(_tree(cwd / ".flanner" / "memory", "*.md"), "flanner memory")
+    for project in (cwd, *also):
+        add([project / name for name in instructions], "CLAUDE.md")
+        add([project / "AGENTS.md"], "AGENTS.md")
+        add(_skill_files(project), "skill")
+        add([project / ".mcp.json"], "MCP config")
+        add(
+            [project / ".claude" / "settings.json", project / ".claude" / "settings.local.json"],
+            "Claude Code settings",
+        )
+        add(dotenv_files(project), "project .env")
+        add(_tree(project / ".plans", "*.md"), "flanner plan")
+        add(_tree(project / ".flanner" / "memory", "*.md"), "flanner memory")
     return list(found.values())
 
 
@@ -198,12 +210,19 @@ def run(
     env: Mapping[str, str],
     platform: str,
     key: bytes,
+    also: Sequence[Path] = (),
+    progress: Callable[[int, int], None] | None = None,
 ) -> SweepReport:
-    """Read every artifact, find its secrets, and give each finding its class."""
-    found = artifacts(cwd, home=home, env=env, platform=platform)
+    """Read every artifact, find its secrets, and give each finding its class.
+
+    `progress` is told how many files are done, of how many, after each one.
+    """
+    found = artifacts(cwd, home=home, env=env, platform=platform, also=also)
     findings: list[Finding] = []
     big = unreadable = 0
-    for artifact in found:
+    for number, artifact in enumerate(found, start=1):
+        if progress is not None:
+            progress(number, len(found))
         try:
             if artifact.path.stat().st_size > MAX_BYTES:
                 big += 1
