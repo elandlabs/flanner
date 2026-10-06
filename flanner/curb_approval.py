@@ -16,6 +16,11 @@ None of them can be answered by typing into the terminal that asked, which
 is the point: an agent can run `flanner curb fix`, but cannot say yes. Where
 no method exists, Curb stays read-only. Three refused or ignored approvals
 within ten minutes pause requests for an hour, and say so on the desktop.
+
+Each prompt is a program the operating system installs. It is run from
+that place, never found through PATH or the current directory, and with an
+environment of its own: an agent sets both, and a program it planted there
+would answer the prompt itself.
 """
 
 from __future__ import annotations
@@ -24,7 +29,6 @@ import ctypes
 import hashlib
 import json
 import os
-import shutil
 import subprocess
 import sys
 import time
@@ -69,16 +73,102 @@ class Presence(Protocol):
     def confirm(self, reason: str) -> bool: ...
 
 
+#: Where each prompt program lives. Fixed, so that nothing an agent controls
+#: decides which program answers.
+_PKCHECK = ("/usr/bin/pkcheck", "/usr/local/bin/pkcheck")
+_OSASCRIPT = ("/usr/bin/osascript",)
+
+#: What a prompt program gets of the caller's environment, and nothing else:
+#: enough to find the person's session and display, and none of the
+#: variables that change which code a program loads, such as LD_PRELOAD.
+_PASSED_ON = (
+    "HOME",
+    "USER",
+    "LOGNAME",
+    "LANG",
+    "LC_ALL",
+    "LC_MESSAGES",
+    "DISPLAY",
+    "WAYLAND_DISPLAY",
+    "XAUTHORITY",
+    "XDG_RUNTIME_DIR",
+    "XDG_SESSION_ID",
+    "DBUS_SESSION_BUS_ADDRESS",
+    "SystemRoot",
+    "SystemDrive",
+    "windir",
+    "TEMP",
+    "TMP",
+    "USERPROFILE",
+    "APPDATA",
+    "LOCALAPPDATA",
+    "HOMEDRIVE",
+    "HOMEPATH",
+    "USERNAME",
+    "PATHEXT",
+    "ComSpec",
+)
+
+
+def _system_directory() -> str:
+    """Windows' System32, asked of Windows itself and not of an environment variable."""
+    platform: str = sys.platform
+    if platform != "win32":
+        return ""
+    loader: Any = getattr(ctypes, "WinDLL", None)
+    kernel32 = loader("kernel32", use_last_error=True)
+    found = ctypes.create_unicode_buffer(260)
+    kernel32.GetSystemDirectoryW(found, 260)
+    return str(found.value)
+
+
+def _powershell() -> str:
+    """Windows PowerShell 5.1, which has the Windows Runtime projection PowerShell 7 lacks."""
+    return os.path.join(_system_directory(), "WindowsPowerShell", "v1.0", "powershell.exe")
+
+
+def _the_systems_own(path: str) -> bool:
+    """Whether only an administrator could have put the program there."""
+    platform: str = sys.platform
+    if platform == "win32":
+        return True  # System32 is written by administrators only
+    try:
+        found = os.stat(path)
+    except OSError:
+        return False
+    return found.st_uid == 0 and not found.st_mode & 0o022
+
+
+def _system_program(candidates: Sequence[str]) -> str | None:
+    """The first candidate that is at its fixed place and is the system's own."""
+    for path in candidates:
+        if os.path.isfile(path) and os.access(path, os.X_OK) and _the_systems_own(path):
+            return path
+    return None
+
+
+def _environment(extra: dict[str, str] | None = None) -> dict[str, str]:
+    """The environment a prompt program runs in: a fixed PATH and what is passed on."""
+    kept = {name: os.environ[name] for name in _PASSED_ON if name in os.environ}
+    platform: str = sys.platform
+    if platform == "win32":
+        system = _system_directory()
+        kept["PATH"] = os.pathsep.join([system, os.path.dirname(system)])
+    else:
+        kept["PATH"] = "/usr/bin:/bin"
+    return {**kept, **(extra or {})}
+
+
 def _run(
     argv: Sequence[str], env: dict[str, str] | None = None
 ) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(  # noqa: S603 - fixed argv; the reason travels in the environment
+    return subprocess.run(  # noqa: S603 - a fixed program at a fixed place; the reason travels in the environment
         list(argv),
         capture_output=True,
         text=True,
         timeout=PROMPT_SECONDS,
         check=False,
-        env={**os.environ, **(env or {})},
+        env=_environment(env),
     )
 
 
@@ -109,9 +199,8 @@ class WindowsHello:
     run: Callable[..., subprocess.CompletedProcess[str]] = field(default=_run, repr=False)
 
     def _ask(self, ask: bool, reason: str = "") -> str:
-        # Windows PowerShell 5.1: PowerShell 7 has no Windows Runtime projection.
         done = self.run(
-            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", _WINRT],
+            [_powershell(), "-NoProfile", "-NonInteractive", "-Command", _WINRT],
             {"FLANNER_CURB_ASK": "1" if ask else "0", "FLANNER_CURB_REASON": reason},
         )
         return done.stdout.strip().rsplit("\n", 1)[-1] if done.returncode == 0 else ""
@@ -164,9 +253,10 @@ class MacOwner:
     run: Callable[..., subprocess.CompletedProcess[str]] = field(default=_run, repr=False)
 
     def _ask(self, reason: str) -> str:
-        done = self.run(
-            ["osascript", "-l", "JavaScript", "-e", _MAC], {"FLANNER_CURB_REASON": reason}
-        )
+        program = _system_program(_OSASCRIPT)
+        if program is None:
+            return ""
+        done = self.run([program, "-l", "JavaScript", "-e", _MAC], {"FLANNER_CURB_REASON": reason})
         return done.stdout.strip() if done.returncode == 0 else ""
 
     def available(self) -> bool:
@@ -188,13 +278,20 @@ class LinuxPolkit:
 
     def available(self) -> bool:
         desktop = os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")
-        return sys.platform.startswith("linux") and bool(desktop) and bool(shutil.which("pkcheck"))
+        return (
+            sys.platform.startswith("linux")
+            and bool(desktop)
+            and _system_program(_PKCHECK) is not None
+        )
 
     def confirm(self, reason: str) -> bool:
+        program = _system_program(_PKCHECK)
+        if program is None:
+            return False
         # polkit shows its action's own text; the terminal named the change first.
         done = self.run(
             [
-                "pkcheck",
+                program,
                 "--action-id",
                 "org.freedesktop.policykit.exec",
                 "--process",
@@ -216,8 +313,9 @@ def methods() -> list[Presence]:
 
 
 def _dll(name: str) -> Any:  # pragma: no cover - Windows only
+    """A system library, from System32 by full path rather than by a name searched for."""
     loader: Any = getattr(ctypes, "WinDLL", None)
-    return loader(name, use_last_error=True)
+    return loader(os.path.join(_system_directory(), f"{name}.dll"), use_last_error=True)
 
 
 def method() -> Presence | None:

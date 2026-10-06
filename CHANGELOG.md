@@ -297,6 +297,14 @@ versioning follows [SemVer](https://semver.org/).
   the new version did not expect. It now refuses the write and says to
   restart it; nothing is saved.
 
+### Security
+- **Curb's approval prompt cannot be stood in for by an agent.** Each
+  prompt program (`pkcheck`, `osascript`, Windows PowerShell) was found by
+  name through PATH, so a shell that set PATH and `DISPLAY` and planted a
+  program by that name could have answered its own approval. Each is now
+  run from the place the operating system installs it, on POSIX only when
+  root owns it, and with an environment of Curb's own.
+
 ## [0.14.0] - 2026-09-18
 
 ### Added

@@ -149,11 +149,13 @@ def fake_run(stdout, seen=None, code=0):
 
 def test_windows_hello_passes_the_reason_in_the_environment(monkeypatch):
     monkeypatch.setattr(curb_approval.sys, "platform", "win32")
+    monkeypatch.setattr(curb_approval, "_system_directory", lambda: "C:\\Windows\\System32")
     seen = []
     hello = curb_approval.WindowsHello(run=fake_run("result:Verified\n", seen))
     assert hello.confirm("Add 3 deny rules")
     argv, env = seen[0]
-    assert argv[0] == "powershell.exe" and env["FLANNER_CURB_REASON"] == "Add 3 deny rules"
+    assert argv[0] == "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
+    assert env["FLANNER_CURB_REASON"] == "Add 3 deny rules"
     assert not curb_approval.WindowsHello(run=fake_run("result:Canceled\n")).confirm("x")
     assert not curb_approval.WindowsHello(
         run=fake_run("availability:DeviceNotPresent")
@@ -161,6 +163,7 @@ def test_windows_hello_passes_the_reason_in_the_environment(monkeypatch):
 
 
 def test_touch_id_and_polkit_read_their_answers(monkeypatch):
+    monkeypatch.setattr(curb_approval, "_system_program", lambda candidates: candidates[0])
     assert curb_approval.MacOwner(run=fake_run("verified\n")).confirm("x")
     assert not curb_approval.MacOwner(run=fake_run("denied\n")).confirm("x")
     assert curb_approval.LinuxPolkit(run=fake_run("", code=0)).confirm("x")
@@ -169,12 +172,53 @@ def test_touch_id_and_polkit_read_their_answers(monkeypatch):
 
 def test_polkit_needs_a_desktop_session(monkeypatch):
     monkeypatch.setattr(curb_approval.sys, "platform", "linux")
-    monkeypatch.setattr(curb_approval.shutil, "which", lambda name: "/usr/bin/pkcheck")
+    monkeypatch.setattr(curb_approval, "_system_program", lambda candidates: candidates[0])
     monkeypatch.delenv("DISPLAY", raising=False)
     monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
     assert not curb_approval.LinuxPolkit().available()
     monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-0")
     assert curb_approval.LinuxPolkit().available()
+
+
+def test_a_program_planted_on_path_is_not_the_prompt(tmp_path, monkeypatch):
+    """The adversary has a shell: it sets PATH, the current directory and DISPLAY."""
+    planted = tmp_path / "bin" / "pkcheck"
+    planted.parent.mkdir()
+    planted.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    planted.chmod(0o755)
+    monkeypatch.setenv("PATH", str(planted.parent))
+    monkeypatch.setenv("DISPLAY", ":0")
+    monkeypatch.chdir(planted.parent)
+    monkeypatch.setattr(curb_approval.sys, "platform", "linux")
+    monkeypatch.setattr(curb_approval, "_PKCHECK", (str(tmp_path / "system" / "pkcheck"),))
+    assert not curb_approval.LinuxPolkit().available()
+    assert not curb_approval.LinuxPolkit().confirm("x")
+    assert curb_approval.method() is None
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="file ownership is a POSIX idea")
+def test_a_prompt_program_must_be_the_systems_own(tmp_path, monkeypatch):
+    """A file the user could write, even at the right place, is not the system's prompt."""
+    mine = tmp_path / "pkcheck"
+    mine.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    mine.chmod(0o755)
+    monkeypatch.setattr(curb_approval.sys, "platform", "linux")
+    monkeypatch.setenv("DISPLAY", ":0")
+    monkeypatch.setattr(curb_approval, "_PKCHECK", (str(mine),))
+    assert curb_approval._system_program((str(mine),)) is None
+    assert not curb_approval.LinuxPolkit().available()
+
+
+def test_a_prompt_runs_with_an_environment_of_its_own(monkeypatch):
+    monkeypatch.setattr(curb_approval.sys, "platform", "linux")
+    monkeypatch.setenv("LD_PRELOAD", "/tmp/evil.so")
+    monkeypatch.setenv("PYTHONPATH", "/tmp/evil")
+    monkeypatch.setenv("PATH", "/tmp/evil:/usr/bin")
+    monkeypatch.setenv("DISPLAY", ":0")
+    env = curb_approval._environment({"FLANNER_CURB_REASON": "Add 3 deny rules"})
+    assert env["PATH"] == "/usr/bin:/bin" and env["DISPLAY"] == ":0"
+    assert env["FLANNER_CURB_REASON"] == "Add 3 deny rules"
+    assert "LD_PRELOAD" not in env and "PYTHONPATH" not in env
 
 
 @pytest.mark.skipif(

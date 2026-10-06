@@ -32,6 +32,16 @@ the shell it already has (Curb PRD §11.2).
   to outlive one process.
 - **No method, no writes.** Without a desktop session or an approval
   method, Curb stays read-only and prints the steps for a person to make.
+- **The prompt's program is the system's own.** Each prompt is a program
+  the operating system installs: `pkcheck`, `osascript`, Windows
+  PowerShell. Curb runs it from the place the system puts it, found
+  through Windows' own system directory or a fixed path, never through
+  PATH or the current directory, and on POSIX only when root owns it and
+  nobody else can write it. It runs with an environment of Curb's
+  choosing: the session and display variables, a fixed PATH, and none of
+  the variables that change which code a program loads. The adversary
+  has a shell, so it sets all of those; a program it planted on PATH with
+  `DISPLAY` set would otherwise have answered the prompt itself.
 
 ## Alternatives considered
 
@@ -54,3 +64,8 @@ the shell it already has (Curb PRD §11.2).
   with a stand-in.
 - Headless machines get guided steps only. Approval from another enrolled
   device is a Later item.
+- A test lab stands in for the prompt by installing its own `pkcheck` at
+  `/usr/bin`, root-owned, in a device image. That is what the fixed place
+  and the ownership check allow, and what checking a package signature
+  would not. The lab is not a check of this gate; the hand check on each
+  OS is.
