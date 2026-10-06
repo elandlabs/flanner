@@ -226,6 +226,16 @@ templates.env.filters["relative_time"] = format_relative_time
 templates.env.filters["basename"] = lambda p: Path(p).name
 
 
+def said(text: str) -> str:
+    """A phrase starting a cell: `capitalize` would lower-case the month in "on 2 October"."""
+    from . import curb_page  # imported when a page needs it, as the Curb pages do
+
+    return curb_page.said(text)
+
+
+templates.env.filters["said"] = said
+
+
 # Stamp static assets so the browser refetches when they change. The newest
 # mtime under static/ means an edit-then-restart busts the cache even within a
 # release (the version string alone would not, since it only moves on release).

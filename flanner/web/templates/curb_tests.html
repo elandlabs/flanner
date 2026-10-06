@@ -40,7 +40,7 @@
       <div class="grid-row cols-k-blocks">
         <span><span class="name">{{ row.name }}</span><span class="sub">{{ row.agent }}</span></span>
         <span data-cell="meta"><span class="pill pill-{{ row.tone }}">{{ row.result }}</span><span class="sub">{{ row.why }}</span></span>
-        <span class="when" data-cell="meta"><span class="m-only">Last run: </span>{{ ago(row.at) | capitalize if row.at else "Never" }}</span>
+        <span class="when" data-cell="meta"><span class="m-only">Last run: </span>{{ ago(row.at) | said if row.at else "Never" }}</span>
         {% if row.tries %}<details class="row-more"><summary>What the agent tried</summary>
           <ul>{% for line in row.tries %}<li>{{ line }}</li>{% endfor %}</ul></details>{% endif %}
       </div>

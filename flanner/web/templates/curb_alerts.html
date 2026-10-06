@@ -26,7 +26,7 @@
       <div class="grid-head cols-k-alerts"><span>When</span><span>What changed</span><span>Risk</span><span>Who was told</span><span></span></div>
       {% for row in table.rows %}
       <div class="grid-row cols-k-alerts">
-        <span class="when">{{ ago(row.at) | capitalize }}</span>
+        <span class="when">{{ ago(row.at) | said }}</span>
         <span><span class="name">{{ row.what }}</span><span class="sub">{{ row.who }}</span></span>
         <span data-cell="chip">{{ k.risk(row.level, row.tone) }}</span>
         <span data-cell="meta">{{ row.told }}</span>

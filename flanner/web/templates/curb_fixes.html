@@ -70,7 +70,7 @@
     <div class="grid-head cols-k-applied"><span>When</span><span>What changed</span><span>Undo until</span><span></span></div>
     {% for row in view.applied %}
     <div class="grid-row cols-k-applied">
-      <span class="when">{{ ago(row.at) | capitalize }}</span>
+      <span class="when">{{ ago(row.at) | said }}</span>
       <span><span class="name">{{ row.what }}</span><span class="sub">{{ row.files }} {{ "file" if row.files == 1 else "files" }} backed up</span></span>
       <span class="when" data-cell="meta"><span class="m-only">Undo until </span>{{ day(row.until) }}</span>
       <span>{{ k.act("Undo", "undo", "btn-sm", "&backup=" ~ row.id) }}</span>

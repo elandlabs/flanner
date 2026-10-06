@@ -28,6 +28,14 @@ def test_times_are_said_as_a_person_would():
     assert curb_page.when(now - 30 * 86400, now=now).startswith("on ")
 
 
+def test_a_week_old_time_keeps_its_month_name_when_it_starts_a_cell():
+    """The pages used Jinja's `capitalize`, which lower-cases the rest: "On 2 october"."""
+    stamp = time.mktime((2026, 10, 2, 12, 0, 0, 0, 0, -1))
+    assert curb_page.said(curb_page.when(stamp, now=stamp + 30 * 86400)) == "On 2 October"
+    assert curb_page.said("just now") == "Just now"
+    assert curb_page.said("") == ""
+
+
 def test_search_takes_every_word_and_only_what_a_row_shows():
     rows = [{"find": "github token claude code transcript"}, {"find": "aws key codex session"}]
     assert curb_page.search(rows, "claude token") == rows[:1]

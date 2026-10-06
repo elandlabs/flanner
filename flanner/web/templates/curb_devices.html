@@ -43,7 +43,7 @@
         <span data-cell="meta"><span class="pill pill-{{ row.tone }}">{{ row.policy }}</span></span>
         <span data-cell="meta">{% if row.worst %}{{ k.risk(row.worst, row.worst_tone) }}{% else %}{{ k.st("quiet", "Not known") }}{% endif %}</span>
         <span class="tnum" data-cell="meta">{{ "Not scanned" if row.leaked is none else row.leaked }}<span class="m-only"> leaked</span></span>
-        <span class="when" data-cell="meta">{{ ago(row.last) | capitalize if row.last else "Never" }}
+        <span class="when" data-cell="meta">{{ ago(row.last) | said if row.last else "Never" }}
           {% if row.quiet %}<span class="sub">Gone quiet</span>{% endif %}</span>
         <span data-cell="meta">{% if row.verified %}{{ k.st("on", "Verified") }}{% else %}<span class="pill pill-stale">Not verified</span>
           <span class="sub">{{ row.problems | join(" ") }}</span>{% endif %}</span>

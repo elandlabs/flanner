@@ -83,6 +83,15 @@ def count(number: int, noun: str, plural: str | None = None) -> str:
     return f"{number:,} {noun if number == 1 else plural or noun + 's'}"
 
 
+def said(text: str) -> str:
+    """A phrase starting a cell or a line: its first letter upper-cased, the rest as it is.
+
+    Not Jinja's `capitalize`, which lower-cases the rest and turns the
+    month in "on 2 October" into "october".
+    """
+    return text[:1].upper() + text[1:]
+
+
 def sentence(text: str) -> str:
     """Curb's terminal phrasing as a sentence: capital, full stop, real plurals."""
     said = _PLURAL.sub(lambda m: f"{m[1]} {m[2]}{'' if m[1] == '1' else 's'}", str(text))
