@@ -49,6 +49,10 @@ VERSION_HEADER = "Flanner-Client-Version"
 CAPABILITIES_HEADER = "Flanner-Curb-Capabilities"
 #: Sent by the relay with each webhook delivery, so a receiver can drop repeats.
 EVENT_HEADER = "Flanner-Event-Id"
+#: The most alerts one call to `/v1/curb/alerts` carries. The control plane
+#: refuses a longer list as `malformed`, so a device sends its queue in
+#: batches of this many.
+ALERTS_PER_CALL = 50
 
 #: The `kind` of each signed document.
 AUTHORITY = "curb_authority"

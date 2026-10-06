@@ -191,17 +191,28 @@ def reconcile(
 
 
 def _send_alerts(client: Client, out: Outcome) -> None:
+    """Send the alerts that are due, as many calls as the control plane's limit needs.
+
+    Each call is settled from its own answer, so a refused batch holds no
+    other back. Sent whole, a queue longer than the limit was refused on
+    every pass and delivered nothing until it aged out.
+    """
     waiting = curb_alerts.due()
-    if not waiting:
-        return
-    try:
-        accepted = client.call("alerts", {"alerts": waiting}).get("accepted") or []
-    except Exception as e:  # noqa: BLE001
-        curb_alerts.settle([], [a["event_id"] for a in waiting])
-        out.problems.append(f"alerts are queued and will be retried: {e}")
-        return
-    ids = [a["event_id"] for a in waiting]
-    curb_alerts.settle([i for i in ids if i in accepted], [i for i in ids if i not in accepted])
+    failed = ""
+    for start in range(0, len(waiting), curb_wire.ALERTS_PER_CALL):
+        batch = waiting[start : start + curb_wire.ALERTS_PER_CALL]
+        ids = [a["event_id"] for a in batch]
+        try:
+            accepted = client.call("alerts", {"alerts": batch}).get("accepted") or []
+        except Exception as e:  # noqa: BLE001
+            curb_alerts.settle([], ids)
+            failed = failed or str(e)
+            continue
+        curb_alerts.settle(
+            [i for i in ids if i in accepted], [i for i in ids if i not in accepted]
+        )
+    if failed:
+        out.problems.append(f"alerts are queued and will be retried: {failed}")
 
 
 def _send_reports(client: Client, out: Outcome) -> None:

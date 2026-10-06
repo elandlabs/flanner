@@ -82,7 +82,7 @@ the client retries a connection failure up to three times.
 | `/v1/curb/policy` | `{"current_version": 7, "current_hash": "sha256:..."}`; `0` and `""` before the first | `{"status": "unchanged"}`, `{"status": "none"}` (no policy), or `{"status": "policy", "policy": "<signed curb_policy>", "audit_export_token": "..."}` |
 | `/v1/curb/policy/state` | The policy state, below | `{}` |
 | `/v1/curb/reports` | `{"report": "<signed curb_report>"}` | `{}`, or `stale_sequence` |
-| `/v1/curb/alerts` | `{"alerts": [<alert>, ...]}` | `{"accepted": ["evt_...", ...]}`: every id now held for delivery, including ids already delivered |
+| `/v1/curb/alerts` | `{"alerts": [<alert>, ...]}`, at most 50 alerts; more is refused as `malformed`, so a device sends a longer queue in batches | `{"accepted": ["evt_...", ...]}`: every id now held for delivery, including ids already delivered |
 | `/v1/curb/fleet` | `{}`; admins only | `{"devices": [{"device_id", "label", "reports": ["<signed curb_report>", ...]}]}`: each device's last 30 days of reports, oldest first |
 
 `/v1/curb/policy` answers `unchanged` when `current_version` and
@@ -231,7 +231,7 @@ Each alert the device sends to `/v1/curb/alerts`:
 | Field | Type | Meaning |
 |---|---|---|
 | `event_id` | string | Stable: `evt_` and the first 32 hex characters of the SHA-256 of the canonical bytes of `{"device_id", "finding", "sequence"}` |
-| `type` | string | `mcp_server_added`, `deny_rule_removed`, `sandbox_off`, `secret_class_a`, `policy_refused`, `policy_integrity`, `policy_rollback`, `authority_refused` |
+| `type` | string | `mcp_server_added`, `deny_rule_removed`, `sandbox_off`, `secret_class_a`, `policy_refused`, `policy_integrity`, `policy_rollback`, `authority_refused`, `registry_refused` |
 | `agent` | string | `claude`, `codex`, or `""` |
 | `severity` | string | `high` or `medium` |
 | `digest` | string | The per-device keyed digest of what changed, or `""` |

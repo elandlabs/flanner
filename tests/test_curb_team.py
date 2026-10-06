@@ -96,6 +96,8 @@ class Plane:
         if name == "attribution-registry":
             return {"registry": self.registry}
         if name == "alerts":
+            if len(body["alerts"]) > curb_wire.ALERTS_PER_CALL:
+                raise Refused("malformed", "alerts must be a list of at most 50")
             ids = [a["event_id"] for a in body["alerts"]]
             self.delivered += [i for i in ids if i not in self.delivered]
             return {"accepted": ids}
@@ -238,6 +240,37 @@ def test_an_alert_retried_after_a_failure_is_delivered_once(plane, box):  # noqa
     run(plane, box)
     plane.call("alerts", {"alerts": waiting})  # the same ids again, as after a lost answer
     assert plane.delivered == [waiting[0]["event_id"]]
+
+
+def test_more_alerts_than_one_call_takes_are_sent_in_batches(plane, box):  # noqa: F811
+    """Sent whole, 120 queued alerts were refused on every pass and never arrived."""
+    run(plane, box)
+    found = [
+        {"type": "mcp_server_added", "agent": "claude", "digest": f"{n:04x}", "severity": "medium"}
+        | {"location": "Claude Code MCP settings"}
+        for n in range(120)
+    ]
+    curb_alerts.raise_alerts(found, device_id=identity.device_id(), now=0)
+    outcome = run(plane, box)
+    assert not [p for p in outcome.problems if "alerts" in p]
+    assert plane.calls.count("alerts") == 3
+    assert len(plane.delivered) == 120
+    assert curb_store.read_state("alerts-outbox")["alerts"] == []
+
+
+def test_a_refused_batch_holds_no_other_back(plane, box):  # noqa: F811
+    run(plane, box)
+    found = [
+        {"type": "sandbox_off", "agent": "claude", "digest": f"{n:04x}", "severity": "high"}
+        | {"location": "Claude Code sandbox"}
+        for n in range(60)
+    ]
+    curb_alerts.raise_alerts(found, device_id=identity.device_id(), now=0)
+    plane.refuse["alerts"] = Refused("throttled")  # the first call only
+    outcome = run(plane, box)
+    assert any("alerts are queued" in p for p in outcome.problems)
+    assert len(plane.delivered) == 10
+    assert len(curb_store.read_state("alerts-outbox")["alerts"]) == 50
 
 
 def test_without_the_servers_capabilities_nothing_is_sent(plane, box):  # noqa: F811
