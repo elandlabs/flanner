@@ -120,6 +120,12 @@ def test_a_feature_needs_both_the_entitlement_and_the_server():
     assert not curb_wire.usable(CURB_POLICY, claims(CURB_POLICY), ())  # an older control plane
     assert not curb_wire.usable(CURB_FLEET, claims(CURB_FLEET), offered)
     assert not curb_wire.usable(CURB_POLICY, None, offered)  # not signed in
+    # And why not, for a person: the control plane's answer comes first,
+    # because one from before Curb offers nothing whatever the plan says.
+    assert curb_wire.unusable(CURB_POLICY, claims(CURB_POLICY), offered) == ""
+    assert "does not offer" in curb_wire.unusable(CURB_POLICY, claims(), ())
+    assert "plan" in curb_wire.unusable(CURB_POLICY, claims(), offered)
+    assert "no current entitlement" in curb_wire.unusable(CURB_POLICY, None, offered)
 
 
 def test_the_attribution_proof_signs_to_its_vector():

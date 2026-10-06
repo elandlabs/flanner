@@ -278,6 +278,11 @@ def cycle(
         raised = _check_in(client, device, moment, out)
         if _apply(reports, home, environment, platform, out):
             reports = assess()
+    else:
+        # Says so, as the PRD asks: a check-in that did nothing and said
+        # nothing read as a control plane with no policy to give.
+        why = curb_wire.unusable(CURB_POLICY, device.claims, device.offered)
+        out.said.append(f"{why}, so nothing was checked in and nothing changes")
     if device.offers(CURB_ATTRIBUTION):
         raised += _attribution(client, device, out)
     alerts = reconcile(

@@ -6,6 +6,7 @@ denied path or a credential, for any caller.
 
 import json
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 import pytest
 from click.testing import CliRunner
@@ -14,13 +15,16 @@ from flanner import cli as cli_module
 from flanner import (
     curb_alerts,
     curb_approval,
+    curb_attribution,
     curb_policy,
     curb_store,
+    curb_team,
     curb_wire,
     identity,
     release,
 )
 from flanner.cli import cli
+from flanner.entitlements import CURB_ALERTS, CURB_ATTRIBUTION, CURB_FLEET, CURB_POLICY, Claims
 from tests.test_curb_policy import (  # noqa: F401 - box is a fixture
     ORG,
     accept_authority,
@@ -133,6 +137,71 @@ def test_export_writes_each_admin_owned_file(box, tmp_path):  # noqa: F811
     )
 
 
+class _NoPlane:
+    """A control plane that must not be reached."""
+
+    def call(self, name, body):
+        raise AssertionError(f"called {name}")
+
+    def collect(self, url, token, records):
+        raise AssertionError("collected")
+
+
+@pytest.fixture
+def before_curb(box, monkeypatch):  # noqa: F811
+    """A signed-in device whose control plane is from before Curb: it offers nothing."""
+    from flanner import session
+
+    claims = Claims(
+        ORG,
+        "user",
+        identity.device_id(),
+        "iss",
+        "2026-01-01T00:00:00Z",
+        "2027-01-01T00:00:00Z",
+        features=(CURB_POLICY, CURB_FLEET, CURB_ALERTS, CURB_ATTRIBUTION),
+    )
+    device = curb_team.Device(
+        device_id=identity.device_id(),
+        organization_id=ORG,
+        issuer_keyring={},
+        claims=claims,
+        offered=(),
+        sign=identity.sign,
+        version="0.16.0",
+    )
+    monkeypatch.setattr(cli_module, "_curb_device", lambda: device)
+    monkeypatch.setattr(session, "load", lambda: SimpleNamespace(keyring={}))
+    monkeypatch.setattr(
+        cli_module,
+        "_curb_team_pass",
+        lambda: curb_team.cycle(
+            _NoPlane(), device, lambda: reports(box), home=box.home, env={}, platform="linux"
+        ),
+    )
+    return device
+
+
+def test_against_a_control_plane_from_before_curb_each_command_says_so(before_curb):
+    """It changed nothing before too. It said nothing, or sent people to check in again."""
+    said = "does not offer Curb's team features"
+    checked = run("policy", "--check-in")
+    assert checked.exit_code == 0, checked.output
+    assert f"{said}, so nothing was checked in and nothing changes" in checked.output
+    status = run("policy")
+    assert "No org policy has arrived" in status.output and said in status.output
+    assert "asks for one now" not in status.output
+    fleet = run("fleet")
+    assert fleet.exit_code == 1 and said in fleet.output and "Not Found" not in fleet.output
+    curb_attribution.create("claude")
+    keys = run("attribution")
+    assert f"{said}, so no registry can be fetched" in keys.output
+    verify = run("verify")
+    assert "unattributed" in verify.output
+    assert f"Using the registry held here: this control plane {said}" in verify.output
+    assert json.loads(run("verify", "--json").output)[0]["state"] == "unattributed"
+
+
 def test_the_fleet_needs_a_signed_in_device(box):  # noqa: F811
     result = run("fleet")
     assert result.exit_code == 1 and "not signed in" in result.output
@@ -154,7 +223,11 @@ def test_the_fleet_shows_only_what_verifies(box, monkeypatch):  # noqa: F811
         "checked_at": "2026-10-02T09:00:00Z",
     }
     token = curb_fleet.issue(body, identity.sign)
-    monkeypatch.setattr(cli_module, "_curb_device", lambda: object())
+    online = SimpleNamespace(
+        claims=Claims(ORG, "user", identity.device_id(), "iss", "t", "t", features=(CURB_FLEET,)),
+        offered=(curb_wire.FLEET_V1,),
+    )
+    monkeypatch.setattr(cli_module, "_curb_device", lambda: online)
     monkeypatch.setattr(
         account,
         "fetch_device_keys",

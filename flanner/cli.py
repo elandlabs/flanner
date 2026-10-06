@@ -10325,6 +10325,19 @@ def _curb_enrolled() -> bool:
     return curb_ops.enrolled()
 
 
+def _curb_unusable(feature: str) -> str:
+    """Why a Curb team feature cannot be used from this device, or "" when it can.
+
+    Read from the session this device holds: no call is made to find out.
+    """
+    from . import curb_wire
+
+    device = _curb_device()
+    if device is None:
+        return "this device is not signed in to Flanner Mesh"
+    return str(curb_wire.unusable(feature, device.claims, device.offered))
+
+
 def curb_background() -> None:
     """A team pass in a child process, started by the session hook. Never raises."""
     try:
@@ -10338,6 +10351,7 @@ def _curb_policy_status(as_json: bool) -> None:
 
     from . import curb_policy
     from . import session as cache
+    from .entitlements import CURB_POLICY
 
     state = curb_policy.load()
     held = cache.load()
@@ -10349,8 +10363,11 @@ def _curb_policy_status(as_json: bool) -> None:
         return
     if state.received is None:
         tui.note("No org policy has arrived on this device.")
+        why = _curb_unusable(CURB_POLICY) if held is not None else ""
         if held is None:
             tui.hint(f"  Org policy needs a Flanner Mesh account: {tui.command('flanner login')}")
+        elif why:
+            tui.hint(f"  {why[0].upper()}{why[1:]}, so none will.")
         else:
             tui.hint(f"  {tui.command('flanner curb policy --check-in')} asks for one now.")
         return
@@ -10524,11 +10541,16 @@ def curb_fleet_command(as_json: bool) -> None:
     """
     from datetime import datetime, timezone
 
-    from . import account, curb_fleet, curb_store
+    from . import account, curb_fleet, curb_store, curb_wire
+    from .entitlements import CURB_FLEET
 
     device = _curb_device()
     if device is None:
         tui.bad("This device is not signed in to Flanner Mesh.")
+        raise SystemExit(1)
+    why = curb_wire.unusable(CURB_FLEET, device.claims, device.offered)
+    if why:
+        tui.bad(f"{why[0].upper()}{why[1:]}.")
         raise SystemExit(1)
     try:
         with tui.working("fetching and checking fleet reports"):
@@ -10752,8 +10774,12 @@ def _curb_register(agents: list[str]) -> None:
     from .entitlements import CURB_ATTRIBUTION
 
     device = _curb_device()
-    if device is None or not curb_wire.usable(CURB_ATTRIBUTION, device.claims, device.offered):
+    if device is None:
         tui.note("Keys are registered with your organization at the next check-in.")
+        return
+    why = curb_wire.unusable(CURB_ATTRIBUTION, device.claims, device.offered)
+    if why:
+        tui.note(f"Keys stay on this device: {why}.")
         return
     from . import account
 
@@ -10788,6 +10814,7 @@ def curb_attribution_command(setup: bool, rotate: bool, github: bool, as_json: b
     from datetime import datetime, timezone
 
     from . import curb_approval, curb_attribution, curb_fix
+    from .entitlements import CURB_ATTRIBUTION
 
     if setup:
         agents = _curb_installed_agents()
@@ -10870,6 +10897,9 @@ def curb_attribution_command(setup: bool, rotate: bool, github: bool, as_json: b
         console.print(f"  {agent}: {entry['fingerprint']} ({state})")
     for agent in due:
         tui.warn(f"The {agent} key is over 90 days old: `flanner curb attribution --rotate`.")
+    why = _curb_unusable(CURB_ATTRIBUTION) if session else ""
+    if why:
+        tui.note(f"{why[0].upper()}{why[1:]}, so no registry can be fetched.")
     if listing is None:
         tui.note("No attribution registry yet, so signed commits show as key status unknown.")
     elif not curb_attribution.fresh(listing, now):
@@ -10894,7 +10924,8 @@ def curb_verify_command(revision: str, as_json: bool) -> None:
 
     device = _curb_device()
     issuer = dict(device.issuer_keyring) if device else {}
-    if device is not None and curb_wire.usable(CURB_ATTRIBUTION, device.claims, device.offered):
+    why = curb_wire.unusable(CURB_ATTRIBUTION, device.claims, device.offered) if device else ""
+    if device is not None and not why:
         try:
             token = str(_CurbClient().call("attribution-registry", {}).get("registry") or "")
             _, problem = curb_attribution.accept_registry(token, issuer, device.organization_id)
@@ -10902,6 +10933,8 @@ def curb_verify_command(revision: str, as_json: bool) -> None:
                 tui.warn(problem[0].upper() + problem[1:] + ".")
         except account.SessionError as error:
             tui.note(f"Using the registry held here: {error}.")
+    elif why and not as_json:
+        tui.note(f"Using the registry held here: {why}.")
     listing = curb_attribution.registry(issuer) if issuer else None
     known = curb_attribution.revoked()
     now = datetime.now(timezone.utc)

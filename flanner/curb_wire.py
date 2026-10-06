@@ -79,7 +79,23 @@ def headers(version: str, capabilities: Sequence[str] = CAPABILITIES) -> dict[st
 
 def usable(feature: str, claims: Claims | None, offered: Sequence[str]) -> bool:
     """Whether both the entitlement and the server offer a Curb team feature."""
-    return claims is not None and claims.has_feature(feature) and FOR_FEATURE[feature] in offered
+    return not unusable(feature, claims, offered)
+
+
+def unusable(feature: str, claims: Claims | None, offered: Sequence[str]) -> str:
+    """Why a Curb team feature cannot be used from here, as a sentence; "" when it can.
+
+    The control plane's capabilities are read first: one from before Curb
+    offers none, whatever the plan says, and a person should be told that
+    rather than sent to check in again.
+    """
+    if claims is None:
+        return "this device holds no current entitlement"
+    if FOR_FEATURE[feature] not in offered:
+        return "this control plane does not offer Curb's team features"
+    if not claims.has_feature(feature):
+        return "your organization's plan does not include this part of Curb"
+    return ""
 
 
 def _b64url(raw: bytes) -> str:
