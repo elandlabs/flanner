@@ -472,12 +472,17 @@ def address(
     workspace: str | None = None,
     preferred_workspace: str | None = None,
 ) -> Addressed:
-    """Where a message goes: named people in a shared workspace, or a workspace."""
+    """Where a message goes: named people in a shared workspace, or a workspace.
+
+    To each person's current devices. The roster also lists the devices
+    they no longer have, for what those signed; a delivery to one of them
+    would wait a day and fail.
+    """
     if workspace:
         members = roster.members(workspace)
         if not any(m.user_id == me for m in members):
             raise MessageError(refusals.NO_GRANT, "You are not in that workspace.")
-        others = {m.user_id: m.devices for m in members if m.user_id != me}
+        others = {m.user_id: m.current for m in members if m.user_id != me}
         return Addressed(workspace, {"workspace": workspace}, others)
 
     users = check_recipients(people or [])
@@ -485,7 +490,7 @@ def address(
     candidates = [preferred_workspace] if preferred_workspace else []
     candidates += sorted(roster.workspaces)
     for candidate in candidates:
-        devices = {m.user_id: m.devices for m in roster.members(candidate)}
+        devices = {m.user_id: m.current for m in roster.members(candidate)}
         if me in devices and all(user in devices for user in users):
             return Addressed(candidate, users, {user: devices[user] for user in users})
     raise MessageError(refusals.NO_GRANT, "You do not share a workspace with everyone you named.")

@@ -561,7 +561,7 @@ def _on_roster(current: Any, caller: PeerIdentity, workspace_id: str) -> bool:
     """
     roster = entitlements.verify_roster(current.roster, current.keyring, grace=timedelta(0))
     return roster is not None and any(
-        member.user_id == caller.user_id and caller.device_id in member.devices
+        member.user_id == caller.user_id and caller.device_id in member.current
         for member in roster.members(workspace_id)
     )
 

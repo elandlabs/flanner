@@ -301,6 +301,16 @@ class Member:
     handle: str = ""
     #: The name they set in the console, or their email before the @.
     name: str = ""
+    #: Those of `devices` the control plane has revoked. They stay in
+    #: `devices` because the roster says whose device signed an event, and
+    #: that stays true after the device is gone. Empty in a roster from a
+    #: control plane older than this field.
+    revoked: tuple[str, ...] = ()
+
+    @property
+    def current(self) -> tuple[str, ...]:
+        """The devices that can still receive something: listed and not revoked."""
+        return tuple(d for d in self.devices if d not in self.revoked)
 
     @property
     def label(self) -> str:
@@ -385,6 +395,7 @@ def verify_roster(
                         devices=tuple(str(d) for d in m.get("devices") or ()),
                         handle=str(m.get("handle") or ""),
                         name=displayable(str(m.get("name") or "")),
+                        revoked=tuple(str(d) for d in m.get("revoked") or ()),
                     )
                     for m in members
                 )

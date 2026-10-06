@@ -296,6 +296,11 @@ versioning follows [SemVer](https://semver.org/).
   started. After an upgrade migrated the database, it went on saving rows
   the new version did not expect. It now refuses the write and says to
   restart it; nothing is saved.
+- **A message no longer waits on a teammate's removed device.** The roster
+  lists removed devices on purpose, to say whose device signed an event,
+  and a message went to every one of them: a delivery to a lost laptop
+  queued, retried for a day and failed. The control plane now marks them,
+  and a message goes to the devices a person still has.
 - **Windows Hello is asked at all.** The script that asks it broke a type
   literal across two lines, which PowerShell refuses, so every call ended
   in a parse error and Curb fell back to the password prompt on every
