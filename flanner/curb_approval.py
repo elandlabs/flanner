@@ -179,8 +179,8 @@ $asTask = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object {
   $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1' })[0]
 function Await($op, [Type]$type) {
   $t = $asTask.MakeGenericMethod($type).Invoke($null, @($op)); $t.Wait(-1) | Out-Null; $t.Result }
-$v = [Windows.Security.Credentials.UI.UserConsentVerifier, Windows.Security.Credentials.UI,
-  ContentType = WindowsRuntime]
+# One line, without spaces: PowerShell cannot break a type literal.
+$v=[Windows.Security.Credentials.UI.UserConsentVerifier,Windows.Security.Credentials.UI,ContentType=WindowsRuntime]
 $avail = Await ($v::CheckAvailabilityAsync()) `
   ([Windows.Security.Credentials.UI.UserConsentVerifierAvailability])
 if ($env:FLANNER_CURB_ASK -ne '1') { Write-Output "availability:$avail"; exit 0 }

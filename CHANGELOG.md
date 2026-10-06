@@ -296,6 +296,10 @@ versioning follows [SemVer](https://semver.org/).
   started. After an upgrade migrated the database, it went on saving rows
   the new version did not expect. It now refuses the write and says to
   restart it; nothing is saved.
+- **Windows Hello is asked at all.** The script that asks it broke a type
+  literal across two lines, which PowerShell refuses, so every call ended
+  in a parse error and Curb fell back to the password prompt on every
+  Windows machine.
 
 ### Security
 - **Curb's approval prompt cannot be stood in for by an agent.** Each
