@@ -64,7 +64,7 @@ Client work is done. Commands: `flanner curb map`, `flanner curb show`,
       `python3-tk` on Linux).
 - [x] A section on `app/security/page.tsx`: output is redacted for every
       caller, detail only in a desktop window, all processing local.
-- [ ] Release day: `PYPI_VERSION` set to the version that ships R1.
+- [x] Release day: `PYPI_VERSION` set to the version that ships R1.
 
 **flanner-cloud:** none. **flanner-meshlab:** none. **flanner-brand:** none.
 
