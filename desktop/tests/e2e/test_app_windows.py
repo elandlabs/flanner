@@ -71,6 +71,29 @@ def _alive(pid: int) -> bool:
     return bool(_powershell(f"(Get-Process -Id {pid} -ErrorAction SilentlyContinue).Id").strip())
 
 
+def _what_webview_did(port: int) -> str:
+    """Why the port may not be there, from Windows: WebView2's processes and their
+    command lines, the runtime's version, any Edge policy, who holds the port, and
+    proxies. On a hosted runner this is the only view there is."""
+    return _powershell(
+        "$ErrorActionPreference = 'SilentlyContinue';"
+        " '--- msedgewebview2 processes ---';"
+        " Get-CimInstance Win32_Process -Filter \"Name='msedgewebview2.exe'\" |"
+        "   ForEach-Object { $_.ProcessId.ToString() + ' ' + $_.CommandLine };"
+        " '--- WebView2 runtime ---';"
+        " foreach ($k in 'HKLM:\\SOFTWARE\\WOW6432Node\\Microsoft\\EdgeUpdate\\Clients\\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}',"
+        "   'HKCU:\\SOFTWARE\\Microsoft\\EdgeUpdate\\Clients\\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}') {"
+        "   $v = (Get-ItemProperty $k).pv; if ($v) { $k + ' ' + $v } };"
+        " '--- Edge and WebView2 policies ---';"
+        " foreach ($k in 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Edge', 'HKCU:\\SOFTWARE\\Policies\\Microsoft\\Edge',"
+        "   'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Edge\\WebView2', 'HKCU:\\SOFTWARE\\Policies\\Microsoft\\Edge\\WebView2') {"
+        "   if (Test-Path $k) { $k; Get-ItemProperty $k | Format-List | Out-String -Width 300 } };"
+        f" '--- port {port} ---'; netstat -ano | Select-String ':{port} ' | ForEach-Object {{ $_.Line }};"
+        " '--- proxies ---';"
+        " Get-ChildItem Env: | Where-Object Name -match 'proxy' | ForEach-Object { $_.Name + '=' + $_.Value }"
+    )
+
+
 class App:
     def __init__(self, process: subprocess.Popen[bytes], devtools: int, data: Path) -> None:
         self.process = process
@@ -111,6 +134,8 @@ def _wait_for_devtools(
             pytest.fail(
                 f"the app is running but WebView2's DevTools port {port} never opened\n"
                 + _what_the_app_said(output, data)
+                + "\n"
+                + _what_webview_did(port)
             )
         time.sleep(0.5)
 
