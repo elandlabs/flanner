@@ -6,8 +6,8 @@ repos still need for each release, so nothing is left behind.
 
 **Status (2026-10-07): the R1 to R7 work is built in every repo, each on
 its own `feat/curb-r1`, and none of it is pushed.** The unticked items
-below are what remains. The legal pages wait for the owner's approval of
-the drafted wording. The web UI screenshots need demo data. The control
+below are what remains. The legal pages went live on 2026-10-07 with the
+owner's approved wording. The web UI screenshots need demo data. The control
 plane's lock update waits for the client release. Release day sets
 `PYPI_VERSION`, the seven `SHIPS_IN.curb*` versions, which are
 unscheduled until a release is named, and the control plane's
@@ -90,9 +90,9 @@ Client work is done. Commands: `flanner curb sweep`, `flanner curb show
       deletes.
 - [x] Troubleshooting: "the leak sweep needs Kingfisher"; files over 64 MB
       under Not checked.
-- [ ] Privacy policy: an opted-in check sends a found key straight to its own
+- [x] Privacy policy: an opted-in check sends a found key straight to its own
       issuer. Needs the owner's approval.
-- [ ] The date in `lib/legal.ts`.
+- [x] The date in `lib/legal.ts`.
 
 **flanner-cloud:** none. **flanner-meshlab:** none.
 
@@ -144,7 +144,7 @@ section at `/curb` (see "The web UI" below).
 - [x] Troubleshooting: "No approval method on this machine", "Not approved",
       the pause, "inconclusive" results, a Codex config edited by hand.
 - [x] Security page: approvals and grants, backups denied to agents.
-- [ ] `app/disclaimer/page.tsx`: what Curb's tests do and don't prove. Needs
+- [x] `app/disclaimer/page.tsx`: what Curb's tests do and don't prove. Needs
       the owner's approval.
 
 **flanner-cloud:** none. **flanner-meshlab:** none.
@@ -257,7 +257,7 @@ against client code.
       organization's agent policy" (write), "Check your organization's
       devices: policy, drift and exposure" (read), and "Log tool calls and
       re-check org policy from an agent hook" (write).
-- [ ] Privacy policy and terms of service, with dates in `lib/legal.ts`. Need
+- [x] Privacy policy and terms of service, with dates in `lib/legal.ts`. Need
       the owner's approval.
 - [x] Security page sections; FAQ entries (what a fleet report holds, why an
       expired policy stays, why some changes wait).
@@ -351,6 +351,6 @@ a person, an R7 exit criterion.
 - [x] `lib/operations.json` regenerated: "Give each agent its own
       commit-signing key, rotate or list them" (write) and "See which agent
       key signed each commit" (read).
-- [ ] Privacy policy lines on public keys registered through the person's
+- [x] Privacy policy lines on public keys registered through the person's
       own GitHub sign-in, and on the key registry. Need the owner's approval.
 - [x] A security page section.
