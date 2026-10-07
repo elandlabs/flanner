@@ -95,20 +95,24 @@ and uploads nothing: use it to check the pipeline.
    and the private key and its password as the **secrets**
    `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
 2. **The `desktop` environment.** Create it under the repository's
-   Settings, Environments, restrict it to tags `v*`, and put every secret
-   below in it rather than in repository secrets.
-3. **Apple** (Developer Program): a Developer ID Application certificate
+   Settings, Environments, restrict it to tags `v*` and the `main` branch
+   (a manual run starts from `main`), and put every secret below in it
+   rather than in repository secrets.
+3. **Apple, optional** (Developer Program, 99 USD a year): a Developer ID Application certificate
    exported as base64 `.p12` (`APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`,
    `APPLE_SIGNING_IDENTITY`), and for notarisation `APPLE_ID`, an
    app-specific `APPLE_PASSWORD` and `APPLE_TEAM_ID`.
-4. **Windows** (Azure Trusted Signing): an app registration with the
+4. **Windows, optional** (Azure Trusted Signing, from 9.99 USD a month): an app registration with the
    Trusted Signing Certificate Profile Signer role (`AZURE_CLIENT_ID`,
    `AZURE_CLIENT_SECRET`, `AZURE_TENANT_ID` as secrets) and the account's
    `AZURE_SIGNING_ENDPOINT`, `AZURE_SIGNING_ACCOUNT` and
    `AZURE_SIGNING_PROFILE` as variables.
 
-A signed release stops before building if any of these is missing, and
-names what is missing.
+A signed release stops before building only when the updater key is
+missing. Without a complete Apple or Azure set it builds that platform
+unsigned and says so in the job log: Gatekeeper and SmartScreen then warn
+on first launch, while the updater still verifies every update. An
+incomplete set counts as none, so nothing half-signs.
 
 ### Release checklist
 

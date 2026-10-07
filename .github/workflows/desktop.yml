@@ -152,23 +152,34 @@ jobs:
             unset APPLE_CERTIFICATE APPLE_SIGNING_IDENTITY APPLE_ID TAURI_SIGNING_PRIVATE_KEY
             config=$(python -c "import json,sys; print(json.dumps({'version': sys.argv[1], 'bundle': {'createUpdaterArtifacts': False}}))" "$VERSION")
           else
-            missing=""
-            for name in TAURI_SIGNING_PRIVATE_KEY; do [ -n "${!name}" ] || missing="$missing $name"; done
-            if [ "$RUNNER_OS" = "macOS" ]; then
-              for name in APPLE_CERTIFICATE APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
-                [ -n "${!name}" ] || missing="$missing $name"; done
+            [ -n "$TAURI_SIGNING_PRIVATE_KEY" ] || {
+              echo "::error::A signed release needs the secret TAURI_SIGNING_PRIVATE_KEY (desktop/README.md)."; exit 1; }
+            # OS code signing is optional. A complete Apple or Azure set signs
+            # that platform's installer; none at all ships it unsigned, and
+            # Gatekeeper or SmartScreen warns on first launch. An incomplete
+            # set counts as none, so nothing half-signs. The updater's own
+            # signature above is what verifies updates, signed or not.
+            apple=yes; azure=yes
+            for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+              [ -n "${!name}" ] || apple=no; done
+            for name in AZURE_CLIENT_ID AZURE_CLIENT_SECRET AZURE_TENANT_ID AZURE_SIGNING_ENDPOINT AZURE_SIGNING_ACCOUNT AZURE_SIGNING_PROFILE; do
+              [ -n "${!name}" ] || azure=no; done
+            if [ "$RUNNER_OS" = "macOS" ] && [ "$apple" = "no" ]; then
+              echo "::warning::No complete Apple signing set: the macOS app ships unsigned and not notarized, and Gatekeeper warns on first launch."
+              unset APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID
             fi
             if [ "$RUNNER_OS" = "Windows" ]; then
-              for name in AZURE_CLIENT_ID AZURE_CLIENT_SECRET AZURE_TENANT_ID AZURE_SIGNING_ENDPOINT AZURE_SIGNING_ACCOUNT AZURE_SIGNING_PROFILE; do
-                [ -n "${!name}" ] || missing="$missing $name"; done
-              cargo install trusted-signing-cli --locked
+              if [ "$azure" = "yes" ]; then
+                cargo install trusted-signing-cli --locked
+              else
+                echo "::warning::No complete Azure Trusted Signing set: the Windows installer ships unsigned, and SmartScreen warns on first launch."
+              fi
             fi
-            [ -z "$missing" ] || { echo "::error::A signed release is missing:$missing"; exit 1; }
-            config=$(python - "$VERSION" "$PUBKEY" <<'PY'
+            config=$(AZURE_SIGNING="$azure" python - "$VERSION" "$PUBKEY" <<'PY'
           import json, os, sys
           version, pubkey = sys.argv[1], sys.argv[2]
           config = {"version": version, "plugins": {"updater": {"pubkey": pubkey}}}
-          if os.environ.get("RUNNER_OS") == "Windows":
+          if os.environ.get("RUNNER_OS") == "Windows" and os.environ.get("AZURE_SIGNING") == "yes":
               sign = "trusted-signing-cli -e {e} -a {a} -c {c} -d Flanner %1".format(
                   e=os.environ["AZURE_SIGNING_ENDPOINT"],
                   a=os.environ["AZURE_SIGNING_ACCOUNT"],
