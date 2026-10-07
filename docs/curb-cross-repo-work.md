@@ -7,8 +7,9 @@ repos still need for each release, so nothing is left behind.
 **Status (2026-10-07): the R1 to R7 work is built in every repo, each on
 its own `feat/curb-r1`, and none of it is pushed.** The unticked items
 below are what remains. The legal pages went live on 2026-10-07 with the
-owner's approved wording. The web UI screenshots need demo data. The control
-plane's lock update waits for the client release. Release day sets
+owner's approved wording. The web UI screenshots went up on 2026-10-07, taken
+against a machine made up for them. The control plane's lock update moved
+with 0.16.0. Release day sets
 `PYPI_VERSION`, the seven `SHIPS_IN.curb*` versions, which are
 unscheduled until a release is named, and the control plane's
 `curb.MINIMUM_VERSION`.
@@ -117,7 +118,7 @@ belongs to. Nothing in the control plane changes: the pages never reach it.
 - [x] `lib/operations.json` regenerated: every Curb operation now lists its
       web routes, and "See each change that widened what an agent can
       reach" is new, on the web only.
-- [ ] Screenshots of the Overview, Leaks and Fixes, in both themes.
+- [x] Screenshots of the Overview, Leaks and Fixes, in both themes.
 
 ## R3: fixes, tester, scrubbing and approvals
 
@@ -227,7 +228,7 @@ against client code.
       `scripts/mesh_dev_scenarios.py` cases `curb-policy`, `curb-fleet` and
       `curb-alerts`.
 - [x] Tests and seeds; console privacy page; ADRs 0007 and 0008; changelog.
-- [ ] Lock update after the client release.
+- [x] Lock update after the client release.
 
 **flanner-meshlab:**
 
