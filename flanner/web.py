@@ -226,6 +226,16 @@ templates.env.filters["relative_time"] = format_relative_time
 templates.env.filters["basename"] = lambda p: Path(p).name
 
 
+def said(text: str) -> str:
+    """A phrase starting a cell: `capitalize` would lower-case the month in "on 2 October"."""
+    from . import curb_page  # imported when a page needs it, as the Curb pages do
+
+    return curb_page.said(text)
+
+
+templates.env.filters["said"] = said
+
+
 # Stamp static assets so the browser refetches when they change. The newest
 # mtime under static/ means an edit-then-restart busts the cache even within a
 # release (the version string alone would not, since it only moves on release).
@@ -4164,6 +4174,838 @@ async def ipc_call(request: Request) -> JSONResponse:
     except Exception as e:
         logger.exception("IPC operation %s failed", op)
         return JSONResponse({"result": {"error": True, "message": str(e)}})
+
+
+# --- Curb (Curb PRD §11.3) ------------------------------------------------------------------
+#
+# One section, four scopes, a page for each part. The pages are redacted as
+# the terminal is; a browser sees names and locations only for five minutes
+# after the operating system's own prompt said yes to a code the page showed
+# (`curb_reveal`). Nothing here reaches the control plane: what needs it is
+# shown as a terminal command.
+
+#: How long a check of this machine is shown before it is done again.
+_CURB_AGE = 600
+_CURB_PARTS = {
+    "machine": (
+        ("agents", "Agents"),
+        ("leaks", "Leaks"),
+        ("fixes", "Fixes"),
+        ("tests", "Tests"),
+        ("activity", "Activity"),
+    ),
+    "projects": (("reach", "Reach"), ("ci", "CI"), ("apps", "Apps"), ("commits", "Commits")),
+    "team": (("policy", "Policy"), ("devices", "Devices"), ("alerts", "Alerts")),
+}
+_CURB_WAIT = "Curb is still checking this machine. Try again in a moment."
+#: The filters a Curb page takes. Only these are carried into its own links:
+#: anything else in an address is dropped, so a link cannot plant text in a page.
+_CURB_KEPT = frozenset(
+    {"q", "kind", "exposure", "agent", "decision", "project", "risk", "flag", "state"}
+    | {"revision", "needs", "per"}
+)
+
+
+def _curb_browser(request: Request) -> str | None:
+    from . import curb_reveal
+
+    return request.cookies.get(curb_reveal.COOKIE)
+
+
+def _curb_shown(request: Request) -> bool:
+    """Whether this browser holds a live reveal: the one test for sending a name."""
+    from . import curb_reveal
+
+    return curb_reveal.REVEALS.seconds_left(_curb_browser(request)) > 0
+
+
+def _curb_machine() -> Any:
+    from . import curb_live, curb_page
+
+    return curb_live.MEMO.get("machine", curb_page.machine, max_age=_CURB_AGE)
+
+
+def _curb_project(root: Path) -> Any:
+    from . import curb_live, curb_page
+
+    return curb_live.MEMO.get(
+        ("project", str(root)),
+        functools.partial(curb_page.project_reports, root),
+        max_age=_CURB_AGE,
+    )
+
+
+def _curb_projects(session: Any) -> list[dict[str, Any]]:
+    """The Projects page's projects whose folders are still here."""
+    found = []
+    for project in db_list_projects(session, sort="name"):
+        root = Path(project.project_root) if project.project_root else None
+        if root is not None and root.is_dir():
+            found.append({"id": str(project.id), "name": project.name, "root": root})
+    return found
+
+
+def _curb_picked(projects: list[dict[str, Any]], project: str) -> list[dict[str, Any]]:
+    """The one project the picker names, or all of them."""
+    one = [p for p in projects if p["id"] == project]
+    return one or projects
+
+
+def _curb_rows(request: Request, rows: list[dict[str, Any]], **facets: str) -> dict[str, Any]:
+    """A table's rows after its search box and filters, one page of them, and its pager."""
+    from . import curb_page
+
+    kept = curb_page.search(rows, request.query_params.get("q", ""))
+    for name, value in facets.items():
+        if value:
+            kept = [row for row in kept if str(row.get(name)) == value]
+    page = _paginate(request, kept)
+    return {
+        "rows": page.items,
+        "total": len(kept),
+        "of": len(rows),
+        "q": request.query_params.get("q", ""),
+        **_pager_context(request, page),
+    }
+
+
+def _curb_guides(projects: list[dict[str, Any]]) -> list[tuple[str, str]]:
+    """Where Curb's guide for agents is installed: each project, and each agent that reads it."""
+    from . import agent_hooks
+
+    agents = dict(zip(agent_hooks.SKILL_DIRS, ("claude", "codex"), strict=True))
+    return [
+        (project["name"], agent)
+        for project in projects
+        for folder, agent in agents.items()
+        if (project["root"] / folder / agent_hooks.CURB_SKILL_NAME / "SKILL.md").is_file()
+    ]
+
+
+def _curb_logging() -> dict[str, bool]:
+    from . import curb_observe
+
+    return {agent: curb_observe.hooks_on(agent) for agent in ("claude", "codex")}
+
+
+def _curb_fresh(request: Request) -> RedirectResponse | None:
+    """`Check again`: forget what is held, and come back to the same page without the ask."""
+    from . import curb_live
+
+    if "fresh" not in request.query_params:
+        return None
+    curb_live.changed()
+    rest = urlencode([(k, v) for k, v in request.query_params.multi_items() if k in _CURB_KEPT])
+    return RedirectResponse(request.url.path + (f"?{rest}" if rest else ""), status_code=303)
+
+
+async def _curb_render(
+    request: Request, template: str, area: str, part: str, context: dict[str, Any]
+) -> Response:
+    """One Curb page, with what every Curb page carries around its own part."""
+    from . import (
+        curb_approval,
+        curb_do,
+        curb_live,
+        curb_page,
+        curb_policy,
+        curb_reveal,
+        curb_store,
+    )
+    from . import session as cache
+
+    ensure_db()
+    session = get_session()
+    browser = _curb_browser(request)
+    fresh_browser = browser is None
+    if browser is None:
+        browser = curb_reveal.REVEALS.new_token()
+    seconds = curb_reveal.REVEALS.seconds_left(browser)
+    method = await run_in_threadpool(curb_do.presence)
+    review = request.query_params.get("review", "")
+    held = context.get("machine_held") or _curb_machine()
+    paused = curb_approval.paused_until()
+    sweep = curb_store.latest_report("sweep") or {}
+    joined = cache.load() is not None
+    projects = context.get("projects")
+    if projects is None:
+        projects = _curb_projects(session)
+    pending = (curb_policy.load().pending or {}) if joined else {}
+    wait = context.get("wait") or ("checking" if held.busy and "machine_held" in context else "")
+    said = curb_live.heard(None if fresh_browser else browser)
+    query = [(k, v) for k, v in request.query_params.multi_items() if k in _CURB_KEPT]
+    here = request.url.path + (f"?{urlencode(query)}" if query else "")
+    response = templates.TemplateResponse(
+        request,
+        template,
+        {
+            **_nav(session),
+            **({said[0]: said[1]} if said else {}),
+            **context,
+            "area": area,
+            "part": part,
+            "parts": _CURB_PARTS.get(area, ()),
+            "path": request.url.path,
+            "here": here,
+            "again_href": f"{request.url.path}?{urlencode([*query, ('fresh', '1')])}",
+            "review": review,
+            "shown": seconds > 0,
+            "seconds": seconds,
+            "reveal_code": curb_reveal.REVEALS.code(browser) if review == "reveal" else "",
+            "reveal_blocked": curb_reveal.unavailable(method),
+            "read_only": method is None,
+            "asker": curb_do.asker(),
+            "paused_until": time.strftime("%H:%M", time.localtime(paused)) if paused else "",
+            "machine_held": held,
+            "wait": wait,
+            "joined": joined,
+            "projects": projects,
+            "ago": curb_page.when,
+            "day": curb_page.day,
+            "counts": {
+                "leaks": int((sweep.get("by_class") or {}).get("A") or 0),
+                "fixes": sum(len(e.actions) for e in held.value.plan.edits) if held.value else 0,
+                "projects": len(projects),
+                "team": 1 if pending else 0,
+            },
+        },
+    )
+    if fresh_browser:
+        response.set_cookie(
+            curb_reveal.COOKIE, browser, httponly=True, samesite="strict", path="/curb"
+        )
+    if seconds > 0:
+        # A page with names on it: the browser keeps no copy on disk.
+        response.headers["Cache-Control"] = "no-store"
+    # No other site may draw these pages inside its own, to borrow a click.
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Content-Security-Policy"] = "frame-ancestors 'none'"
+    return response
+
+
+def _curb_done(request: Request, done: Any, back: str) -> RedirectResponse:
+    """Say what a button did on the page it came from. Never in the address."""
+    from . import curb_live
+
+    if not done.ok:
+        actions.failed(done.said)
+    if done.said:
+        curb_live.say(_curb_browser(request), done.said, "success" if done.ok else "error")
+    return RedirectResponse(back, status_code=303)
+
+
+def _curb_back(target: str, default: str) -> str:
+    """Where a form may send the browser afterwards: inside Curb, or the default."""
+    ok = target.startswith("/curb") and "//" not in target and "\\" not in target
+    return target if ok else default
+
+
+@app.get("/curb", response_class=HTMLResponse)
+async def curb_overview(request: Request) -> Response:
+    """Each agent's risk as a picture, and what to do next."""
+    from . import curb_attribution, curb_live, curb_page, curb_policy, curb_report, curb_store
+    from . import session as cache
+
+    again = _curb_fresh(request)
+    if again:
+        return again
+    ensure_db()
+    projects = _curb_projects(get_session())
+    held = _curb_machine()
+    context: dict[str, Any] = {"machine_held": held, "projects": projects}
+    if held.value is not None:
+
+        def gather() -> dict[str, Any]:
+            reports = curb_report.with_proofs(held.value.defaults)
+            logging = _curb_logging()
+            risky = []
+            for project in projects:
+                found = curb_live.kept(
+                    ("ci", project["id"]),
+                    functools.partial(curb_page.ci, [(project["name"], project["root"])]),
+                    seconds=60,
+                )
+                if found["risky"]:
+                    risky.append((project["name"], found["risky"]))
+            pending = (curb_policy.load().pending or {}) if cache.load() else {}
+            sweep = curb_store.latest_report("sweep")
+            return {
+                # A first visit opens the introduction; after a scan or a fix it folds.
+                "new_here": sweep is None and not curb_page.applied(),
+                "headline": curb_page.headline(reports),
+                "cards": [curb_page.card(report) for report in reports],
+                "skipped": held.value.skipped,
+                "todo": curb_page.do_next(
+                    held.value,
+                    sweep=sweep,
+                    tested=curb_page.tests(reports, shown=False, fresh=curb_live.TESTS.result),
+                    logging_off=[
+                        r.context.label for r in reports if not logging.get(r.context.agent)
+                    ],
+                    risky_ci=risky,
+                    pending_policy=pending.get("version"),
+                    keys_due=curb_attribution.due(),
+                ),
+            }
+
+        context.update(await run_in_threadpool(gather))
+    return await _curb_render(request, "curb.html", "overview", "", context)
+
+
+@app.get("/curb/machine")
+async def curb_machine_home() -> RedirectResponse:
+    return RedirectResponse("/curb/machine/agents", status_code=307)
+
+
+@app.get("/curb/projects")
+async def curb_projects_home() -> RedirectResponse:
+    return RedirectResponse("/curb/projects/reach", status_code=307)
+
+
+@app.get("/curb/team")
+async def curb_team_home() -> RedirectResponse:
+    return RedirectResponse("/curb/team/policy", status_code=307)
+
+
+@app.post("/curb/reveal")
+async def curb_reveal_form(request: Request, back: str = Form("/curb")) -> RedirectResponse:
+    """Show names and locations in this browser, after the system's yes to the page's code."""
+    from . import curb_do
+
+    browser = _curb_browser(request)
+    where = _curb_back(back, "/curb")
+    if browser is None:
+        return RedirectResponse(where, status_code=303)
+    return _curb_done(request, await run_in_threadpool(curb_do.reveal, browser), where)
+
+
+@app.post("/curb/hide")
+async def curb_hide_form(request: Request, back: str = Form("/curb")) -> RedirectResponse:
+    from . import curb_reveal
+
+    curb_reveal.REVEALS.hide(_curb_browser(request))
+    return RedirectResponse(_curb_back(back, "/curb"), status_code=303)
+
+
+@app.post("/curb/forget")
+async def curb_forget_form(request: Request, backups: str = Form("")) -> RedirectResponse:
+    """Delete what Curb keeps on this machine, after the operating system's yes."""
+    from . import curb_do
+
+    done = await run_in_threadpool(functools.partial(curb_do.forget, backups=bool(backups)))
+    return _curb_done(request, done, "/curb")
+
+
+# --- Curb: this machine ---------------------------------------------------------------
+
+
+@app.get("/curb/machine/agents", response_class=HTMLResponse)
+async def curb_agents_page(request: Request, kind: str = "") -> Response:
+    """The agents installed here, and what each one loads when it starts."""
+    from . import curb_do, curb_page
+
+    again = _curb_fresh(request)
+    if again:
+        return again
+    ensure_db()
+    projects = _curb_projects(get_session())
+    held = _curb_machine()
+    context: dict[str, Any] = {"machine_held": held, "projects": projects, "kind": kind}
+    if held.value is not None:
+        view = await run_in_threadpool(
+            functools.partial(
+                curb_page.agents,
+                held.value,
+                shown=_curb_shown(request),
+                logging=_curb_logging(),
+                signing={"claude", "codex"} - set(curb_do.signing_pending()),
+                guides=_curb_guides(projects),
+            )
+        )
+        context.update(view=view, table=_curb_rows(request, view["loaded"], kind=kind))
+    return await _curb_render(request, "curb_agents.html", "machine", "agents", context)
+
+
+@app.get("/curb/machine/leaks", response_class=HTMLResponse)
+async def curb_leaks_page(request: Request, exposure: str = "", file: str = "") -> Response:
+    """Secrets found in files agents wrote or can read, and the scan that finds them."""
+    from . import curb_do, curb_live, curb_page, curb_store
+
+    ensure_db()
+    projects = _curb_projects(get_session())
+    shown = _curb_shown(request)
+    job = curb_live.SCAN
+    view = curb_page.leaks(
+        job.result,
+        curb_store.latest_report("sweep"),
+        shown=shown,
+        projects=[(p["name"], p["root"]) for p in projects],
+    )
+    context: dict[str, Any] = {
+        "projects": projects,
+        "view": view,
+        "job": job,
+        "exposure": exposure,
+        "missing": await run_in_threadpool(curb_do.scanner_missing),
+        "table": _curb_rows(request, view["rows"], exposure=exposure),
+        "wait": f"scan:{job.done}/{job.total}" if job.running else "",
+    }
+    if request.query_params.get("review") == "remove" and shown:
+        context["removal"] = await run_in_threadpool(curb_do.removal, job.result, file)
+        context["removal_file"] = file
+    return await _curb_render(request, "curb_leaks.html", "machine", "leaks", context)
+
+
+@app.post("/curb/machine/leaks/scan")
+async def curb_scan_form(request: Request, check: str = Form("")) -> RedirectResponse:
+    """Start the leak scan. `check` also sends each secret to its own issuer, and nowhere else."""
+    from . import curb_do
+
+    ensure_db()
+    folders = [p["root"] for p in _curb_projects(get_session())] or [Path.home()]
+    done = await run_in_threadpool(functools.partial(curb_do.scan, folders, validate=bool(check)))
+    return _curb_done(request, done, "/curb/machine/leaks")
+
+
+@app.post("/curb/machine/leaks/remove")
+async def curb_remove_form(request: Request, file: str = Form(...)) -> RedirectResponse:
+    """Replace the secrets in one scanned file with placeholders. No backup, so no undo."""
+    from . import curb_do, curb_live
+
+    if not _curb_shown(request):
+        done = curb_do.Done(False, "Show names and locations first, so you can see which file.")
+    else:
+        done = await run_in_threadpool(curb_do.remove, curb_live.SCAN.result, file)
+    return _curb_done(request, done, "/curb/machine/leaks")
+
+
+@app.get("/curb/machine/fixes", response_class=HTMLResponse)
+async def curb_fixes_page(request: Request, backup: str = "") -> Response:
+    """Fixes ready to apply, steps only the person can take, and what was applied."""
+    from . import curb_page
+
+    again = _curb_fresh(request)
+    if again:
+        return again
+    held = _curb_machine()
+    context: dict[str, Any] = {"machine_held": held, "backup": backup}
+    if held.value is not None:
+        context["view"] = await run_in_threadpool(
+            functools.partial(curb_page.fixes, held.value, shown=_curb_shown(request))
+        )
+    return await _curb_render(request, "curb_fixes.html", "machine", "fixes", context)
+
+
+@app.post("/curb/machine/fixes/apply")
+async def curb_fix_form(request: Request) -> RedirectResponse:
+    """Apply the fixes the page showed, after the operating system's own prompt says yes."""
+    from . import curb_do
+
+    held = _curb_machine()
+    if held.value is None:
+        done = curb_do.Done(False, _CURB_WAIT)
+    else:
+        done = await run_in_threadpool(curb_do.apply_fixes, held.value.plan)
+    return _curb_done(request, done, "/curb/machine/fixes")
+
+
+@app.post("/curb/machine/fixes/undo")
+async def curb_undo_form(request: Request, backup: str = Form(...)) -> RedirectResponse:
+    """Put back what one fix changed, after the operating system's yes."""
+    from . import curb_do
+
+    done = await run_in_threadpool(curb_do.undo, backup)
+    return _curb_done(request, done, "/curb/machine/fixes")
+
+
+@app.get("/curb/machine/tests", response_class=HTMLResponse)
+async def curb_tests_page(request: Request, agent: str = "") -> Response:
+    """Each block and its test result, and the fake credentials a test plants."""
+    from . import curb_live, curb_page
+
+    again = _curb_fresh(request)
+    if again:
+        return again
+    held = _curb_machine()
+    job = curb_live.TESTS
+    context: dict[str, Any] = {
+        "machine_held": held,
+        "job": job,
+        "agent": agent,
+        "wait": f"tests:{job.done}/{job.total}" if job.running else "",
+    }
+    if held.value is not None:
+        view = await run_in_threadpool(
+            functools.partial(
+                curb_page.tests, held.value.defaults, shown=_curb_shown(request), fresh=job.result
+            )
+        )
+        context.update(view=view, table=_curb_rows(request, view["rows"], agent_key=agent))
+    return await _curb_render(request, "curb_tests.html", "machine", "tests", context)
+
+
+@app.post("/curb/machine/tests/run")
+async def curb_tests_form(request: Request) -> RedirectResponse:
+    """Run the tests, after the operating system's yes. They use the person's own tokens."""
+    from . import curb_do
+
+    held = _curb_machine()
+    if held.value is None:
+        done = curb_do.Done(False, _CURB_WAIT)
+    else:
+        done = await run_in_threadpool(curb_do.run_tests, held.value.defaults)
+    return _curb_done(request, done, "/curb/machine/tests")
+
+
+@app.post("/curb/machine/tests/decoys")
+async def curb_decoys_form(request: Request, action: str = Form(...)) -> RedirectResponse:
+    """Keep the fake credentials another 30 days, or remove them."""
+    from . import curb_do
+
+    done = await run_in_threadpool(curb_do.decoys, action)
+    return _curb_done(request, done, "/curb/machine/tests")
+
+
+@app.get("/curb/machine/activity", response_class=HTMLResponse)
+async def curb_activity_page(
+    request: Request, kind: str = "", decision: str = "", verify: str = ""
+) -> Response:
+    """Logging for each agent, what each was seen using, and the records."""
+    from . import curb_log, curb_page
+
+    held = _curb_machine()
+    reports = held.value.defaults if held.value is not None else []
+
+    def gather() -> dict[str, Any]:
+        curb_log.prune()
+        checked = None
+        if verify:
+            ok, said = curb_log.verify()
+            checked = {"ok": ok, "said": curb_page.sentence(said)}
+        return {"view": curb_page.activity(reports), "checked": checked}
+
+    context = await run_in_threadpool(gather)
+    context.update(
+        kind=kind,
+        decision=decision,
+        table=_curb_rows(request, context["view"]["rows"], kind=kind, decision=decision),
+    )
+    return await _curb_render(request, "curb_activity.html", "machine", "activity", context)
+
+
+@app.post("/curb/machine/activity/logging")
+async def curb_logging_form(
+    request: Request, agent: str = Form(...), on: str = Form("")
+) -> RedirectResponse:
+    """Turn the activity log on or off for one agent, after the operating system's yes."""
+    from . import curb_do
+
+    done = await run_in_threadpool(curb_do.logging, agent, bool(on))
+    return _curb_done(request, done, "/curb/machine/activity")
+
+
+# --- Curb: projects ---------------------------------------------------------------------
+
+
+@app.get("/curb/projects/reach", response_class=HTMLResponse)
+async def curb_reach_page(request: Request, project: str = "") -> Response:
+    """Risk for each project and agent; for one project, each way in and out."""
+    from . import curb_page, curb_report
+
+    again = _curb_fresh(request)
+    if again:
+        return again
+    ensure_db()
+    projects = _curb_projects(get_session())
+    one = next((p for p in projects if p["id"] == project), None)
+    machine = _curb_machine()
+    base = machine.value.defaults if machine.value is not None else []
+    context: dict[str, Any] = {
+        "projects": projects,
+        "project": one["id"] if one else "",
+        "one": one,
+        "machine_held": machine,
+    }
+
+    def levels(reports: Any) -> list[tuple[str, str, str]]:
+        return [
+            (r.context.label, r.verdict.severity, curb_page.TONES[r.verdict.severity])
+            for r in reports or []
+        ]
+
+    if one is not None:
+        held = _curb_project(one["root"])
+        context.update(held=held, wait="checking" if held.busy else "")
+        if held.value is not None:
+            reports = curb_report.with_proofs(held.value)
+            found = curb_page.credentials(reports, shown=_curb_shown(request))
+            context.update(
+                cards=[curb_page.card(report) for report in reports],
+                table=_curb_rows(request, found),
+            )
+    else:
+        rows, busy = [], machine.busy
+        for item in projects:
+            held = _curb_project(item["root"])
+            busy = busy or held.busy
+            rows.append(
+                {
+                    **item,
+                    "levels": levels(held.value),
+                    "checking": held.value is None and held.error is None,
+                    "error": held.error if held.value is None else None,
+                    "differs": curb_page.differs(held.value, base) if held.value and base else "",
+                    "find": item["name"].lower(),
+                }
+            )
+        context.update(
+            table=_curb_rows(request, rows),
+            base=levels(base),
+            wait="checking" if busy else "",
+        )
+    return await _curb_render(request, "curb_reach.html", "projects", "reach", context)
+
+
+def _curb_one(session: Any, project: str) -> dict[str, Any] | None:
+    return next((p for p in _curb_projects(session) if p["id"] == project), None)
+
+
+@app.get("/curb/projects/ci", response_class=HTMLResponse)
+async def curb_ci_page(request: Request, project: str = "", risk: str = "") -> Response:
+    """Agent steps in each project's GitHub Actions workflows, and what could reach them."""
+    from . import curb_live, curb_page
+
+    again = _curb_fresh(request)
+    if again:
+        return again
+    ensure_db()
+    projects = _curb_projects(get_session())
+    picked = _curb_picked(projects, project)
+    view = await run_in_threadpool(
+        functools.partial(
+            curb_live.kept,
+            ("ci", *(p["id"] for p in picked)),
+            functools.partial(curb_page.ci, [(p["name"], p["root"]) for p in picked]),
+            seconds=60,
+        )
+    )
+    one = picked[0] if len(picked) == 1 else None
+    context = {
+        "projects": projects,
+        "project": one["id"] if one else "",
+        "one": one,
+        "view": view,
+        "risk": risk,
+        "table": _curb_rows(request, view["rows"], level=risk),
+    }
+    return await _curb_render(request, "curb_ci.html", "projects", "ci", context)
+
+
+def _curb_sarif(name: str, results: list[Any], rules: list[Any]) -> Response:
+    from . import curb_sarif
+
+    document = curb_sarif.document(results, rules, version=__version__)
+    return Response(
+        json.dumps(document, indent=2) + "\n",
+        media_type="application/sarif+json",
+        headers={"Content-Disposition": f'attachment; filename="{name}"'},
+    )
+
+
+@app.get("/curb/projects/ci/export")
+async def curb_ci_export(project: str) -> Response:
+    """One project's workflow findings as SARIF, for code scanning."""
+    from . import curb_ci
+
+    ensure_db()
+    one = _curb_one(get_session(), project)
+    if one is None:
+        raise HTTPException(status_code=404, detail="No such project")
+    steps, _ = await run_in_threadpool(curb_ci.check, one["root"])
+    return _curb_sarif("curb-ci.sarif", curb_ci.results(steps), list(curb_ci.RULES.values()))
+
+
+@app.post("/curb/projects/ci/fix")
+async def curb_ci_fix_form(request: Request, project: str = Form(...)) -> RedirectResponse:
+    """Make one project's safe workflow fixes, after the operating system's yes."""
+    from . import curb_do
+
+    ensure_db()
+    back = f"/curb/projects/ci?project={quote(project)}"
+    one = _curb_one(get_session(), project)
+    if one is None:
+        return _curb_done(request, curb_do.Done(False, "That project is gone."), back)
+    done = await run_in_threadpool(curb_do.ci_fix, one["name"], one["root"])
+    return _curb_done(request, done, back)
+
+
+@app.get("/curb/projects/apps", response_class=HTMLResponse)
+async def curb_apps_page(request: Request, project: str = "", flag: str = "") -> Response:
+    """Places where each project's own code calls an LLM."""
+    from . import curb_live, curb_page
+
+    again = _curb_fresh(request)
+    if again:
+        return again
+    ensure_db()
+    projects = _curb_projects(get_session())
+    picked = _curb_picked(projects, project)
+    view = await run_in_threadpool(
+        functools.partial(
+            curb_live.kept,
+            ("apps", *(p["id"] for p in picked)),
+            functools.partial(curb_page.apps, [(p["name"], p["root"]) for p in picked]),
+            seconds=300,
+        )
+    )
+    one = picked[0] if len(picked) == 1 else None
+    rows = [r for r in view["rows"] if r["flag"]] if flag else view["rows"]
+    context = {
+        "projects": projects,
+        "project": one["id"] if one else "",
+        "one": one,
+        "view": view,
+        "flag": flag,
+        "table": _curb_rows(request, rows),
+    }
+    return await _curb_render(request, "curb_apps.html", "projects", "apps", context)
+
+
+@app.get("/curb/projects/apps/export")
+async def curb_apps_export(project: str) -> Response:
+    """One project's LLM calls as SARIF, for Semgrep, CodeQL or code scanning."""
+    from . import curb_app
+
+    ensure_db()
+    one = _curb_one(get_session(), project)
+    if one is None:
+        raise HTTPException(status_code=404, detail="No such project")
+    calls, _ = await run_in_threadpool(curb_app.audit, one["root"])
+    return _curb_sarif("curb-app.sarif", curb_app.results(calls), list(curb_app.RULES.values()))
+
+
+@app.get("/curb/projects/commits", response_class=HTMLResponse)
+async def curb_commits_page(
+    request: Request, project: str = "", state: str = "", revision: str = "", key: str = ""
+) -> Response:
+    """Each agent's signing key, and which key signed each commit."""
+    from . import curb_attribution, curb_do, curb_live, curb_page
+    from . import session as cache
+
+    ensure_db()
+    projects = _curb_projects(get_session())
+    picked = _curb_picked(projects, project)
+    held = cache.load()
+    listing = curb_attribution.registry(dict(held.keyring)) if held else None
+    revision = revision.strip()
+    view = await run_in_threadpool(
+        functools.partial(
+            curb_live.kept,
+            ("commits", revision, *(p["id"] for p in picked)),
+            functools.partial(
+                curb_page.commits,
+                [(p["name"], p["root"]) for p in picked],
+                revision,
+                listing=listing,
+            ),
+            seconds=30,
+        )
+    )
+    keys = curb_page.signing_keys(joined=held is not None)
+    one = picked[0] if len(picked) == 1 else None
+    context = {
+        "projects": projects,
+        "project": one["id"] if one else "",
+        "one": one,
+        "view": view,
+        "keys": keys,
+        "unsigned": [k["label"] for k in keys if k["agent"] in curb_do.signing_pending()],
+        "state": state,
+        "revision": revision,
+        "key": key,
+        "table": _curb_rows(request, view["rows"], state=state),
+    }
+    return await _curb_render(request, "curb_commits.html", "projects", "commits", context)
+
+
+@app.post("/curb/projects/commits/signing")
+async def curb_signing_form(request: Request, replace: str = Form("")) -> RedirectResponse:
+    """Set up each agent's signing key, or replace one, after the operating system's yes."""
+    from . import curb_do
+
+    work = (
+        functools.partial(curb_do.signing_replace, replace) if replace else curb_do.signing_setup
+    )
+    return _curb_done(request, await run_in_threadpool(work), "/curb/projects/commits")
+
+
+# --- Curb: team ---------------------------------------------------------------------------
+
+
+@app.get("/curb/team/policy", response_class=HTMLResponse)
+async def curb_policy_page(request: Request) -> Response:
+    """The org policy on this device: what it asks, whether it is met, and what waits."""
+    from . import curb_page, curb_policy
+    from . import session as cache
+
+    held = cache.load()
+    context: dict[str, Any] = {}
+    if held is not None:
+        state = curb_policy.load()
+        listing = curb_policy.authority(dict(held.keyring))
+        flagged = curb_policy.flags(state, listing, datetime.now(timezone.utc))
+        context["view"] = curb_page.policy(state, flagged, shown=_curb_shown(request))
+    return await _curb_render(request, "curb_policy.html", "team", "policy", context)
+
+
+@app.post("/curb/team/policy/approve")
+async def curb_policy_approve_form(request: Request) -> RedirectResponse:
+    """Apply the policy change that waits for this person, after the operating system's yes."""
+    from . import curb_do
+
+    held = _curb_machine()
+    if held.value is None:
+        done = curb_do.Done(False, _CURB_WAIT)
+    else:
+        done = await run_in_threadpool(curb_do.approve_policy, held.value.defaults)
+    return _curb_done(request, done, "/curb/team/policy")
+
+
+@app.post("/curb/team/policy/delegation")
+async def curb_delegation_form(request: Request, on: str = Form("")) -> RedirectResponse:
+    """Let signed org policy make changes that only tighten, or stop that."""
+    from . import curb_do
+
+    done = await run_in_threadpool(curb_do.delegation, bool(on))
+    return _curb_done(request, done, "/curb/team/policy")
+
+
+@app.get("/curb/team/devices", response_class=HTMLResponse)
+async def curb_devices_page(request: Request, needs: str = "") -> Response:
+    """Each device's newest report, as `flanner curb fleet` last fetched and checked them."""
+    from . import curb_page, curb_store
+    from . import session as cache
+
+    held = cache.load()
+    context: dict[str, Any] = {"needs": needs}
+    if held is not None:
+        view = curb_page.devices(curb_store.read_state("fleet-view"), mine=held.device_id)
+        rows = [r for r in view["rows"] if r["needs"]] if needs else view["rows"]
+        context.update(view=view, table=_curb_rows(request, rows))
+    return await _curb_render(request, "curb_devices.html", "team", "devices", context)
+
+
+@app.get("/curb/team/alerts", response_class=HTMLResponse)
+async def curb_alerts_page(request: Request, risk: str = "") -> Response:
+    """Each change that widened what an agent can reach, in the last 30 days."""
+    from . import curb_alerts, curb_page
+    from . import session as cache
+
+    context: dict[str, Any] = {"risk": risk}
+    if cache.load() is not None:
+        rows = curb_page.alerts(curb_alerts.history())
+        context["table"] = _curb_rows(request, rows, level=risk)
+    return await _curb_render(request, "curb_alerts.html", "team", "alerts", context)
 
 
 if __name__ == "__main__":

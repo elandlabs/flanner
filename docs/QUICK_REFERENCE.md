@@ -57,6 +57,87 @@ flanner sync --project PROJECT_NAME
 plan of your own, ask your agent to save it, or paste it into the web
 interface.
 
+## What your agents can reach
+
+```bash
+# Every Claude Code and Codex launch: credentials, files, network
+flanner curb map
+
+# One launch, exactly as you run it
+flanner curb map -- claude --settings ./ci-settings.json
+flanner curb map -- codex exec -s workspace-write
+
+# Names and locations, in a window on your screen
+flanner curb show
+
+# Agents, settings layers, MCP servers, hooks, skills and scheduled jobs
+flanner curb inventory
+
+# Secrets agents left behind, by exposure class (pip install 'flanner[sweep]')
+flanner curb sweep
+flanner curb sweep --validate     # ask each secret's issuer if it works
+flanner curb show --sweep         # types and locations, in a window
+
+# Close what each agent can reach, in its own user settings
+flanner curb fix --dry-run        # the fixes, changing nothing
+flanner curb fix                  # apply them after your operating system asks you
+flanner curb fix --undo           # put the files back
+
+# Prove each block: decoys, and the agent asked to read them four ways
+flanner curb test                 # states the token cost and asks first
+flanner curb decoys               # how many, and when they expire
+flanner curb decoys --remove
+
+# Log each tool call's metadata (agent, tool, channel, decision), signed
+flanner curb log --enable         # installs the agents' hooks, after your OS says yes
+flanner curb log --verify         # did anyone change a record?
+flanner curb observed             # seen in use, per channel, after 14 days and 20 sessions
+
+# After rotating a secret, replace it in a file the sweep found (no backup, no undo)
+flanner curb scrub FILE --dry-run
+flanner curb scrub FILE
+
+# Delete Curb's stored reports and its digest key
+flanner curb forget
+
+# Your organization's agent policy (Flanner Mesh)
+flanner curb policy               # the policy here, what waits for you, what is not met
+flanner curb policy --enrol       # let signed policy make changes that only tighten (asks once)
+flanner curb policy --check-in    # fetch the newest policy now; also runs at session start
+flanner curb policy --approve     # review and apply a change that waits for you
+flanner curb policy --withdraw    # later changes wait for your approval
+flanner curb policy --export mdm  # admin-owned settings files for device management
+
+# Admins: every device, each report checked against its own key
+flanner curb fleet
+
+# Agent steps in this repository's GitHub Actions workflows
+flanner curb ci                   # who can start each, what reaches it, what it holds
+flanner curb ci --sarif curb.sarif --fail-on high
+flanner curb ci --fix             # the one-line fixes that are safe to make blind
+
+# LLM calls in an application's Python code: single call, tool-using or loop
+flanner curb app --sarif app.sarif
+```
+
+```bash
+# Sign each agent's commits with a key of its own (asks your OS once)
+flanner curb attribution --setup --github   # --github adds the public keys with your gh
+flanner curb attribution                    # the keys, and whether rotation is due
+flanner curb attribution --rotate           # every 90 days; old commits stay attributed
+flanner curb verify main..HEAD              # attributed, retired key, revoked, unknown, unattributed
+```
+
+In CI, use the action: `uses: elandlabs/flanner/actions/curb-ci@<tag>`
+(see `actions/curb-ci/README.md`). `flanner init` also installs the
+`agent-blast-radius` skill, which runs the redacted commands for an agent.
+
+The terminal never shows a credential's name or location, for anyone.
+Without an account nothing leaves the machine. With Flanner Mesh, devices
+send only the minimised, signed fields in
+[curb-wire-contract.md](curb-wire-contract.md). The tested agent versions
+are in [curb-support-matrix.md](curb-support-matrix.md).
+
 ## Web Interface
 
 ```bash

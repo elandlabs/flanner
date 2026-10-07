@@ -49,6 +49,10 @@ def _isolated_flanner_home(tmp_path, monkeypatch):
     # it longer, but not in a plain run. rich reads COLUMNS on every print.
     monkeypatch.setenv("COLUMNS", "250")
 
+    # Curb reads admin-deployed agent settings under the filesystem root.
+    # A test must see only what it planted, never this machine's own.
+    monkeypatch.setenv("FLANNER_CURB_SYSTEM_ROOT", str(tmp_path / "system-root"))
+
 
 @pytest.fixture
 def db(tmp_path):

@@ -242,6 +242,209 @@ ALLOWED = {
         "skills_mesh",
         "skills_ops",
     },
+    # Curb: what an agent launch can reach. Each piece reads files and
+    # nothing reaches the network; the reachability test below holds them
+    # to that. The launch parser, the matcher and the severity function are
+    # pure, so they import nothing.
+    "curb_context": set(),
+    "curb_match": set(),
+    "curb_severity": set(),
+    "curb_window": set(),
+    "curb_credentials": {"agent_paths"},
+    "curb_settings": {"agent_paths", "curb_context"},
+    "curb_reach": {
+        "curb_context",
+        "curb_credentials",
+        "curb_match",
+        "curb_settings",
+        "curb_severity",
+    },
+    "curb_inventory": {"agent_paths", "skills_adapters", "curb_context", "curb_settings"},
+    # The leak sweep: Kingfisher behind one module, the only one that may
+    # import it, and Curb's own local state behind another.
+    "curb_kingfisher": set(),
+    "curb_store": {"identity"},
+    "curb_sweep": {
+        "agent_paths",
+        "curb_context",
+        "curb_credentials",
+        "curb_kingfisher",
+        "curb_reach",
+        "curb_settings",
+        "curb_store",
+        "identity",
+        "skills_adapters",
+    },
+    # Approvals: the OS confirms a person, grants live in memory.
+    "curb_approval": {"curb_log", "curb_store", "notify"},
+    # The action log: light, since a hook runs it on every tool call.
+    "curb_log": {"curb_store", "identity", "storage"},
+    # Observed use, and the hooks that feed the log.
+    "curb_observe": {
+        "agent_paths",
+        "curb_context",
+        "curb_fix",
+        "curb_log",
+        "curb_reach",
+        "curb_tighten",
+    },
+    # The tighten-only test: the resolver and reach rules, before and after.
+    "curb_tighten": {"curb_context", "curb_credentials", "curb_reach", "curb_settings"},
+    # The tester: decoys, headless agent runs, and proofs kept as digests.
+    "curb_tester": {
+        "agent_paths",
+        "curb_context",
+        "curb_reach",
+        "curb_settings",
+        "curb_severity",
+        "curb_store",
+    },
+    # The reports for this machine, for the CLI and the web page alike.
+    "curb_report": {
+        "agent_paths",
+        "curb_context",
+        "curb_credentials",
+        "curb_inventory",
+        "curb_reach",
+        "curb_settings",
+        "curb_store",
+        "curb_tester",
+    },
+    # Scrubbing: Kingfisher finds, the grant permits, one rename writes.
+    "curb_scrub": {"curb_approval", "curb_kingfisher", "curb_settings"},
+    # Fix writers: plan from an assessment, check tighten-only, write with a grant.
+    "curb_fix": {
+        "agent_paths",
+        "curb_approval",
+        "curb_context",
+        "curb_credentials",
+        "curb_match",
+        "curb_reach",
+        "curb_settings",
+        "curb_store",
+        "curb_tighten",
+    },
+    # Curb's team features (R5). None of them reaches the network: the team
+    # pass is handed a client by the composition root, which builds it from
+    # `account`, and the reachability test below holds every one to that.
+    "curb_wire": {"artifacts", "entitlements"},
+    "curb_compile": {"curb_fix", "curb_match"},
+    "curb_policy": {
+        "agent_paths",
+        "curb_compile",
+        "curb_context",
+        "curb_credentials",
+        "curb_fix",
+        "curb_reach",
+        "curb_settings",
+        "curb_store",
+        "curb_tighten",
+        "curb_wire",
+    },
+    "curb_fleet": {"curb_reach", "curb_store", "curb_wire"},
+    "curb_alerts": {
+        "curb_context",
+        "curb_reach",
+        "curb_settings",
+        "curb_store",
+        "curb_wire",
+        "notify",
+    },
+    "curb_export": {"curb_context", "curb_log", "curb_store"},
+    "curb_team": {
+        "curb_alerts",
+        "curb_attribution",
+        "curb_export",
+        "curb_fleet",
+        "curb_policy",
+        "curb_reach",
+        "curb_store",
+        "curb_wire",
+        "entitlements",
+        "refusals",
+    },
+    # Curb in pipelines and code (R6): files in a repository, read and
+    # judged; the only output is SARIF and the terminal.
+    "curb_sarif": set(),
+    "curb_ci": {"curb_sarif"},
+    "curb_app": {"curb_sarif"},
+    # Curb commit attribution (R7). The broker is git's signing program and
+    # reaches nothing but the keychain, the action log and the files git
+    # gives it.
+    "curb_sshsig": set(),
+    "curb_attribution": {
+        "agent_paths",
+        "artifacts",
+        "curb_context",
+        "curb_fix",
+        "curb_observe",
+        "curb_sshsig",
+        "curb_store",
+        "curb_tighten",
+        "curb_wire",
+        "identity",
+    },
+    "curb_signer": {"curb_attribution", "curb_log", "curb_sshsig"},
+    # What Curb's two surfaces share. The team pass is handed its client, so
+    # this never reaches `account`.
+    "curb_ops": {
+        "identity",
+        "session",
+        "curb_context",
+        "curb_inventory",
+        "curb_kingfisher",
+        "curb_observe",
+        "curb_policy",
+        "curb_reach",
+        "curb_report",
+        "curb_settings",
+        "curb_store",
+        "curb_sweep",
+        "curb_team",
+    },
+    # The web UI's Curb section: which browser may see names, what the
+    # process holds in memory, what each page shows and what each button does.
+    "curb_reveal": {"curb_approval"},
+    "curb_live": set(),
+    "curb_page": {
+        "agent_paths",
+        "curb_app",
+        "curb_attribution",
+        "curb_ci",
+        "curb_context",
+        "curb_fix",
+        "curb_inventory",
+        "curb_log",
+        "curb_observe",
+        "curb_policy",
+        "curb_reach",
+        "curb_report",
+        "curb_severity",
+        "curb_store",
+        "curb_sweep",
+        "curb_tester",
+    },
+    "curb_do": {
+        "agent_paths",
+        "curb_approval",
+        "curb_attribution",
+        "curb_ci",
+        "curb_context",
+        "curb_fix",
+        "curb_kingfisher",
+        "curb_live",
+        "curb_observe",
+        "curb_ops",
+        "curb_page",
+        "curb_policy",
+        "curb_reach",
+        "curb_reveal",
+        "curb_scrub",
+        "curb_store",
+        "curb_sweep",
+        "curb_tester",
+        "curb_tighten",
+    },
     # The list of every operation and the surfaces that offer it. Data only,
     # imported by the tests that check it against the CLI, web app and MCP
     # server, and by nothing that would make it a dependency.
@@ -281,6 +484,26 @@ ALLOWED = {
     "web": FOUNDATION
     | {
         "crash",
+        # The Curb section (Curb PRD §11.3): `curb_page` says what each page
+        # shows, `curb_do` what each button does, `curb_live` what is held
+        # between requests, and `curb_reveal` which browser may see names.
+        # `account` stays out: what needs the control plane is shown as a
+        # terminal command, and the reachability test below holds web to it.
+        "curb_alerts",
+        "curb_app",
+        "curb_approval",
+        "curb_attribution",
+        "curb_ci",
+        "curb_do",
+        "curb_live",
+        "curb_log",
+        "curb_observe",
+        "curb_page",
+        "curb_policy",
+        "curb_report",
+        "curb_reveal",
+        "curb_sarif",
+        "curb_store",
         "database",
         "paging",
         "actions",
@@ -388,6 +611,8 @@ ALLOWED = {
         # The hidden commands the desktop app runs: desktop-link, -probe, -connect.
         "desktop",
         "actions",
+        # Tells a read command from a write without importing the store.
+        "operations",
         "setup_check",
         "skills_ops",
         "skills_observe",
@@ -437,6 +662,39 @@ ALLOWED = {
         "identity",
         # Seeding a known catalog, behind the hidden `demo` group.
         "demo",
+        # The Curb commands: assessment, inventory and the detail window.
+        "curb_ops",
+        "curb_approval",
+        "curb_context",
+        "curb_credentials",
+        "curb_fix",
+        "curb_inventory",
+        "curb_kingfisher",
+        "curb_log",
+        "curb_observe",
+        "curb_reach",
+        "curb_report",
+        "curb_scrub",
+        "curb_settings",
+        "curb_severity",
+        "curb_store",
+        "curb_sweep",
+        "curb_tester",
+        "curb_window",
+        # Curb's team features (R5): the CLI builds the team pass's client
+        # from `account`, which is why the pass itself never imports it.
+        "curb_alerts",
+        "curb_compile",
+        "curb_fleet",
+        "curb_policy",
+        "curb_team",
+        "curb_wire",
+        # Curb in pipelines and code (R6).
+        "curb_app",
+        "curb_ci",
+        "curb_sarif",
+        # Curb commit attribution (R7).
+        "curb_attribution",
         # `doctor` reports how far this machine's clock is from the server's,
         # and the threshold it compares against is the peer freshness window.
         # Naming the module that owns that rule is better than copying the
@@ -512,7 +770,30 @@ def test_no_read_path_can_reach_the_network():
                     pending.append(dependency)
         return seen
 
-    for module in ("authz", "assurance", "review", "session", "workflow", "peer"):
+    for module in (
+        "authz",
+        "assurance",
+        "review",
+        "session",
+        "workflow",
+        "peer",
+        # Curb R1 reads local files only (Curb PRD §7.1).
+        "curb_reach",
+        "curb_inventory",
+        "curb_sweep",
+        # Curb R5: the control plane is reached only through the client
+        # the composition root passes to the team pass.
+        "curb_team",
+        "curb_ci",
+        "curb_app",
+        "curb_signer",
+        "curb_attribution",
+        # The web UI and what it is built from: no page reaches the control plane.
+        "curb_ops",
+        "curb_page",
+        "curb_do",
+        "web",
+    ):
         assert "account" not in closure(module), (
             f"{module} can reach the network through account; "
             "a read command would make an HTTP call"

@@ -1,0 +1,17 @@
+# Modelled on Clinejection (Curb PRD E2): anyone who opens an issue starts
+# an agent that may run any shell command on the runner.
+name: Triage new issues
+on:
+  issues:
+    types: [opened]
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          allowed_non_write_users: "*"
+          claude_args: --allowedTools "Bash,Read,Write,Edit,Glob,Grep,WebFetch"
+          prompt: Triage issue number ${{ github.event.issue.number }} and label it.

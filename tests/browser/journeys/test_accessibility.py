@@ -33,6 +33,19 @@ STATIC_PAGES = (
     "/actions",
     "/settings",
     "/setup",
+    "/curb",
+    "/curb/machine/agents",
+    "/curb/machine/leaks",
+    "/curb/machine/fixes",
+    "/curb/machine/tests",
+    "/curb/machine/activity",
+    "/curb/projects/reach",
+    "/curb/projects/ci",
+    "/curb/projects/apps",
+    "/curb/projects/commits",
+    "/curb/team/policy",
+    "/curb/team/devices",
+    "/curb/team/alerts",
 )
 
 WIDTHS = (1280, 1024, 375)

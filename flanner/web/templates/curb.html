@@ -1,0 +1,85 @@
+{% extends "curb_base.html" %}
+
+{# Overview: each agent's risk as a picture, what to do next, and an introduction. #}
+{% block part %}
+{% if machine_held.value is none %}
+  {% if machine_held.error %}{{ k.failed(machine_held.error) }}{% else %}{{ k.checking() }}{% endif %}
+{% else %}
+<div class="tab-stack">
+  <div class="curb-head">
+    <div class="say">
+      <p class="what headline">{{ headline }}</p>
+      <p class="from">Each agent as it starts outside any project. {{ k.checked(machine_held) }}</p>
+    </div>
+    <div class="acts">{{ k.again() }}</div>
+  </div>
+
+  {% if machine_held.error %}
+  <div class="notice warn" role="status"><p><b>The last check did not finish.</b> {{ machine_held.error }}.</p>
+    <p>What you see is from the check before it.</p></div>
+  {% endif %}
+  {% for line in skipped %}<p class="hint">{{ line }}</p>{% endfor %}
+
+  {% if cards %}
+  <div class="curb-cols">
+    {% for card in cards %}
+    <div class="card" data-curb-agent="{{ card.agent }}">
+      <div class="card-head">{{ card.label }} {{ k.risk(card.level, card.tone, true) }}
+        {% if card.guess %}<span class="pill pill-aging">Best guess</span>{% endif %}
+        <a class="jump" href="/curb/projects/reach">By project {{ ico.icon('arrow', 12) }}</a></div>
+      <div class="card-pad">
+        {{ k.picture(card) }}
+        <p class="card-lede">{{ card.lede }}</p>
+        <details class="row-more"><summary>Why {{ card.level }}?</summary>
+          <p>{{ card.why }}</p>
+          {{ k.ways(card) }}</details>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  {% call empty.state("search", "No agent found") %}
+    <p>Curb checks Claude Code and Codex. Neither is set up on this machine yet.</p>
+  {% endcall %}
+  {% endif %}
+
+  {% if todo %}
+  <div class="card needs is-waiting">
+    <div class="card-head">Do next <span class="note">most urgent first</span></div>
+    {% for item in todo %}
+    <a class="grid-row needs-row" href="{{ item.href }}">
+      <span><span class="name">{{ item.title }}<span class="area">{{ item.area }}</span></span>
+        <span class="sub">{{ item.why }}</span></span>
+      <span class="btn btn-sm" data-cell="chip">{{ item.go }}</span></a>
+    {% endfor %}
+  </div>
+  {% elif cards %}
+  {% call empty.state("clear", "Nothing needs you") %}
+    <p>Curb checks again each time you open this page. On a team device, it also checks at each
+      session start, and tells you when an agent can reach more.</p>
+  {% endcall %}
+  {% endif %}
+
+  {% call k.explain("New to Curb?", "Four things to know, and where everything is.", new_here) %}
+    <p><b>Curb reads. It does not run.</b> It reads each agent's settings and looks for
+      credentials on this machine. It runs nothing from your projects.</p>
+    <p><b>Risk comes from two questions.</b> Can the agent read your credentials? Can it send
+      data out? Both is High. Reading with no way out is Medium. No reading is Low.</p>
+    <p><b>A button with a shield changes something.</b> You see what will change, then your
+      operating system asks you. Curb backs up each file for 7 days, so you can undo it.</p>
+    <p><b>Names stay hidden.</b> Which credentials, and where they are, shows only when you
+      ask, for 5 minutes.</p>
+    <dl class="words">
+      <dt><a class="jump" href="/curb/machine/agents">This machine</a></dt>
+      <dd>Agents, leaks, fixes, tests and the activity log. The same in every project.</dd>
+      <dt><a class="jump" href="/curb/projects/reach">Projects</a></dt>
+      <dd>What changes from project to project: reach, CI workflows, app code and commits.</dd>
+      <dt><a class="jump" href="/curb/team/policy">Team</a></dt>
+      <dd>Your organization's policy, its devices, and alerts.</dd>
+    </dl>
+    <p>Curb keeps its reports on this machine only.
+      <a class="linkish" href="{{ k.rev('forget') }}" data-curb-review data-no-boost>Delete what Curb has stored…</a></p>
+  {% endcall %}
+</div>
+{% endif %}
+{% endblock %}

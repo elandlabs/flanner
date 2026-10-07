@@ -189,6 +189,10 @@ class Sectioned(click.Group):
             ("skills",),
         ),
         (
+            "What your agents can reach (no account; nothing sent unless you ask)",
+            ("curb",),
+        ),
+        (
             "Is a plan still true (local, reads your git history)",
             ("freshness", "why"),
         ),
@@ -221,9 +225,16 @@ class Sectioned(click.Group):
         so the history does not depend on which path a command happens to
         take. Whether it failed is read from how it exited.
         """
-        from . import actions
+        from . import operations
 
         name = _command_path(self, ctx)
+        # Reads are never recorded, so they skip the store: importing it
+        # costs most of a second and a half on a Windows laptop.
+        if not any(name in op.cli and op.access != "read" for op in operations.OPERATIONS):
+            return super().invoke(ctx)
+
+        from . import actions
+
         ok = False
         ran = True
         with actions.watching() as seen:
@@ -2130,6 +2141,44 @@ def guard_write() -> None:
         output = ""  # fail open: never block a write because the guard broke
     if output:
         click.echo(output)
+
+
+@hook.command("curb-record")
+@click.option("--agent", type=click.Choice(["claude", "codex"]), required=True)
+def curb_record_hook(agent: str) -> None:
+    """PreToolUse, PostToolUse, PermissionDenied: one metadata record in Curb's action log."""
+    from .curb_log import record_hook
+
+    record_hook(agent, sys.stdin.read())  # fails open by design
+
+
+@hook.command("curb-session")
+@click.option("--agent", type=click.Choice(["claude", "codex"]), required=True)
+def curb_session_hook(agent: str) -> None:
+    """SessionStart and ConfigChange: re-check org policy, and show Curb's notices."""
+    # Never fails and never blocks the agent: network work goes to a child.
+    notices: list[str] = []
+    try:
+        from . import curb_alerts, curb_store, curb_team, identity, release
+
+        payload = json.loads(sys.stdin.read() or "{}")
+        event = str(payload.get("hook_event_name") or "SessionStart")
+        if event == "SessionStart" and curb_team.due(every=curb_team.QUIET):
+            curb_store.write_state("team", {"last": time.time()})
+            release.spawn_detached(_CURB_BACKGROUND)
+        else:
+            curb_team.reconcile(
+                _curb_device_reports(),
+                identity.device_id(),
+                home=Path.home(),
+                env=os.environ,
+                platform=sys.platform,
+            )
+        notices = curb_alerts.take_notices()
+    except Exception:  # noqa: BLE001 - see above
+        return
+    if notices:
+        click.echo(json.dumps({"systemMessage": " ".join(notices)}))
 
 
 @hook.command("skill-use")
@@ -7576,6 +7625,42 @@ def _message_upkeep_in_background() -> None:
     threading.Thread(target=run, daemon=True).start()
 
 
+def _curb_upkeep_in_background() -> None:
+    """Curb's team pass every 6 hours, and a watch on Codex's config, while serving.
+
+    Only on a device whose person enrolled in Curb's team checks. Codex has
+    no event for a settings change, so its config file is watched instead
+    (Curb PRD §10.11); a change re-runs the local half of the pass.
+    """
+    import threading
+
+    from . import agent_paths, curb_team, identity
+
+    def run() -> None:
+        seen: float | None = None
+        while True:
+            try:
+                if _curb_enrolled():
+                    config = agent_paths.codex_home() / "config.toml"
+                    stamp = config.stat().st_mtime if config.exists() else 0.0
+                    if curb_team.due():
+                        _curb_team_pass()
+                    elif seen is not None and stamp != seen:
+                        curb_team.reconcile(
+                            _curb_device_reports(),
+                            identity.device_id(),
+                            home=Path.home(),
+                            env=os.environ,
+                            platform=sys.platform,
+                        )
+                    seen = stamp
+            except Exception:  # noqa: BLE001 - upkeep must outlive one bad pass
+                logging.getLogger(__name__).warning("curb upkeep failed", exc_info=True)
+            time.sleep(60)
+
+    threading.Thread(target=run, daemon=True).start()
+
+
 @peer.command("serve")
 @click.option("--host", default="127.0.0.1", help="Address to listen on (--http only)")
 @click.option("--port", default=None, type=int, help="Port to listen on (--http only)")
@@ -7630,6 +7715,7 @@ def peer_serve(host: str, port: int | None, http: bool) -> None:
             lambda device_id, workspace_id: peer_iroh.peer_for(device_id, workspace_id, cache.load)
         )
         _message_upkeep_in_background()
+        _curb_upkeep_in_background()
         try:
             endpoint.serve(get_session, cache.load, _keyring_refresher())
         except KeyboardInterrupt:
@@ -7649,6 +7735,7 @@ def peer_serve(host: str, port: int | None, http: bool) -> None:
     if beyond_loopback(host):
         tui.warn(f"Reachable from other machines on {host}. Anyone can reach the port.")
     _message_upkeep_in_background()
+    _curb_upkeep_in_background()
     # Over HTTP a peer is named by address, and this device knows device ids
     # rather than addresses, so there is nobody to dial. Catching up here is
     # a manual `flanner peer pull <address>`.
@@ -9338,6 +9425,66 @@ def why(ctx: click.Context, plan_name: str | None, project: str | None) -> None:
 # against a command that exists.
 
 EXAMPLES: dict[str, tuple[str, ...]] = {
+    "curb map": (
+        "flanner curb map                 every agent, launched from here",
+        "flanner curb map --agent codex --profile ci",
+        "flanner curb map -- claude --settings ./ci-settings.json",
+    ),
+    "curb show": (
+        "flanner curb show                names and locations, in a window",
+        "flanner curb show --sweep        where each secret the sweep found is",
+    ),
+    "curb inventory": ("flanner curb inventory           agents, MCP servers, hooks, jobs",),
+    "curb sweep": (
+        "flanner curb sweep               secrets agents left behind, by class",
+        "flanner curb sweep --validate    and ask each one's issuer if it works",
+    ),
+    "curb forget": ("flanner curb forget              delete Curb's reports and digest key",),
+    "curb test": (
+        "flanner curb test                 prove each block with decoys (costs tokens)",
+    ),
+    "curb scrub": (
+        "flanner curb scrub notes.md --dry-run  check a file can be scrubbed",
+        "flanner curb scrub notes.md            replace its secrets, after rotating them",
+    ),
+    "curb log": (
+        "flanner curb log --enable         log each tool call's metadata (asks first)",
+        "flanner curb log --verify         check no record was changed",
+    ),
+    "curb observed": ("flanner curb observed            what each agent has been seen using",),
+    "curb decoys": (
+        "flanner curb decoys               how many decoys, and when they expire",
+        "flanner curb decoys --remove      delete them all",
+    ),
+    "curb ci": (
+        "flanner curb ci                   agent steps in this repository's workflows",
+        "flanner curb ci --sarif curb.sarif --fail-on high",
+    ),
+    "curb app": (
+        "flanner curb app                  LLM calls in this app's Python code",
+        "flanner curb app --sarif app.sarif",
+    ),
+    "curb attribution": (
+        "flanner curb attribution          each agent's key, and the registry",
+        "flanner curb attribution --setup  give each agent a key (asks first)",
+        "flanner curb attribution --rotate  replace the keys every 90 days",
+    ),
+    "curb verify": (
+        "flanner curb verify               the last commit's attribution",
+        "flanner curb verify main..HEAD    every commit on this branch",
+    ),
+    "curb policy": (
+        "flanner curb policy               the org policy here, and what waits for you",
+        "flanner curb policy --enrol       let signed policy make changes that only tighten",
+        "flanner curb policy --approve     review and apply what waits",
+        "flanner curb policy --export mdm  admin-owned files for device management",
+    ),
+    "curb fleet": ("flanner curb fleet               every device, checked by its own signature",),
+    "curb fix": (
+        "flanner curb fix --dry-run        the fixes, without changing anything",
+        "flanner curb fix                  apply them, after your OS says yes",
+        "flanner curb fix --undo           put the files back",
+    ),
     "init": (
         "flanner init                     adopt the repository you are in",
         "flanner init --plan-dir docs/plans",
@@ -9481,6 +9628,1509 @@ def _attach_examples(group: click.Group, prefix: str = "") -> None:
             command.epilog = "Examples:\n\n\b\n" + "\n".join(f"  {line}" for line in lines)
         if isinstance(command, click.Group):
             _attach_examples(command, f"{path} ")
+
+
+# --- curb -------------------------------------------------------------------
+#
+# What each agent launch can reach. Read-only, local, and redacted for every
+# caller: an agent can fake a terminal, so no flag or terminal check prints
+# a credential's name or location. `curb show` puts full detail in a window
+# on the person's screen instead (Curb PRD §11).
+
+
+@cli.group()
+def curb() -> None:
+    """What your agents can reach, and the secrets they left behind"""
+
+
+_CURB_LAUNCH = (
+    click.option(
+        "--dir",
+        "directory",
+        type=click.Path(file_okay=False, exists=True, path_type=Path),
+        default=None,
+        help="The folder the agent starts in (this one if omitted)",
+    ),
+    click.option(
+        "--agent",
+        type=click.Choice(["claude", "codex"]),
+        default=None,
+        help="Only this agent. Both by default",
+    ),
+    click.option("--profile", default=None, help="The Codex profile the launch uses"),
+    click.argument("launch", nargs=-1, type=click.UNPROCESSED),
+)
+
+
+def _curb_launch_options(command: Callable[..., Any]) -> Callable[..., Any]:
+    for decorator in reversed(_CURB_LAUNCH):
+        command = decorator(command)
+    return command
+
+
+def _curb_contexts(
+    directory: Path | None, agent: str | None, profile: str | None, launch: tuple[str, ...]
+) -> tuple[Path, list[Any], list[str]]:
+    """The launch contexts to report on, and the agents left out and why."""
+    from . import curb_context, curb_report
+
+    try:
+        return curb_report.contexts(directory, agent, profile, launch)
+    except curb_context.LaunchError as error:
+        raise click.UsageError(str(error)) from None
+
+
+def _curb_reports(contexts: list[Any], *, full: bool) -> list[dict[str, Any]]:
+    from . import curb_reach, curb_report
+
+    view = curb_reach.full if full else curb_reach.redacted
+    return [view(report) for report in curb_report.with_proofs(curb_report.assess(contexts))]
+
+
+def _curb_assess(contexts: list[Any]) -> list[Any]:
+    """Each launch context's AgentReport."""
+    from . import curb_report
+
+    return curb_report.assess(contexts)
+
+
+_STATE_STYLE = {
+    "controlled": "green",
+    "uncontrolled": "red",
+    "unknown": "yellow",
+    "absent": "muted",
+    "informational": "muted",
+}
+_LEVEL_STYLE = {"High": "red", "Medium": "yellow", "Low": "green"}
+
+
+def _print_curb_report(view: dict[str, Any]) -> None:
+    severity = view["severity"]
+    style = _LEVEL_STYLE.get(severity["level"], "default")
+    console.print()
+    console.print(
+        f"[bold]{view['label']}[/]  [{style}]{severity['level']}[/] [muted]"
+        f"({severity['rule']}, {severity['evidence']})[/]"
+    )
+    console.print(f"  {severity['reason']}.", style="muted")
+    version = view["version"] or "unknown"
+    tested = "tested" if view["supported"] else f"not the tested {view['baseline']}"
+    console.print(
+        tui.fields(
+            [
+                ("Launch", view["launch"]),
+                ("Directory", view["directory"]),
+                ("Version", f"{version} ({tested})"),
+            ]
+        )
+    )
+    rows = tui.table("Channel", "State", "Evidence", "Why")
+    for channel in view["channels"]:
+        state = channel["state"]
+        rows.add_row(
+            channel["channel"],
+            f"[{_STATE_STYLE.get(state, 'default')}]{state}[/]",
+            channel["evidence"],
+            channel["why"],
+        )
+    console.print(rows)
+    credentials = view["credentials"]
+    categories = ", ".join(f"{name} {count}" for name, count in credentials["by_category"].items())
+    console.print(
+        f"  Credentials: {credentials['found']} found, {credentials['readable']} readable"
+        f" ({credentials['wide']} wide){': ' + categories if categories else ''}."
+    )
+    if view["external_content"]:
+        console.print("  Takes in outside content: " + "; ".join(view["external_content"]) + ".")
+    fixes = [c for c in view["channels"] if c["fix"] and c["state"] != "controlled"]
+    if fixes:
+        console.print("  To close:", style="bold")
+        for channel in fixes:
+            console.print(f"    {channel['channel']}: {channel['fix']}.")
+    for heading, key in (("Assumed", "assumed"), ("Not checked", "not_checked")):
+        if view[key]:
+            console.print(f"  {heading}: " + "; ".join(view[key]) + ".", style="muted")
+    console.print(f"  {view['assumption']}", style="muted")
+
+
+@curb.command("map")
+@_curb_launch_options
+@click.option("--json", "as_json", is_flag=True, help="Machine-readable report, redacted the same")
+def curb_map(
+    directory: Path | None,
+    agent: str | None,
+    profile: str | None,
+    launch: tuple[str, ...],
+    as_json: bool,
+) -> None:
+    """What each agent launch can reach, channel by channel
+
+    Reads settings and credential locations on this machine, and runs
+    nothing from the repository. The report names no credential and no
+    location, whoever runs it: `flanner curb show` puts those in a window on
+    your screen. Give a launch command after -- to assess that launch
+    instead of the default one.
+    """
+    from . import curb_severity
+
+    _, contexts, skipped = _curb_contexts(directory, agent, profile, launch)
+    with tui.working("reading agent settings and credential locations"):
+        views = _curb_reports(contexts, full=False)
+    if as_json:
+        click.echo(
+            json.dumps(
+                {"function": curb_severity.LABEL, "reports": views, "skipped": skipped}, indent=2
+            )
+        )
+        return
+    for line in skipped:
+        tui.note(line)
+    for view in views:
+        _print_curb_report(view)
+    console.print()
+    if views:
+        tui.hint(
+            f"  {tui.command('flanner curb show')} opens names and locations in a window "
+            "on your screen."
+        )
+        console.print()
+
+
+def _curb_sweep(directory: Path | None, *, validate: bool) -> Any:
+    """Run the leak sweep for a project folder. The caller checked Kingfisher is here."""
+    from . import curb_ops, curb_sweep
+
+    cwd, _, _ = _curb_contexts(directory, None, None, ())
+    curb_sweep.lower_priority()
+    return curb_ops.sweep([cwd], validate=validate)
+
+
+def _curb_sweep_unavailable() -> None:
+    from rich.markup import escape
+
+    from . import curb_kingfisher
+
+    reason = curb_kingfisher.unavailable()
+    if reason:
+        tui.bad(f"No sweep: {escape(reason)}.")  # escaped: "[sweep]" is not a style
+        raise SystemExit(1)
+
+
+def _curb_may_validate() -> bool:
+    """Ask, every run, before any secret goes to its issuer (Curb PRD §7.1)."""
+    try:
+        return click.confirm(
+            "Send each secret found to its own issuer, to check whether it still works?",
+            default=False,
+        )
+    except click.Abort:  # nobody there to answer
+        return False
+
+
+@curb.command("sweep")
+@click.option(
+    "--dir",
+    "directory",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=None,
+    help="The project folder to sweep, besides the agents' own files (default: here)",
+)
+@click.option("--json", "as_json", is_flag=True, help="Machine-readable counts, redacted the same")
+@click.option(
+    "--validate",
+    is_flag=True,
+    help="Ask each secret's own issuer whether it still works. Asks you first.",
+)
+def curb_sweep_command(directory: Path | None, as_json: bool, validate: bool) -> None:
+    """Find secrets that agents left behind, and how exposed each one is
+
+    Reads agent transcripts and sessions, instruction files, skills, MCP
+    configs, shell history, the project's .env files and flanner's plans
+    and memories, offline. Each secret counts once, in its worst class: A,
+    sent to a model provider; B, readable by an agent; C, on disk but
+    blocked. Only counts are printed; `flanner curb show --sweep` puts types
+    and locations in a window on your screen. No value is ever printed or
+    kept.
+    """
+    from . import curb_store, curb_sweep
+
+    _curb_sweep_unavailable()
+    validate = validate and _curb_may_validate()
+    with tui.working("reading agent files for secrets"):
+        report = _curb_sweep(directory, validate=validate)
+    curb_store.save_report("sweep", curb_sweep.stored(report))
+    view = curb_sweep.redacted(report)
+    if as_json:
+        click.echo(json.dumps(view, indent=2))
+        return
+    console.print()
+    console.print(
+        f"[bold]Leak sweep[/]  {view['secrets']} secret(s) in {view['files_scanned']} file(s)"
+    )
+    rows = tui.table("Class", "Secrets", "What to do")
+    for key, name in view["classes"].items():
+        count = view["by_class"][key]
+        style = "red" if key == curb_sweep.SENT and count else "default"
+        rows.add_row(f"{key}, {name}", f"[{style}]{count}[/]", curb_sweep.ADVICE[key])
+    console.print(rows)
+    where = ", ".join(f"{name} {count}" for name, count in view["locations_by_category"].items())
+    if where:
+        console.print(f"  Found in: {where}.")
+    if "validation" in view:
+        outcomes = ", ".join(f"{name} {count}" for name, count in view["validation"].items())
+        console.print(f"  Issuers said: {outcomes}.")
+    if not view["launches"]:
+        tui.note("No supported agent was found, so nothing counts as readable by one.")
+    if view["not_checked"]:
+        console.print("  Not checked: " + "; ".join(view["not_checked"]) + ".", style="muted")
+    console.print(
+        "  A redacted copy is kept for 30 days; `flanner curb forget` deletes it.", style="muted"
+    )
+    console.print()
+    if view["secrets"]:
+        tui.hint(
+            f"  {tui.command('flanner curb show --sweep')} opens types and locations in a "
+            "window on your screen."
+        )
+        console.print()
+
+
+def _curb_ask(question: str) -> bool:
+    try:
+        return click.confirm(question, default=False)
+    except click.Abort:  # nobody there to answer
+        return False
+
+
+@curb.command("forget")
+@click.option("--yes", is_flag=True, help="Delete without asking first")
+@click.option("--backups", is_flag=True, help="With --yes: delete settings backups too")
+def curb_forget(yes: bool, backups: bool) -> None:
+    """Delete everything Curb keeps on this machine
+
+    The redacted reports and the per-device digest key; afterwards older
+    fingerprints can no longer be matched. Settings backups are asked about
+    separately, because they are the only undo for a fix.
+    """
+    from . import curb_fix, curb_store, curb_tester
+
+    if not yes and not _curb_ask("Delete Curb's stored reports, decoys and digest key?"):
+        tui.note("Nothing deleted.")
+        return
+    removed = curb_store.forget()
+    decoys = curb_tester.remove(curb_tester.inventory())
+    if decoys:
+        removed.append(f"{decoys} decoy(s) and their scratch projects")
+    held = curb_fix.count()
+    if held and (
+        backups
+        if yes
+        else _curb_ask(f"Also delete {held} settings backup(s)? They are the only undo.")
+    ):
+        curb_fix.forget_backups()
+        removed.append(f"{held} settings backup(s)")
+    if removed:
+        tui.ok("Deleted " + "; ".join(removed) + ".")
+    else:
+        tui.note("Curb keeps nothing on this machine yet.")
+
+
+def _curb_grant(summary: str, change: Any) -> tuple[Any, Any]:
+    """Ask the operating system for a person's yes. Exits when there is none."""
+    from . import curb_approval
+
+    presence = curb_approval.method()
+    if presence is None:
+        tui.bad("No approval method on this machine, so Curb stays read-only.")
+        tui.hint("  Make the changes above by hand.")
+        raise SystemExit(1)
+    broker = curb_approval.Broker(presence)
+    tui.note(f"Asking for approval through {presence.name}…")
+    if presence.weak:
+        tui.warn("A password prompt can be imitated: check it is the system's own window.")
+    try:
+        grant = broker.request(summary, curb_approval.change_hash(change))
+    except curb_approval.Paused as stop:
+        tui.bad(f"Not asked: {stop}.")
+        raise SystemExit(1) from None
+    if grant is None:
+        tui.bad("Not approved, so nothing changed.")
+        raise SystemExit(1)
+    return broker, grant
+
+
+@curb.command("fix")
+@click.option(
+    "--dir",
+    "directory",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=None,
+    help="The project folder to assess from (default: here)",
+)
+@click.option("--agent", type=click.Choice(["claude", "codex"]), default=None)
+@click.option("--dry-run", is_flag=True, help="Show the fixes, change nothing")
+@click.option("--undo", is_flag=True, help="Put back the files the last fix changed")
+def curb_fix_command(directory: Path | None, agent: str | None, dry_run: bool, undo: bool) -> None:
+    """Close what each agent can reach, in its own user settings
+
+    Plans fixes from the same assessment `flanner curb map` makes: deny
+    rules, the sandbox, and network and environment limits. Only changes
+    that leave every channel no broader are planned. Applying asks your
+    operating system for a yes, which an agent cannot give, backs up each
+    file for 7 days, and checks the result.
+    """
+    from . import curb_approval, curb_fix
+
+    if undo:
+        folder = curb_fix.latest()
+        if folder is None:
+            tui.note("There is no fix to undo.")
+            return
+        broker, grant = _curb_grant(
+            "Put back the agent settings the last fix changed", curb_fix.undo_change(folder)
+        )
+        restored, kept = curb_fix.undo(broker, grant, folder)
+        if restored:
+            tui.ok("Put back: " + ", ".join(restored) + ".")
+        if kept:
+            tui.warn("Left as they are, because they changed since: " + ", ".join(kept) + ".")
+        return
+
+    _, contexts, skipped = _curb_contexts(directory, agent, None, ())
+    with tui.working("assessing each agent's launch"):
+        reports = _curb_assess([c for c in contexts if c.source == "default"])
+        planned = curb_fix.plan(reports, home=Path.home(), platform=sys.platform, env=os.environ)
+    for line in skipped:
+        tui.note(line)
+    console.print()
+    if planned.edits:
+        console.print("[bold]Fixes[/]")
+        for edit in planned.edits:
+            console.print(f"  {edit.where}: " + "; ".join(edit.actions) + ".")
+    for heading, lines in (("Left for you", planned.guided), ("Not applied", planned.refused)):
+        if lines:
+            console.print(f"[bold]{heading}[/]")
+            for line in dict.fromkeys(lines):
+                console.print(f"  - {line}.")
+    console.print()
+    if not planned.edits:
+        tui.note("Nothing Curb can change on its own.")
+        return
+    if dry_run:
+        tui.note("Dry run: nothing changed.")
+        return
+    broker, grant = _curb_grant(planned.summary(), planned.change())
+    try:
+        folder = curb_fix.apply(planned, broker, grant)
+    except curb_fix.FixFailed as failure:
+        tui.bad(f"{failure}; every file was put back as it was.")
+        raise SystemExit(1) from None
+    except curb_approval.NoGrant as refusal:
+        tui.bad(f"Nothing changed: {refusal}.")
+        raise SystemExit(1) from None
+    tui.ok("Changed " + ", ".join(e.where for e in planned.edits) + ".")
+    tui.note(f"Backed up for 7 days in {folder.name}; `flanner curb fix --undo` puts them back.")
+    tui.hint(f"  {tui.command('flanner curb map')} shows what each agent can reach now.")
+
+
+@curb.command("test")
+@click.option(
+    "--dir",
+    "directory",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=None,
+    help="The project folder to test from (default: here)",
+)
+@click.option("--agent", type=click.Choice(["claude", "codex"]), default=None)
+def curb_test_command(directory: Path | None, agent: str | None) -> None:
+    """Prove each block by asking the agent itself to get past it
+
+    Plants a decoy of fake credentials beside each file a control claims to
+    block, then runs the agent headless and asks it to read the decoy four
+    ways: its Read tool, cat, grep -r and a script. Costs tokens on your own
+    plan, said before it starts, and asks your operating system for a yes.
+    The test transcript is deleted afterwards.
+    """
+    from . import curb_store, curb_tester
+
+    curb_tester.remove_expired()
+    _, contexts, skipped = _curb_contexts(directory, agent, None, ())
+    reports = _curb_assess([c for c in contexts if c.source == "default"])
+    home = Path.home()
+    env = dict(os.environ)
+    work = [
+        (report, curb_tester.targets(report, home), curb_tester.probes(report, env))
+        for report in reports
+    ]
+    for line in skipped:
+        tui.note(line)
+    runnable = [(r, [t for t in ts if t.folder or t.relative], ps) for r, ts, ps in work]
+    decoys = sum(len(ts) for _, ts, _ in runnable)
+    sessions = sum(len(ts) + len(ps) for _, ts, ps in runnable)
+    if not sessions:
+        tui.note("No control here claims to block anything a test can reach, so nothing to test.")
+        return
+    for report, ts, ps in runnable:
+        if ts or ps:
+            cost = curb_tester.estimate(len(ts) + len(ps), report.context.agent)
+            console.print(f"  {report.context.label}: {cost}.")
+    change = {
+        "test": [curb_tester.context_key(r.context) for r, _, _ in runnable],
+        "sessions": sessions,
+        "decoys": decoys,
+    }
+    broker, grant = _curb_grant(
+        f"Run {sessions} test session(s) and plant {decoys} decoy(s)", change
+    )
+    broker.redeem(grant, _curb_change_hash(change))
+    key = curb_store.digest_key()
+    for report, ts, ps in work:
+        results = []
+        with tui.working(f"testing {report.context.label}"):
+            for file_target in ts:
+                results.append(curb_tester.test_target(report.context, file_target, key=key))
+            for probe in ps:
+                results.append(curb_tester.test_probe(report.context, probe, env=env))
+        curb_tester.record(results, report, key)
+        console.print()
+        console.print(f"[bold]{report.context.label}[/]")
+        for result in results:
+            reason = f" ({result.target.reason})" if result.target.reason else ""
+            console.print(f"  {result.target.label}: {result.summary}{reason}")
+            for method, outcome in result.outcomes.items():
+                console.print(f"    {method}: {outcome}", style="muted")
+    console.print()
+    tui.note("Decoys stay 30 days; `flanner curb decoys` lists, renews and removes them.")
+
+
+def _curb_change_hash(change: Any) -> str:
+    from . import curb_approval
+
+    return curb_approval.change_hash(change)
+
+
+@curb.command("scrub")
+@click.argument("path", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option("--dry-run", is_flag=True, help="Check the file can be scrubbed, change nothing")
+def curb_scrub_command(path: Path, dry_run: bool) -> None:
+    """Replace the secrets in one file, after you have rotated them
+
+    Each secret the sweep finds in PATH is replaced by a placeholder of the
+    same length. Every changed line must still parse, or the file is left
+    as it was. No backup is kept, because a backup would be another copy of
+    the secret, so this cannot be undone; it asks your operating system for
+    a yes first. Find the files with `flanner curb show --sweep`.
+    """
+    from . import curb_approval, curb_kingfisher, curb_scrub
+
+    _curb_sweep_unavailable()
+    try:
+        planned = curb_scrub.plan(path, curb_kingfisher.Detector())
+    except curb_scrub.ScrubFailed as failure:
+        tui.bad(f"Not scrubbed: {failure}. The file is unchanged.")
+        raise SystemExit(1) from None
+    if not planned.secrets:
+        tui.note("No secret found in that file.")
+        return
+    console.print(
+        f"  {planned.secrets} secret(s) on {planned.lines} line(s) would become placeholders."
+    )
+    tui.warn("Rotate them first: scrubbing hides a secret here, but cannot unsend it.")
+    if dry_run:
+        tui.note("Dry run: the file is unchanged.")
+        return
+    broker, grant = _curb_grant(
+        f"Replace {planned.secrets} secret(s) in {path.name}, with no backup", planned.change()
+    )
+    try:
+        curb_scrub.apply(planned, broker, grant)
+    except (curb_scrub.ScrubFailed, curb_approval.NoGrant) as failure:
+        tui.bad(f"Not scrubbed: {failure}. The file is unchanged.")
+        raise SystemExit(1) from None
+    tui.ok(f"Replaced {planned.secrets} secret(s); no copy of them was kept.")
+
+
+@curb.command("log")
+@click.option("--enable", is_flag=True, help="Install the hooks that log each tool call")
+@click.option("--disable", is_flag=True, help="Remove those hooks")
+@click.option("--verify", is_flag=True, help="Check no record was changed, removed or reordered")
+@click.option("--agent", type=click.Choice(["claude", "codex"]), default=None)
+def curb_log_command(enable: bool, disable: bool, verify: bool, agent: str | None) -> None:
+    """Curb's action log: each tool call's metadata, hash-chained and signed
+
+    Records the agent, session, tool, channel, a redacted target and the
+    decision, never content. Turning it on or off changes agent settings, so
+    your operating system asks you first.
+    """
+    from . import curb_approval, curb_fix, curb_log, curb_observe
+
+    agents = [agent] if agent else ["claude", "codex"]
+    if enable or disable:
+        plan = curb_observe.hook_plan(agents, enable=enable)
+        for line in plan.guided:
+            tui.note(line)
+        if not plan.edits:
+            tui.note("Already " + ("on." if enable else "off."))
+            return
+        broker, grant = _curb_grant(plan.summary(), plan.change())
+        try:
+            curb_fix.apply(plan, broker, grant)
+        except (curb_fix.FixFailed, curb_approval.NoGrant) as failure:
+            tui.bad(f"Nothing changed: {failure}.")
+            raise SystemExit(1) from None
+        tui.ok(
+            ("Logging " if enable else "Stopped logging ") + ", ".join(e.where for e in plan.edits)
+        )
+        return
+    curb_log.prune()
+    if verify:
+        ok, said = curb_log.verify()
+        (tui.ok if ok else tui.bad)(said[0].upper() + said[1:] + ".")
+        if not ok:
+            raise SystemExit(1)
+        return
+    held = curb_log.records()
+    for name in agents:
+        state = "on" if curb_observe.hooks_on(name) else "off"
+        count = sum(1 for r in held if r.get("agent") == name)
+        console.print(f"  {name}: logging {state}, {count} record(s)")
+    from collections import Counter
+
+    approvals = Counter(str(r.get("decision")) for r in held if r.get("kind") == "approval")
+    if approvals:
+        console.print(
+            "  approvals: " + ", ".join(f"{k} {v}" for k, v in sorted(approvals.items()))
+        )
+
+
+@curb.command("observed")
+@click.option("--agent", type=click.Choice(["claude", "codex"]), default=None)
+@click.option("--json", "as_json", is_flag=True, help="Machine-readable, redacted the same")
+def curb_observed_command(agent: str | None, as_json: bool) -> None:
+    """What each agent has been seen using, and what could not be seen
+
+    Needs the action log on for at least 14 days and 20 sessions. Not seen
+    is reported as not seen, never as not needed, and any idea for closing
+    a channel is only a suggestion for you to review.
+    """
+    from . import curb_observe
+
+    _, contexts, _ = _curb_contexts(None, agent, None, ())
+    reports = {
+        r.context.agent: r for r in _curb_assess([c for c in contexts if c.source == "default"])
+    }
+    views = [
+        curb_observe.view(curb_observe.observe(name, reports.get(name)))
+        for name in ([agent] if agent else ["claude", "codex"])
+    ]
+    if as_json:
+        click.echo(json.dumps(views, indent=2))
+        return
+    for item in views:
+        console.print()
+        console.print(
+            f"[bold]{item['label']}[/]  {item['state']}"
+            f" ({item['days']} days, {item['sessions']} sessions)"
+        )
+        for channel in item["channels"]:
+            seen = f"seen {channel['seen']} time(s)" if channel["seen"] else "not seen"
+            note = "" if channel["covered"] else " (the hooks cannot see this)"
+            console.print(f"  {channel['channel']}: {seen}{note}")
+        for line in item["gaps"]:
+            console.print(f"  Not observed: {line}.", style="muted")
+        for line in item["ideas"]:
+            console.print(f"  To review: {line}.")
+    console.print()
+
+
+@curb.command("decoys")
+@click.option("--renew", is_flag=True, help="Keep every decoy another 30 days")
+@click.option("--remove", is_flag=True, help="Delete every decoy, and its scratch project")
+def curb_decoys(renew: bool, remove: bool) -> None:
+    """The decoy files `flanner curb test` planted, and when each expires
+
+    Counts and dates only: where a decoy sits says where credentials sit.
+    """
+    from . import curb_tester
+
+    curb_tester.remove_expired()
+    if remove:
+        tui.ok(f"Removed {curb_tester.remove(curb_tester.inventory())} decoy(s).")
+        return
+    if renew:
+        tui.ok(f"Renewed {curb_tester.renew()} decoy(s) for 30 days.")
+        return
+    held = curb_tester.inventory()
+    if not held:
+        tui.note("No decoys are planted.")
+        return
+    soonest = min(d.expires for d in held)
+    console.print(
+        f"  {len(held)} decoy(s); the first expires "
+        f"{time.strftime('%Y-%m-%d', time.localtime(soonest))}."
+    )
+
+
+# --- Curb team features (R5): org policy and the fleet view ---------------------------------
+
+#: The team pass a session hook starts in a child process (`release.spawn_detached`).
+_CURB_BACKGROUND = (
+    "import sys;sys.path[:]=[p for p in sys.path if p];"
+    "from flanner.cli import curb_background;curb_background()"
+)
+
+
+class _CurbClient:
+    """The control plane and the audit collector, reached through `account`."""
+
+    def call(self, name: str, body: dict[str, Any]) -> dict[str, Any]:
+        from . import __version__, account, curb_wire
+
+        return account.curb_call(
+            curb_wire.PATHS[name], body, headers=curb_wire.headers(__version__)
+        )
+
+    def collect(self, url: str, token: str, records: list[dict[str, Any]]) -> None:
+        from . import account
+
+        account.post_collector(url, token, records)
+
+
+def _curb_device() -> Any:
+    """This device as the team pass sees it, or None when it is not signed in."""
+    from . import curb_ops
+
+    return curb_ops.device()
+
+
+def _curb_device_reports() -> list[Any]:
+    """Each agent's default launch outside any project: the team view of this device."""
+    from . import curb_ops
+
+    return curb_ops.device_reports()
+
+
+def _curb_team_pass() -> Any:
+    """One team pass, or None when this device is not signed in."""
+    from . import curb_ops
+
+    device = _curb_device()
+    return None if device is None else curb_ops.team_pass(device, _CurbClient())
+
+
+def _curb_enrolled() -> bool:
+    """Whether the person turned Curb's team checks on (`flanner curb policy --enrol`)."""
+    from . import curb_ops
+
+    return curb_ops.enrolled()
+
+
+def _curb_unusable(feature: str) -> str:
+    """Why a Curb team feature cannot be used from this device, or "" when it can.
+
+    Read from the session this device holds: no call is made to find out.
+    """
+    from . import curb_wire
+
+    device = _curb_device()
+    if device is None:
+        return "this device is not signed in to Flanner Mesh"
+    return str(curb_wire.unusable(feature, device.claims, device.offered))
+
+
+def curb_background() -> None:
+    """A team pass in a child process, started by the session hook. Never raises."""
+    try:
+        _curb_team_pass()
+    except Exception:  # noqa: BLE001 - a background pass has nobody to tell
+        logging.getLogger(__name__).debug("curb team pass failed", exc_info=True)
+
+
+def _curb_policy_status(as_json: bool) -> None:
+    from datetime import datetime, timezone
+
+    from . import curb_policy
+    from . import session as cache
+    from .entitlements import CURB_POLICY
+
+    state = curb_policy.load()
+    held = cache.load()
+    listing = curb_policy.authority(dict(held.keyring)) if held else None
+    flagged = curb_policy.flags(state, listing, datetime.now(timezone.utc))
+    summary = curb_policy.summary(state, flagged)
+    if as_json:
+        click.echo(json.dumps({**summary, "unmet": state.unmet}, indent=2))
+        return
+    if state.received is None:
+        tui.note("No org policy has arrived on this device.")
+        why = _curb_unusable(CURB_POLICY) if held is not None else ""
+        if held is None:
+            tui.hint(f"  Org policy needs a Flanner Mesh account: {tui.command('flanner login')}")
+        elif why:
+            tui.hint(f"  {why[0].upper()}{why[1:]}, so none will.")
+        else:
+            tui.hint(f"  {tui.command('flanner curb policy --check-in')} asks for one now.")
+        return
+    console.print(f"[bold]Org policy version {state.received.version}[/]")
+    applied = state.applied or {}
+    console.print(
+        f"  applied: {applied.get('version') or 'not yet'}"
+        + (f" ({applied.get('by')})" if applied.get("by") else "")
+    )
+    delegation = "on" if state.delegated_at is not None else "off"
+    console.print(f"  delegation: {delegation} (changes that only tighten apply on their own)")
+    for code in flagged:
+        tui.warn(curb_policy.FLAGS[code])
+    if state.pending:
+        tui.warn(f"Version {state.pending['version']} waits for your approval:")
+        console.print(f"  {state.pending['summary']}")
+        for reason in state.pending.get("reasons") or []:
+            console.print(f"  - {reason}", style="muted")
+        tui.hint(f"  {tui.command('flanner curb policy --approve')} reviews and applies it.")
+    if state.rejected:
+        tui.warn(f"Refused a policy: {state.rejected['reason']}.")
+    missing = {agent: rules for agent, rules in state.unmet.items() if rules}
+    if missing:
+        console.print("[bold]Not met by the effective settings[/]")
+        for agent, rules in missing.items():
+            for rule in rules:
+                console.print(f"  {agent}: {rule}")
+    elif state.checked_at:
+        tui.ok("Every agent's effective settings meet the policy.")
+
+
+@curb.command("policy")
+@click.option("--check-in", is_flag=True, help="Fetch the newest org policy, apply it, report")
+@click.option("--enrol", is_flag=True, help="Let signed org policy make changes that only tighten")
+@click.option("--withdraw", is_flag=True, help="Stop that; later changes wait for your approval")
+@click.option("--approve", is_flag=True, help="Review and apply the change waiting for you")
+@click.option(
+    "--export",
+    "export_to",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=None,
+    help="Write the policy as admin-owned settings for device management",
+)
+@click.option("--json", "as_json", is_flag=True, help="The policy state as JSON")
+def curb_policy_command(
+    check_in: bool,
+    enrol: bool,
+    withdraw: bool,
+    approve: bool,
+    export_to: Path | None,
+    as_json: bool,
+) -> None:
+    """Your organization's agent policy on this device
+
+    The policy is signed by your organization through Flanner Mesh and
+    checked here before anything changes. Changes that only tighten an
+    agent's settings apply on their own once you enrol; anything else waits
+    until you approve that exact change, and an expired policy stays in
+    force. Settings go into each agent's user settings; `--export` writes
+    the admin-owned files for device management to deliver instead.
+    """
+    from . import curb_approval, curb_compile, curb_fix, curb_observe, curb_policy
+
+    if withdraw:
+        curb_policy.delegate(False)
+        tui.ok("Delegation withdrawn: later policy changes wait for your approval.")
+        return
+    if enrol:
+        plan = curb_observe.hook_plan(["claude", "codex"], enable=True, session=True)
+        consent = {"delegation": "tighten-only org policy", "edits": plan.change()}
+        broker, grant = _curb_grant(
+            "Let your organization's signed policy make changes that only tighten your "
+            "agents' settings, and re-check it at each session start",
+            consent,
+        )
+        try:
+            broker.redeem(grant, curb_approval.change_hash(consent))
+            if plan.edits:
+                curb_fix.write(plan.edits)
+        except (curb_fix.FixFailed, curb_approval.NoGrant) as failure:
+            tui.bad(f"Nothing changed: {failure}.")
+            raise SystemExit(1) from None
+        curb_policy.delegate(True)
+        tui.ok("Enrolled: org policy changes that only tighten now apply on their own.")
+        tui.hint(f"  {tui.command('flanner curb policy --withdraw')} stops that at any time.")
+        return
+    if check_in:
+        with tui.working("checking in for the org policy"):
+            outcome = _curb_team_pass()
+        if outcome is None:
+            tui.bad("This device is not signed in to Flanner Mesh.")
+            tui.hint(f"  {tui.command('flanner login')} first.")
+            raise SystemExit(1)
+        for line in outcome.said:
+            tui.note(line[0].upper() + line[1:] + ".")
+        for line in outcome.problems:
+            tui.warn(line[0].upper() + line[1:] + ".")
+        if outcome.alerts:
+            tui.warn(f"{outcome.alerts} change(s) widened what an agent can reach.")
+        return
+    state = curb_policy.load()
+    if approve:
+        if not state.pending or state.received is None:
+            tui.note("Nothing waits for your approval.")
+            return
+        with tui.working("assessing each agent's launch"):
+            change = curb_policy.plan(
+                state.received,
+                _curb_device_reports(),
+                home=Path.home(),
+                platform=sys.platform,
+                env=os.environ,
+            )
+        planned = curb_fix.Plan(change.edits)
+        if not planned.edits:
+            curb_policy.approved()
+            tui.ok("The policy is already in place.")
+            return
+        console.print("[bold]Changes[/]")
+        for edit in planned.edits:
+            console.print(f"  {edit.where}: " + "; ".join(edit.actions) + ".")
+        for reason in change.reasons:
+            console.print(f"  - {reason}", style="muted")
+        broker, grant = _curb_grant(planned.summary(), planned.change())
+        try:
+            folder = curb_fix.apply(planned, broker, grant)
+        except (curb_fix.FixFailed, curb_approval.NoGrant) as failure:
+            tui.bad(f"Nothing changed: {failure}.")
+            raise SystemExit(1) from None
+        curb_policy.approved()
+        tui.ok(f"Applied policy version {state.received.version}.")
+        tui.note(
+            f"Backed up for 7 days in {folder.name}; `flanner curb fix --undo` puts them back."
+        )
+        return
+    if export_to is not None:
+        if state.received is None:
+            tui.bad("No org policy has arrived on this device to export.")
+            raise SystemExit(1)
+        try:
+            rules = state.received.rules()
+        except ValueError as error:
+            tui.bad(f"The policy's rules cannot be read: {error}.")
+            raise SystemExit(1) from None
+        export_to.mkdir(parents=True, exist_ok=True)
+        managed, notes = curb_compile.claude_managed(rules)
+        requirements, codex_notes = curb_compile.codex_requirements(rules)
+        openshell, openshell_notes = curb_compile.openshell(rules)
+        files = {
+            "managed-settings.json": json.dumps(managed, indent=2) + "\n",
+            "requirements.toml": requirements,
+            "openshell-policy.yaml": openshell,
+        }
+        for name, text in files.items():
+            (export_to / name).write_text(text, encoding="utf-8")
+        tui.ok(f"Wrote {', '.join(files)} for policy version {state.received.version}.")
+        for note in [*notes, *codex_notes, *openshell_notes]:
+            tui.note(note[0].upper() + note[1:] + ".")
+        return
+    _curb_policy_status(as_json)
+
+
+@curb.command("fleet")
+@click.option("--json", "as_json", is_flag=True, help="Every device's newest report as JSON")
+def curb_fleet_command(as_json: bool) -> None:
+    """Your organization's devices: policy, drift and exposure, checked here
+
+    For admins. Each device signs its own reports, so this command checks
+    every signature and sequence number with your organization's device
+    keys before showing anything; it does not take the console's word.
+    """
+    from datetime import datetime, timezone
+
+    from . import account, curb_fleet, curb_store, curb_wire
+    from .entitlements import CURB_FLEET
+
+    device = _curb_device()
+    if device is None:
+        tui.bad("This device is not signed in to Flanner Mesh.")
+        raise SystemExit(1)
+    why = curb_wire.unusable(CURB_FLEET, device.claims, device.offered)
+    if why:
+        tui.bad(f"{why[0].upper()}{why[1:]}.")
+        raise SystemExit(1)
+    try:
+        with tui.working("fetching and checking fleet reports"):
+            keyring = account.fetch_device_keys()
+            devices = _CurbClient().call("fleet", {}).get("devices") or []
+    except account.SessionError as error:
+        tui.bad(f"{error}.")
+        raise SystemExit(1) from None
+    rows = curb_fleet.view(curb_fleet.verify(devices, keyring, now=datetime.now(timezone.utc)))
+    # Kept for the web UI's Devices page, which never reaches the control plane.
+    curb_store.write_state("fleet-view", {"rows": rows, "fetched_at": time.time()})
+    if as_json:
+        click.echo(json.dumps(rows, indent=2))
+        return
+    if not rows:
+        tui.note("No device has sent a report yet.")
+        return
+    for row in rows:
+        policy = row["policy"] or {}
+        severity = row["severity"] or {}
+        state = "drift" if policy.get("drift") else "matches"
+        mark = "verified" if row["verified"] else "NOT verified"
+        console.print(
+            f"  {row['device']}: {mark}"
+            + (", stale" if row["stale"] else "")
+            + f"; policy {policy.get('applied') or '-'} {state}"
+            + (f", {policy['pending']} pending" if policy.get("pending") else "")
+            + f"; High {severity.get('high', 0)}, Medium {severity.get('medium', 0)}"
+            + f", Low {severity.get('low', 0)}"
+        )
+        for problem in row["problems"]:
+            tui.warn(f"    {problem}")
+    counts = curb_fleet.matching(rows)
+    if counts:
+        biggest = max(counts.values())
+        console.print(f"  {biggest} of {len(rows)} device(s) share one effective policy.")
+
+
+# --- Curb in pipelines and code (R6): the CI check and the app audit -------------------------
+
+_SEVERITY_RANK = {"Low": 1, "Medium": 2, "High": 3}
+
+
+def _curb_write_sarif(target: Path, results: list[Any], rules: list[Any]) -> None:
+    from . import __version__, curb_sarif
+
+    document = curb_sarif.document(results, rules, version=__version__)
+    target.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+    tui.note(f"Wrote {len(results)} result(s) as SARIF to {target}.")
+
+
+@curb.command("ci")
+@click.argument("path", type=click.Path(file_okay=False, exists=True, path_type=Path), default=".")
+@click.option(
+    "--sarif",
+    "sarif_to",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=None,
+    help="Also write the findings as SARIF, for code scanning",
+)
+@click.option(
+    "--fail-on",
+    type=click.Choice(["high", "medium", "low", "never"]),
+    default="never",
+    help="Exit 1 when a finding is at least this severe",
+)
+@click.option("--fix", is_flag=True, help="Make the one-line fixes that are safe without a person")
+@click.option("--json", "as_json", is_flag=True, help="The findings as JSON")
+def curb_ci_command(
+    path: Path, sarif_to: Path | None, fail_on: str, fix: bool, as_json: bool
+) -> None:
+    """Agent steps in a repository's GitHub Actions workflows
+
+    Each step that runs Claude Code, Codex or Gemini CLI is judged like an
+    agent launch: whether untrusted text from issues, comments or pull
+    requests reaches it, who can start it, the secrets and tools it holds,
+    and whether Harden-Runner blocks its egress. Names workflow files and
+    lines, never a secret's name. `--fix` makes the edits that are safe to
+    make blind; open a pull request with them for review.
+    """
+    from . import curb_ci
+
+    steps, problems = curb_ci.check(path)
+    if fix:
+        for workflow in sorted({s.workflow for s in steps}):
+            for done in curb_ci.fix(path / workflow):
+                tui.ok(f"{workflow}: {done}.")
+        steps, problems = curb_ci.check(path)
+    found = curb_ci.results(steps)
+    if sarif_to is not None:
+        _curb_write_sarif(sarif_to, found, list(curb_ci.RULES.values()))
+    if as_json:
+        click.echo(
+            json.dumps(
+                [
+                    {
+                        "workflow": r.path,
+                        "line": r.line,
+                        "rule": r.rule.id,
+                        "severity": r.rule.severity,
+                        "message": r.message,
+                    }
+                    for r in found
+                ],
+                indent=2,
+            )
+        )
+    else:
+        if not found:
+            tui.note("No agent steps in this repository's workflows.")
+        for result in found:
+            style = {"High": "red", "Medium": "yellow"}.get(result.rule.severity, "muted")
+            console.print(
+                f"  [{style}]{result.rule.severity}[/] {result.path}:{result.line} "
+                f"({result.rule.id})"
+            )
+            console.print(f"    {result.message}", style="muted")
+    for problem in problems:
+        tui.warn(problem)
+    threshold = {"high": 3, "medium": 2, "low": 1}.get(fail_on)
+    if threshold and any(_SEVERITY_RANK[r.rule.severity] >= threshold for r in found):
+        raise SystemExit(1)
+
+
+@curb.command("app")
+@click.argument("path", type=click.Path(file_okay=False, exists=True, path_type=Path), default=".")
+@click.option(
+    "--sarif",
+    "sarif_to",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=None,
+    help="Also write the findings as SARIF, for Semgrep, CodeQL or code scanning",
+)
+@click.option("--json", "as_json", is_flag=True, help="The calls as JSON")
+def curb_app_command(path: Path, sarif_to: Path | None, as_json: bool) -> None:
+    """LLM calls in an application's Python code, and their shapes
+
+    Finds calls into openai, anthropic, google.genai, langchain, langgraph,
+    litellm, pydantic_ai and mcp, and labels each a single call, tool-using
+    or a loop. Flags untrusted input beside tool-using calls, and model
+    output that reaches eval, a shell or SQL. Every result is assumed: it
+    is pattern matching, a starting point for a deeper review.
+    """
+    from . import curb_app
+
+    calls, problems = curb_app.audit(path)
+    if sarif_to is not None:
+        _curb_write_sarif(sarif_to, curb_app.results(calls), list(curb_app.RULES.values()))
+    if as_json:
+        click.echo(
+            json.dumps(
+                [
+                    {
+                        "path": c.path,
+                        "line": c.line,
+                        "library": c.library,
+                        "shape": c.shape,
+                        "untrusted_input": c.untrusted_input,
+                        "unchecked_output": c.unchecked_output,
+                    }
+                    for c in calls
+                ],
+                indent=2,
+            )
+        )
+    else:
+        if not calls:
+            tui.note("No LLM calls found in this folder's Python code.")
+        for call in calls:
+            console.print(f"  {call.path}:{call.line} {call.shape} ({call.library})")
+            if call.untrusted_input:
+                tui.warn("    untrusted input in the same function")
+            for sink in call.unchecked_output:
+                tui.warn(f"    model output reaches {sink}")
+        if calls:
+            tui.note("Every result is assumed: pattern matching, not proof.")
+    for problem in problems:
+        tui.warn(problem)
+
+
+# --- Curb commit attribution (R7) --------------------------------------------------------------
+
+
+def _curb_installed_agents() -> list[str]:
+    from . import agent_paths
+
+    found = []
+    if agent_paths.claude_config_dir().exists():
+        found.append("claude")
+    if agent_paths.codex_home().exists():
+        found.append("codex")
+    return found
+
+
+def _curb_github_keys(agents: list[str], *, add: bool) -> None:
+    """Add each agent's new public key to GitHub with the person's own gh, or say how."""
+    import shutil
+    import subprocess
+
+    from . import curb_attribution, curb_store
+
+    for agent in agents:
+        entry = curb_attribution.keys()["keys"].get(agent)
+        if not entry:
+            continue
+        path = curb_store.curb_dir() / f"{agent}-signing.pub"
+        path.write_text(entry["public"] + "\n", encoding="utf-8")
+        command = ["gh", "ssh-key", "add", str(path), "--type", "signing", "--title"]
+        command.append(f"flanner curb {agent}")
+        if add and shutil.which("gh"):
+            done = subprocess.run(command, capture_output=True, text=True, check=False)  # noqa: S603 - gh, with a path flanner wrote
+            if done.returncode == 0:
+                tui.ok(f"Added the {agent} signing key to GitHub.")
+                continue
+            tui.warn(f"gh could not add the {agent} key: {done.stderr.strip()}")
+        tui.hint("  " + tui.command(" ".join(command)))
+
+
+def _curb_register(agents: list[str]) -> None:
+    from . import curb_attribution, curb_wire
+    from .entitlements import CURB_ATTRIBUTION
+
+    device = _curb_device()
+    if device is None:
+        tui.note("Keys are registered with your organization at the next check-in.")
+        return
+    why = curb_wire.unusable(CURB_ATTRIBUTION, device.claims, device.offered)
+    if why:
+        tui.note(f"Keys stay on this device: {why}.")
+        return
+    from . import account
+
+    held = curb_attribution.keys()["keys"]
+    for agent in [a for a in agents if not (held.get(a) or {}).get("registered")]:
+        try:
+            _CurbClient().call(
+                "attribution-keys", curb_attribution.registration(agent, device.device_id)
+            )
+        except account.SessionError as error:
+            tui.warn(f"The {agent} key was not registered: {error}.")
+            continue
+        curb_attribution.mark_registered(agent)
+        tui.ok(f"Registered the {agent} key with your organization.")
+
+
+@curb.command("attribution")
+@click.option("--setup", is_flag=True, help="Give each agent a signing key and sign its commits")
+@click.option("--rotate", is_flag=True, help="Replace each agent's key; the old one is retired")
+@click.option("--github", is_flag=True, help="Also add the new public keys to GitHub with gh")
+@click.option("--json", "as_json", is_flag=True, help="The keys and the registry as JSON")
+def curb_attribution_command(setup: bool, rotate: bool, github: bool, as_json: bool) -> None:
+    """Sign your agents' commits with keys of their own
+
+    Each agent gets a random Ed25519 key, kept only in your OS credential
+    store. git signs an agent's commits through flanner, which signs only
+    inside an agent session its hooks recorded, and logs each one. A
+    signature shows which key signed, not who wrote the code: you, or
+    anything running as you, can still use the broker. `flanner curb
+    verify` reads the result.
+    """
+    from datetime import datetime, timezone
+
+    from . import curb_approval, curb_attribution, curb_fix
+    from .entitlements import CURB_ATTRIBUTION
+
+    if setup:
+        agents = _curb_installed_agents()
+        if not agents:
+            tui.note("Neither Claude Code nor Codex is set up on this machine.")
+            return
+        signer = curb_attribution.signer_path()
+        if signer is None:
+            tui.bad("The flanner-curb-sign program is missing: reinstall flanner.")
+            raise SystemExit(1)
+        made = []
+        try:
+            for agent in agents:
+                if agent not in curb_attribution.keys()["keys"]:
+                    curb_attribution.create(agent)
+                    made.append(agent)
+        except curb_attribution.NoKeychain as error:
+            tui.bad(f"{str(error)[0].upper()}{str(error)[1:]}.")
+            raise SystemExit(1) from None
+        plan = curb_attribution.setup_plan(agents, signer)
+        for line in plan.guided:
+            tui.note(line)
+        if plan.edits:
+            console.print("[bold]Changes[/]")
+            for edit in plan.edits:
+                console.print(f"  {edit.where}: " + "; ".join(edit.actions) + ".")
+            broker, grant = _curb_grant(plan.summary(), plan.change())
+            try:
+                curb_fix.apply(plan, broker, grant)
+            except (curb_fix.FixFailed, curb_approval.NoGrant) as failure:
+                tui.bad(f"Nothing changed: {failure}.")
+                raise SystemExit(1) from None
+        tui.ok("Agent commits are now signed with each agent's own key.")
+        _curb_register(agents)
+        _curb_github_keys(made, add=github)
+        return
+    if rotate:
+        rotated = []
+        for agent in list(curb_attribution.keys()["keys"]):
+            try:
+                retired, _ = curb_attribution.rotate(agent)
+            except curb_attribution.NoKeychain as error:
+                tui.bad(f"{error}.")
+                raise SystemExit(1) from None
+            rotated.append(agent)
+            tui.ok(f"Rotated the {agent} key; {retired} is retired and can sign nothing new.")
+        if not rotated:
+            tui.note(f"No keys yet: {tui.command('flanner curb attribution --setup')}")
+            return
+        _curb_register(rotated)
+        _curb_github_keys(rotated, add=github)
+        return
+    held = curb_attribution.keys()
+    from . import session as cache
+
+    session = cache.load()
+    listing = curb_attribution.registry(dict(session.keyring)) if session else None
+    now = datetime.now(timezone.utc)
+    due = curb_attribution.due()
+    if as_json:
+        click.echo(
+            json.dumps(
+                {
+                    **held,
+                    "rotation_due": due,
+                    "registry_version": listing.get("version") if listing else None,
+                    "registry_fresh": curb_attribution.fresh(listing, now),
+                    "known_revocations": len(curb_attribution.revoked()),
+                },
+                indent=2,
+            )
+        )
+        return
+    if not held["keys"]:
+        tui.note("No agent has an attribution key yet.")
+        tui.hint(f"  {tui.command('flanner curb attribution --setup')} sets one up for each.")
+        return
+    for agent, entry in held["keys"].items():
+        state = "registered" if entry.get("registered") else "not registered yet"
+        console.print(f"  {agent}: {entry['fingerprint']} ({state})")
+    for agent in due:
+        tui.warn(f"The {agent} key is over 90 days old: `flanner curb attribution --rotate`.")
+    why = _curb_unusable(CURB_ATTRIBUTION) if session else ""
+    if why:
+        tui.note(f"{why[0].upper()}{why[1:]}, so no registry can be fetched.")
+    if listing is None:
+        tui.note("No attribution registry yet, so signed commits show as key status unknown.")
+    elif not curb_attribution.fresh(listing, now):
+        tui.warn("The attribution registry has expired; check in to refresh it.")
+
+
+@curb.command("verify")
+@click.argument("revision", default="HEAD")
+@click.option("--json", "as_json", is_flag=True, help="Each commit's state as JSON")
+def curb_verify_command(revision: str, as_json: bool) -> None:
+    """Which agent key signed each commit, and whether to trust it
+
+    REVISION is a commit, or a range such as main..HEAD. Each commit is
+    attributed, attributed with a retired key, untrusted because its key was
+    revoked, key status unknown (no fresh registry to check against), or
+    unattributed. Known revocations always apply, even offline.
+    """
+    from datetime import datetime, timezone
+
+    from . import account, curb_attribution, curb_wire
+    from .entitlements import CURB_ATTRIBUTION
+
+    device = _curb_device()
+    issuer = dict(device.issuer_keyring) if device else {}
+    why = curb_wire.unusable(CURB_ATTRIBUTION, device.claims, device.offered) if device else ""
+    if device is not None and not why:
+        try:
+            token = str(_CurbClient().call("attribution-registry", {}).get("registry") or "")
+            _, problem = curb_attribution.accept_registry(token, issuer, device.organization_id)
+            if problem:
+                tui.warn(problem[0].upper() + problem[1:] + ".")
+        except account.SessionError as error:
+            tui.note(f"Using the registry held here: {error}.")
+    elif why and not as_json:
+        tui.note(f"Using the registry held here: {why}.")
+    listing = curb_attribution.registry(issuer) if issuer else None
+    known = curb_attribution.revoked()
+    now = datetime.now(timezone.utc)
+    try:
+        shas = curb_attribution.commits(revision, Path.cwd())
+        verdicts = [
+            (
+                sha,
+                curb_attribution.state_of(
+                    curb_attribution.raw_commit(sha, Path.cwd()), listing, known, now
+                ),
+            )
+            for sha in shas
+        ]
+    except ValueError as error:
+        tui.bad(f"git: {error}")
+        raise SystemExit(1) from None
+    if as_json:
+        click.echo(
+            json.dumps(
+                [
+                    {
+                        "commit": sha,
+                        "state": v.state,
+                        "fingerprint": v.fingerprint,
+                        "agent": v.agent,
+                        "device_id": v.device_id,
+                    }
+                    for sha, v in verdicts
+                ],
+                indent=2,
+            )
+        )
+        return
+    styles = {
+        curb_attribution.ATTRIBUTED: "green",
+        curb_attribution.RETIRED: "green",
+        curb_attribution.REVOKED: "red",
+        curb_attribution.UNKNOWN: "yellow",
+    }
+    for sha, verdict in verdicts:
+        owner = f" ({verdict.agent}, {verdict.device_id})" if verdict.agent else ""
+        style = styles.get(verdict.state, "muted")
+        console.print(f"  {sha[:12]} [{style}]{verdict.state}[/]{owner}")
+
+
+@curb.command("show")
+@_curb_launch_options
+@click.option("--sweep", is_flag=True, help="Show where each secret the leak sweep found is")
+@click.option(
+    "--validate",
+    is_flag=True,
+    help="With --sweep: ask each secret's own issuer whether it still works. Asks you first.",
+)
+@click.option("--in-window", is_flag=True, hidden=True)
+def curb_show(
+    directory: Path | None,
+    agent: str | None,
+    profile: str | None,
+    launch: tuple[str, ...],
+    sweep: bool,
+    validate: bool,
+    in_window: bool,
+) -> None:
+    """Open the full report, with names and locations, in a window
+
+    The window opens on this machine's screen, in a process of its own.
+    Nothing from it is printed here or written to disk, so an agent that
+    runs this command learns nothing it could not already see.
+    """
+    from . import curb_inventory, curb_settings, curb_sweep, curb_window
+
+    if validate and not sweep:
+        raise click.UsageError("--validate goes with --sweep")
+    if sweep and in_window:
+        report = _curb_sweep(directory, validate=validate)
+        text = curb_window.render_sweep(curb_sweep.full(report))
+        curb_window.show("Flanner Curb: leak sweep", text)
+        return
+    cwd, contexts, _ = _curb_contexts(directory, agent, profile, launch)
+    if in_window:
+        reports = _curb_reports(contexts, full=True)
+        jobs = curb_inventory.scheduled_jobs(Path.home())
+        inventories = [
+            curb_inventory.full(
+                curb_inventory.gather(
+                    name,
+                    curb_settings.resolve(next(c for c in contexts if c.agent == name)),
+                    project=cwd,
+                    jobs=jobs,
+                )
+            )
+            for name in dict.fromkeys(c.agent for c in contexts)
+        ]
+        curb_window.show("Flanner Curb", curb_window.render(reports, inventories))
+        return
+    reason = curb_window.unavailable()
+    if reason:
+        tui.bad(f"No window can open: {reason}.")
+        redacted = "flanner curb sweep" if sweep else "flanner curb map"
+        tui.hint(f"  {tui.command(redacted)} gives the redacted report here.")
+        raise SystemExit(1)
+    arguments = ["--dir", str(cwd)]
+    if sweep:
+        _curb_sweep_unavailable()
+        # Asked here, where a person can answer; the window has no terminal.
+        arguments += ["--sweep", *(["--validate"] if validate and _curb_may_validate() else [])]
+    if agent:
+        arguments += ["--agent", agent]
+    if profile:
+        arguments += ["--profile", profile]
+    if launch:
+        arguments += ["--", *launch]
+    curb_window.launch(arguments)
+    tui.ok("Opened the full report in a window on this machine's screen.")
+    tui.note("Nothing from it is printed here.")
+
+
+@curb.command("inventory")
+@_curb_launch_options
+@click.option(
+    "--json", "as_json", is_flag=True, help="Machine-readable listing, redacted the same"
+)
+def curb_inventory_command(
+    directory: Path | None,
+    agent: str | None,
+    profile: str | None,
+    launch: tuple[str, ...],
+    as_json: bool,
+) -> None:
+    """Which agents are here, and what each one loads
+
+    Settings layers, MCP servers, hooks, skills, and scheduled jobs that run
+    an agent unattended, with who controls each. Credential names appear
+    only as counts.
+    """
+    from . import curb_context, curb_inventory, curb_settings
+
+    cwd, contexts, skipped = _curb_contexts(directory, agent, profile, launch)
+    jobs = curb_inventory.scheduled_jobs(Path.home())
+    rows = []
+    with tui.working("reading agent settings"):
+        for context in contexts:
+            if context.source != "command" and context.source != "default":
+                continue
+            settings = curb_settings.resolve(context)
+            rows.append(
+                curb_inventory.redacted(
+                    curb_inventory.gather(context.agent, settings, project=cwd, jobs=jobs)
+                )
+            )
+    if as_json:
+        click.echo(json.dumps({"agents": rows, "skipped": skipped}, indent=2))
+        return
+    for line in skipped:
+        tui.note(line)
+    for row in rows:
+        console.print()
+        version = row["version"] or "not on PATH"
+        tested = "tested" if row["supported"] else f"tested: {row['baseline']}"
+        console.print(f"[bold]{row['label']}[/]  {version} [muted]({tested})[/]")
+        layers = ", ".join(
+            f"{layer['name']} ({layer['controlled_by']})"
+            for layer in row["settings_layers"]
+            if layer["present"]
+        )
+        console.print(f"  Settings: {layers or 'none found'}")
+        if row["mcp_servers"]:
+            servers = tui.table("MCP server", "Transport", "Configured in", "Controlled by")
+            for server in row["mcp_servers"]:
+                servers.add_row(
+                    server["name"],
+                    server["transport"],
+                    server["configured_in"],
+                    server["controlled_by"],
+                )
+            console.print(servers)
+        else:
+            console.print("  MCP servers: none")
+        hooks = ", ".join(
+            f"{h['event']} x{h['count']} ({h['controlled_by']})" for h in row["hooks"]
+        )
+        console.print(f"  Hooks: {hooks or 'none'}")
+        skills = ", ".join(f"{scope} {count}" for scope, count in row["skills"].items())
+        console.print(f"  Skills: {skills or 'none'}")
+        for job in row["scheduled_jobs"]:
+            what = job["launch"] or job["problem"]
+            console.print(f"  Scheduled: {job['name']} ({job['scheduler']}) {what}")
+    console.print()
+    if rows:
+        label = curb_context.LABELS
+        tui.hint(
+            f"  {tui.command('flanner curb map')} says what "
+            f"{' and '.join(label[r['agent']] for r in rows)} can reach."
+        )
+        console.print()
 
 
 # --- demo -------------------------------------------------------------------

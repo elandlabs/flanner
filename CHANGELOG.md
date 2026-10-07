@@ -7,6 +7,171 @@ versioning follows [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Flanner Curb: what each agent launch can reach.** `flanner curb map`
+  checks every Claude Code and Codex launch on the machine for readable
+  credentials and for each channel that could carry them away: the file
+  tools, shell commands reading files, shell commands reaching the network,
+  web fetch and search, MCP servers and apps. It rates each launch High,
+  Medium or Low with the rule behind it (`severity-r1` version 1), and says
+  which setting would close each open channel.
+  - Every result is for a stated launch context. The default is the agent
+    started from the current folder with no flags; pass `--dir`,
+    `--profile`, or the launch command itself after `--`. Scheduled jobs
+    that run an agent unattended are assessed in their own contexts.
+  - Findings are marked configured or assumed. A setting Curb cannot read
+    or an unknown launch flag makes every channel unknown, and an agent
+    version other than the tested one (Claude Code 2.1.287, Codex 0.154.0)
+    makes every result assumed. Codex apps, on by default, count as
+    unknown until `features.apps` is turned off.
+  - Tested against a labelled corpus of 3,888 launches across both agents,
+    macOS, Linux and Windows. The tested versions and what is not checked
+    are in [docs/curb-support-matrix.md](docs/curb-support-matrix.md).
+  - Output names no credential and no location, whoever runs it.
+    `flanner curb show` opens the names and locations in a window on your
+    screen, in a process of its own; nothing from it is printed or written
+    to disk. Curb offers no MCP tools.
+  - `flanner curb inventory` lists the agents, settings layers, MCP
+    servers, hooks, skills and scheduled jobs, and who controls each.
+  - `flanner curb sweep` finds secrets that agents left behind: in Claude
+    Code transcripts, Codex sessions and prompt history, CLAUDE.md and
+    AGENTS.md, skills, MCP configs and agent settings, shell history,
+    project `.env` files, and flanner's plans and memories. Each secret
+    counts once, in its worst class: sent to a model provider, readable by
+    an agent, or on disk but blocked. Only counts are printed;
+    `flanner curb show --sweep` opens types and locations in a window. No
+    command prints a secret's value. Detection is Kingfisher, offline, from
+    the new `flanner[sweep]` extra. `--validate` asks each secret's own
+    issuer whether it still works, and asks you first, every run.
+  - Reports keep counts, classes and keyed fingerprints for 30 days, never
+    a value or a location. `flanner curb forget` deletes them and the
+    per-device key the fingerprints use.
+  - `flanner curb fix` closes what each agent can reach, in its own user
+    settings: deny rules, the sandbox, network and environment limits. It
+    plans only changes that leave every channel no broader, asks your
+    operating system for a yes first (Windows Hello or the account
+    password, Touch ID, or polkit), backs up each file for 7 days, and
+    checks the result. `--dry-run` shows the plan; `--undo` puts the files
+    back. A write without that yes fails.
+  - `flanner curb test` proves a block by asking the agent itself to get
+    past it. It plants a decoy of fake credentials beside each file a
+    control claims to block and asks the agent, headless, to read it with
+    its Read tool, `cat`, `grep -r` and a script; it also checks a network
+    allowlist from inside the sandbox, secret-variable masking by keyed
+    digests, and the MCP allowlist. Each method comes out blocked, allowed,
+    inconclusive, not tested or unsupported, with evidence; a declined or
+    prompt-stopped attempt is never counted as blocked. A channel shows as
+    enforced only while a proof from the same launch context and settings
+    holds. It states the token cost first, asks your operating system for a
+    yes, and deletes the test transcript. `flanner curb decoys` lists,
+    renews and removes the decoys, which expire after 30 days and never go
+    inside a git working tree.
+  - `flanner curb scrub FILE` replaces each secret the sweep finds in a file
+    with a placeholder of the same length, after you have rotated it. Every
+    changed line must still parse, no escaped copy may remain, and the file
+    must not have changed since it was read, or it is left exactly as it
+    was. No backup is kept, because a backup would be another copy of the
+    secret, so it asks your operating system for a yes per file.
+  - `flanner curb log --enable` installs hooks that log each tool call's
+    metadata, from Claude Code and Codex alike: agent, session, tool,
+    channel, a redacted target, the program a shell command ran, and the
+    decision; never content. Approvals are logged too. Each record is
+    hash-chained to the one before and signed with the device key, so
+    `--verify` catches an edited, removed or reordered record. Records are
+    kept 30 days. The hooks fail open.
+  - `flanner curb observed` says what each agent has been seen using, per
+    channel, once the log covers 14 days and 20 sessions: "no evidence",
+    "partial evidence" when some sessions ran without the hooks, or
+    "observed use". Not seen is reported as not seen, never as not needed,
+    and ideas for closing a channel are suggestions to review, never for a
+    channel the hooks cannot see.
+  - The web UI has a Curb section, at `/curb`. An Overview shows each
+    agent's risk as a picture and what to do next. Under it are three
+    scopes, each part a page of its own: This machine (Agents, Leaks,
+    Fixes, Tests, Activity), Projects (Reach, CI, Apps, Commits), which
+    follows a picker of the projects on the Projects page, and Team
+    (Policy, Devices, Alerts).
+    - Every page is redacted as the terminal is. "Show names and
+      locations" shows them in that one browser for 5 minutes, after your
+      operating system's prompt shows the same four-digit code as the
+      page. Nothing is written to disk, and a Linux desktop, whose prompt
+      cannot show the code, keeps them in `flanner curb show`.
+    - Every change opens a review first: what will change, what to expect,
+      and how to undo it. Then the operating system asks, as it does for
+      the commands. A fix is not written if the settings changed after the
+      page read them.
+    - The leak scan and the tests run in the background with their real
+      progress. The scan covers every project on the Projects page.
+    - The pages never contact your organization. Checking in for a policy,
+      fetching device reports and adding keys to GitHub stay terminal
+      commands, shown on the page with the reason.
+  - Local: nothing is changed, and nothing leaves the machine unless you
+    ask an issuer to check a secret.
+  - With Flanner Mesh, `flanner curb policy` takes one agent policy your
+    organization signs: paths no agent may read, the sandbox, allowed
+    domains, web access and allowed MCP servers. A device trusts it only
+    when it verifies against the policy authority list, signed by the key
+    that signs entitlements; an older version, the same version with other
+    contents, another organization's policy, a revoked or unknown key, or
+    an expired policy is refused, alerted, and the policy in force kept.
+    `--enrol` asks your operating system once to let signed policy make
+    changes that only tighten, judged by the same tighten-only test as
+    fixes; anything else, and every change for an agent version Curb has
+    not tested, waits for `--approve`. `--withdraw` ends the delegation.
+    An expired policy stays in force, flagged. `--export` writes Claude
+    Code's managed settings, Codex's `requirements.toml` and an NVIDIA
+    OpenShell policy for device management to deliver.
+  - Drift: effective settings are re-read against the policy at session
+    start, on Claude Code's ConfigChange, when Codex's config changes, and
+    every 6 hours while `flanner peer serve` runs.
+  - `flanner curb fleet` shows admins each device's policy state, drift and
+    counts by severity and exposure class. Each device signs its reports
+    and numbers them, and the command checks every signature, number and
+    chain with the organization's device keys itself: a replayed or
+    reordered report is caught, and a gap or a report over 24 hours old
+    shows the device stale. Reports carry no paths, names or fingerprints.
+  - Alerts: one per change that grows reach (a new MCP server, a removed
+    deny rule, the sandbox turned off, a new class A secret) and for each
+    policy refusal, with a stable event id so retries never double up. The
+    developer sees them at once; admins through the control plane's relay.
+  - Audit export: the action log as OCSF 1.9.0 records, sent straight to
+    the collector the policy names, with OpenShell's own records passed
+    through on request, redacted.
+  - The wire format, with test vectors, is
+    [docs/curb-wire-contract.md](docs/curb-wire-contract.md). A control
+    plane without Curb turns all of this off, and a client below an
+    endpoint's minimum is told which version to update to.
+  - `flanner curb ci` judges each agent step in a repository's GitHub
+    Actions workflows (Claude Code, Codex, Gemini CLI) like an agent launch:
+    whether issue, comment or pull request text reaches it, who can start
+    it, the secrets and tools it holds, and whether Harden-Runner blocks its
+    egress. It rates each with `ci-r1`, writes SARIF for code scanning, and
+    with `--fix` makes the one-line fixes that are safe to make blind.
+    Workflows modelled on PromptPwnd, Clinejection and Comment and Control
+    all rate High. The same check is a GitHub Action,
+    `elandlabs/flanner/actions/curb-ci`.
+  - `flanner curb app` finds an application's own LLM calls in its Python
+    code (openai, anthropic, google.genai, langchain, langgraph, litellm,
+    pydantic_ai, mcp), labels each a single call, tool-using or a loop, and
+    flags untrusted input beside tool-using calls and model output that
+    reaches eval, a shell or SQL. Every result is assumed, and the SARIF it
+    writes hands deeper analysis to Semgrep or CodeQL.
+  - `flanner init` installs the `agent-blast-radius` skill for Claude Code
+    and Codex. An agent runs the redacted Curb commands in its shell, and is
+    told to ask the person to open `flanner curb show` for names and
+    locations, which never come back to it.
+  - `flanner curb attribution --setup` gives each agent its own Ed25519
+    signing key, kept only in the OS credential store, and routes the
+    agent's commits through `flanner-curb-sign`, which signs only inside an
+    agent session the hooks recorded and logs each commit. Keys are
+    registered with the organization with a proof of possession, and
+    `--rotate` replaces them every 90 days, deleting the retired private
+    half. `flanner curb verify` gives each commit one of five states:
+    attributed, attributed with a retired key, untrusted because revoked,
+    key status unknown, or unattributed, checked against the organization's
+    signed key registry, which a device refuses when it is older, changed
+    without a new version, moves a key or drops a revocation. Signatures are
+    OpenSSH's, so git, ssh-keygen and GitHub read them too. A signature shows
+    which key signed, not who wrote the code.
 - **Messages between teammates.** Ask a teammate something from the CLI,
   the web UI or your agent, and it goes straight to their devices, never
   through a server.
@@ -101,6 +266,10 @@ versioning follows [SemVer](https://semver.org/).
   desktop app exists.
 
 ### Changed
+- **Read-only commands start faster.** They no longer load the action
+  history store, which they never write to. That took about 1.7 seconds of
+  every `flanner status`, `flanner curb map` and similar call on a Windows
+  laptop.
 - **The web UI draws the wordmark and favicon from the brand kit.** The
   rail and the footer showed the name typed in Geist beside a CSS dot; they
   now include the wordmark's outline, Sora Bold's fl ligature and the dot,
@@ -127,6 +296,23 @@ versioning follows [SemVer](https://semver.org/).
   started. After an upgrade migrated the database, it went on saving rows
   the new version did not expect. It now refuses the write and says to
   restart it; nothing is saved.
+- **A message no longer waits on a teammate's removed device.** The roster
+  lists removed devices on purpose, to say whose device signed an event,
+  and a message went to every one of them: a delivery to a lost laptop
+  queued, retried for a day and failed. The control plane now marks them,
+  and a message goes to the devices a person still has.
+- **Windows Hello is asked at all.** The script that asks it broke a type
+  literal across two lines, which PowerShell refuses, so every call ended
+  in a parse error and Curb fell back to the password prompt on every
+  Windows machine.
+
+### Security
+- **Curb's approval prompt cannot be stood in for by an agent.** Each
+  prompt program (`pkcheck`, `osascript`, Windows PowerShell) was found by
+  name through PATH, so a shell that set PATH and `DISPLAY` and planted a
+  program by that name could have answered its own approval. Each is now
+  run from the place the operating system installs it, on POSIX only when
+  root owns it, and with an environment of Curb's own.
 
 ## [0.14.0] - 2026-09-18
 

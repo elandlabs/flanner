@@ -36,23 +36,27 @@ def a_roster(issuer_key, people, *, retention=None, expires=timedelta(hours=1)):
         "organization_id": "org_1",
         "issued_at": now.isoformat().replace("+00:00", "Z"),
         "expires_at": (now + expires).isoformat().replace("+00:00", "Z"),
-        "workspaces": {
-            WORKSPACE: [
-                {
-                    "user_id": p.user,
-                    "role": p.role,
-                    "devices": [p.device_id] if p.device_id else [],
-                    "handle": p.user,
-                    "name": p.user.title(),
-                }
-                for p in people
-            ]
-        },
+        "workspaces": {WORKSPACE: [_listed(p) for p in people]},
     }
     if retention is not None:
         fields["message_retention_days"] = retention
     data = canonical_bytes(fields)
     return base64.urlsafe_b64encode(data).decode().rstrip("=") + "." + sign(data, issuer_key)
+
+
+def _listed(p):
+    """One roster entry. A person's `former` devices are listed, and marked revoked."""
+    former = list(getattr(p, "former", ()))
+    entry = {
+        "user_id": p.user,
+        "role": p.role,
+        "devices": ([p.device_id] if p.device_id else []) + former,
+        "handle": p.user,
+        "name": p.user.title(),
+    }
+    if former:
+        entry["revoked"] = former
+    return entry
 
 
 class Person(Device):
@@ -1048,6 +1052,27 @@ def test_a_recipient_with_no_device_is_reported_not_left_out(team, issuer_key):
     assert by_person["carol"]["state"] == "failed"
     assert by_person["carol"]["code"] == refusals.NO_DEVICES
     assert by_person["bob"]["state"] == "queued"
+
+
+def test_a_removed_device_is_named_but_not_addressed(alice, bob):
+    """A laptop bob lost stays on the roster, for what it signed; nothing is sent to it."""
+    bob.former = ("dev_lost",)
+    alice.join([alice, bob])
+    with alice.active():
+        held = cache.load()
+    (listed,) = [
+        m
+        for m in verify_roster(held.roster, held.keyring).members(WORKSPACE)
+        if m.user_id == "bob"
+    ]
+    assert listed.devices == (bob.device_id, "dev_lost") and listed.current == (bob.device_id,)
+
+    sent = alice.send(
+        to=["bob"], body="hi", dial=lambda *a: (_ for _ in ()).throw(peer.PeerError("offline"))
+    )
+
+    rows = alice.session.query(MeshDeliveryModel).filter_by(message_id=sent["message_id"]).all()
+    assert {row.device_id for row in rows} == {bob.device_id}
 
 
 def test_a_group_chat_of_only_my_messages_is_not_muted(team):

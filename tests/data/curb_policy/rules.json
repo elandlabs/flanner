@@ -1,0 +1,12 @@
+{
+  "deny_read": ["~/.aws", "~/.ssh", "/etc/curb-secret"],
+  "sandbox": "required",
+  "network": {"allowed_domains": ["github.com", "*.pypi.org"]},
+  "web": "off",
+  "mcp": {
+    "allowed": [
+      {"name": "docs", "command": ["docs-mcp", "--stdio"]},
+      {"name": "search", "url": "https://mcp.example.com/search"}
+    ]
+  }
+}

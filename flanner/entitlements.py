@@ -52,6 +52,12 @@ SKILL_SYNC = "skill_sync"
 #: Messages between members' devices (the mesh messaging plan). Withheld
 #: when the organization switches messaging off.
 MESH_MESSAGES = "mesh_messages"
+#: Flanner Curb's team features (Curb PRD §10.8-10.11). A client uses one
+#: only when the server also offers its capability (`curb_wire.usable`).
+CURB_POLICY = "curb_policy"
+CURB_FLEET = "curb_fleet"
+CURB_ALERTS = "curb_alerts"
+CURB_ATTRIBUTION = "curb_attribution"
 
 #: How long messages are kept when a roster does not say, as one from a
 #: control plane older than messaging does not.
@@ -295,6 +301,16 @@ class Member:
     handle: str = ""
     #: The name they set in the console, or their email before the @.
     name: str = ""
+    #: Those of `devices` the control plane has revoked. They stay in
+    #: `devices` because the roster says whose device signed an event, and
+    #: that stays true after the device is gone. Empty in a roster from a
+    #: control plane older than this field.
+    revoked: tuple[str, ...] = ()
+
+    @property
+    def current(self) -> tuple[str, ...]:
+        """The devices that can still receive something: listed and not revoked."""
+        return tuple(d for d in self.devices if d not in self.revoked)
 
     @property
     def label(self) -> str:
@@ -379,6 +395,7 @@ def verify_roster(
                         devices=tuple(str(d) for d in m.get("devices") or ()),
                         handle=str(m.get("handle") or ""),
                         name=displayable(str(m.get("name") or "")),
+                        revoked=tuple(str(d) for d in m.get("revoked") or ()),
                     )
                     for m in members
                 )

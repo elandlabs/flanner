@@ -1,0 +1,45 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(~/.aws)",
+      "Read(~/.aws/**)",
+      "Read(~/.ssh)",
+      "Read(~/.ssh/**)",
+      "Read(//etc/curb-secret)",
+      "Read(//etc/curb-secret/**)",
+      "WebFetch",
+      "WebSearch"
+    ]
+  },
+  "sandbox": {
+    "enabled": true,
+    "allowUnsandboxedCommands": false,
+    "filesystem": {
+      "denyRead": [
+        "~/.aws",
+        "~/.ssh",
+        "/etc/curb-secret"
+      ]
+    },
+    "network": {
+      "allowedDomains": [
+        "github.com",
+        "*.pypi.org"
+      ],
+      "strictAllowlist": true,
+      "allowManagedDomainsOnly": true
+    }
+  },
+  "allowedMcpServers": [
+    {
+      "serverCommand": [
+        "docs-mcp",
+        "--stdio"
+      ]
+    },
+    {
+      "serverUrl": "https://mcp.example.com/search"
+    }
+  ],
+  "allowManagedMcpServersOnly": true
+}

@@ -1,0 +1,19 @@
+allowed_sandbox_modes = ["read-only", "workspace-write"]
+allowed_web_search_modes = ["disabled"]
+
+[permissions.filesystem]
+deny_read = ["~/.aws", "~/.ssh", "/etc/curb-secret"]
+
+[experimental_network]
+enabled = true
+managed_allowed_domains_only = true
+
+[experimental_network.domains]
+"github.com" = "allow"
+"*.pypi.org" = "allow"
+
+[mcp_servers.docs]
+identity = { command = "docs-mcp" }
+
+[mcp_servers.search]
+identity = { url = "https://mcp.example.com/search" }

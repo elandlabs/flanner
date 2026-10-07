@@ -1,0 +1,11 @@
+[
+  {"path": "graph_agent.py", "line": 5, "shape": "loop", "untrusted_input": false, "unchecked_output": []},
+  {"path": "litellm_call.py", "line": 5, "shape": "single call", "untrusted_input": false, "unchecked_output": []},
+  {"path": "mcp_client.py", "line": 5, "shape": "tool-using", "untrusted_input": false, "unchecked_output": []},
+  {"path": "runs_output.py", "line": 9, "shape": "single call", "untrusted_input": false, "unchecked_output": ["subprocess.run"]},
+  {"path": "single_call.py", "line": 7, "shape": "single call", "untrusted_input": false, "unchecked_output": []},
+  {"path": "tool_loop.py", "line": 9, "shape": "loop", "untrusted_input": false, "unchecked_output": []},
+  {"path": "tools_once.py", "line": 8, "shape": "tool-using", "untrusted_input": false, "unchecked_output": []},
+  {"path": "typed_agent.py", "line": 7, "shape": "loop", "untrusted_input": false, "unchecked_output": []},
+  {"path": "web_tools.py", "line": 11, "shape": "tool-using", "untrusted_input": true, "unchecked_output": []}
+]

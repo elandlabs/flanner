@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+{% import "_icon.html" as ico %}
+{% import "_empty.html" as empty %}
+{% import "_curb.html" as k with context %}
+{% block title %}Curb{% endblock %}
+
+{#
+  The frame every Curb page shares (Curb PRD §11.3). Four scopes, one tab
+  each; a scope's parts are pages under it, so each has its own address:
+    This machine   the same in every project
+    Projects       follows the project picker, which lists the Projects page
+    Team           your organization
+  Every part opens the same way: what it is for, where its facts come from,
+  and at most one main button. Then one table, with its search on top.
+
+  Names and locations are not in this markup unless the browser asking holds
+  a live reveal: the server leaves them out, the page does not hide them.
+#}
+
+{% block extra_head %}
+{# Scripts off: the page asks again by itself while a check, a scan or a test runs. #}
+{% if wait %}<noscript><meta http-equiv="refresh" content="3"></noscript>{% endif %}
+{% endblock %}
+
+{% block topbar_main %}
+<h1>Curb</h1>
+<span class="sub">What your agents can reach, and what they left behind</span>
+{% endblock %}
+
+{% block topbar_actions %}
+{% if shown %}
+<form method="post" action="/curb/hide" data-no-busy>
+  <input type="hidden" name="back" value="{{ here }}">
+  <button type="submit" class="btn reveal-btn" aria-pressed="true">{{ ico.icon('unlock', 14) }} Hide names ·
+    <span class="tnum" data-curb-left="{{ seconds }}">{{ seconds // 60 }}:{{ "%02d" | format(seconds % 60) }}</span></button>
+</form>
+{% else %}
+<a class="btn reveal-btn" href="{{ k.rev('reveal') }}" data-curb-review data-no-boost>{{ ico.icon('lock', 14) }} Show names and locations</a>
+{% endif %}
+{% endblock %}
+
+{% block help_extra %}
+        <div><dt><kbd>/</kbd></dt><dd>Search the table on this page</dd></div>
+{% endblock %}
+
+{% block content %}
+<div class="pane curb">
+
+  <nav class="tabs curb-areas" aria-label="Curb, by scope">
+    <a class="tab" href="/curb"{% if area == "overview" %} aria-current="page"{% endif %}>Overview</a>
+    <a class="tab" href="/curb/machine/agents"{% if area == "machine" %} aria-current="page"{% endif %}>This machine</a>
+    <a class="tab" href="/curb/projects/reach"{% if area == "projects" %} aria-current="page"{% endif %}>Projects
+      <span class="n tnum">{{ counts.projects }}</span></a>
+    <a class="tab" href="/curb/team/policy"{% if area == "team" %} aria-current="page"{% endif %}>Team
+      {% if counts.team %}<span class="n tnum n-warn">{{ counts.team }}</span>{% endif %}</a>
+  </nav>
+
+  {# Two conditions that change what every shield button does, said where they cannot be missed. #}
+  {% if paused_until %}
+  <div class="notice warn" role="status">Curb is not asking for approval until <b>{{ paused_until }}</b>.
+    Three approvals were refused or ignored in ten minutes, so shield buttons wait until then.</div>
+  {% endif %}
+  {% if read_only %}
+  <div class="notice warn" role="status"><b>Curb is read-only on this machine.</b>
+    It has no way to ask you for an approval, so shield buttons cannot change anything.
+    {% if asker == "Windows" %}Set up Windows Hello or a password in Windows settings.{% endif %}</div>
+  {% endif %}
+
+  {% if parts and (area != "team" or joined) %}
+  <div class="curb-bar">
+    <nav class="segmented" aria-label="Parts of this scope">
+      {% for key, label in parts %}
+      <a href="/curb/{{ area }}/{{ key }}{% if area == 'projects' and project %}?project={{ project }}{% endif %}"
+         {% if key == part %}aria-current="page"{% endif %}>{{ label }}
+        {%- if key == "leaks" and counts.leaks %} <span class="n tnum n-warn">{{ "{:,}".format(counts.leaks) }}</span>
+        {%- elif key == "fixes" and counts.fixes %} <span class="n tnum">{{ counts.fixes }}</span>
+        {%- elif key == "policy" and counts.team %} <span class="n tnum n-warn">{{ counts.team }}</span>{% endif %}</a>
+      {% endfor %}
+    </nav>
+    {% block scope %}
+    {% if area == "machine" %}
+    <div class="curb-scope">{{ ico.icon('devices', 14) }} <span><b>This machine.</b> The same in every project.</span></div>
+    {% elif area == "team" %}
+    <div class="curb-scope">{{ ico.icon('members', 14) }} <span><b>Your organization.</b> Through Flanner Mesh.</span></div>
+    {% endif %}
+    {% endblock %}
+  </div>
+  {% endif %}
+
+  <div class="curb-part"{% if wait %} data-curb-wait="{{ wait }}"{% endif %}>
+    {% block part %}{% endblock %}
+  </div>
+
+  {# ---------------------------------------------------------- the reviews #}
+  {% block reviews %}{% endblock %}
+
+  {% if review == "reveal" %}
+  <dialog class="help-dialog" data-curb-dialog open aria-labelledby="curb-reveal-title">
+    {% if reveal_blocked %}
+    <h2 id="curb-reveal-title">Names stay hidden on this machine</h2>
+    <p>Showing names here needs an approval prompt that can show a code, and {{ reveal_blocked }}.</p>
+    <p>This opens them in a window on your own screen instead:</p>
+    {{ k.cmd("flanner curb show") }}
+    <div class="form-actions"><a class="btn" href="{{ here }}" data-curb-close>Close</a></div>
+    {% else %}
+    <h2 id="curb-reveal-title">Show names and locations?</h2>
+    <p>Your operating system will ask it's you. Approve its prompt only if it shows this code:</p>
+    <div class="match-code tnum">{{ reveal_code }}</div>
+    <p class="hint">They show on this page for 5 minutes, then hide again. Nothing is written to disk.</p>
+    <form method="post" action="/curb/reveal" class="form-actions" data-curb-ask="Waiting for {{ asker }}…">
+      <input type="hidden" name="back" value="{{ here }}">
+      <a class="btn" href="{{ here }}" data-curb-close>Cancel</a>
+      <button type="submit" class="btn btn-primary">{{ ico.icon('shield', 14) }} Ask {{ asker }}</button>
+    </form>
+    {% endif %}
+  </dialog>
+  {% endif %}
+
+  {% if review == "add" %}
+  <dialog class="help-dialog wide" data-curb-dialog open aria-labelledby="curb-add-title">
+    <h2 id="curb-add-title">Check a new project</h2>
+    <p>Curb checks the projects on your Projects page. Add the project there, and it appears in this list.</p>
+    <ol>
+      <li>Add it with <a class="jump" href="/projects/new">New project</a>. Or, in a terminal, inside the repository:</li>
+    </ol>
+    {{ k.cmd("flanner init") }}
+    <ol start="2">
+      <li>Come back and pick it. Curb reads the project's agent settings, workflows and code. It never runs them.</li>
+    </ol>
+    <p>For a quick look without adding anything, run this in any folder:</p>
+    {{ k.cmd("flanner curb map") }}
+    <div class="form-actions"><a class="btn" href="{{ here }}" data-curb-close>Close</a>
+      <a class="btn btn-primary" href="/projects/new">New project</a></div>
+  </dialog>
+  {% endif %}
+
+  {% call k.review_box("forget", "Delete what Curb has stored?", "/curb/forget") %}
+    <ul>
+      <li>The redacted scan reports, and the activity log.</li>
+      <li>The fake credentials a test planted.</li>
+      <li>The key behind Curb's fingerprints. Older fingerprints can no longer be matched.</li>
+    </ul>
+    <p>Your agents' settings do not change. This cannot be undone.</p>
+    <p class="hint">Settings backups stay, because they are the only undo for a fix. They remove
+      themselves after 7 days.</p>
+  {% endcall %}
+</div>
+{% endblock %}

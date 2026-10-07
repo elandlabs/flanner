@@ -1,0 +1,64 @@
+{% extends "curb_base.html" %}
+
+{# Projects › Apps: places where each project's own code calls an LLM, and the export. #}
+{% block scope %}{{ k.picker(project) }}{% endblock %}
+
+{% block part %}
+<div class="tab-stack">
+  {% call k.head("Places where your own code calls an AI model.",
+                 "Found by pattern in each project's Python files. Each one is a place to look, not a proven problem." ~ ("" if one or not projects else " Pick one project to export.")) %}
+    {{ k.again() }}
+    {% if one and view.rows %}
+    <a class="btn" href="/curb/projects/apps/export?project={{ one.id }}" download="curb-app.sarif">{{ ico.icon('download', 14) }} Export for code scanning</a>
+    {% endif %}
+  {% endcall %}
+
+  {% for line in view.problems %}
+  <div class="notice warn" role="status"><b>Curb could not read a file.</b> {{ line }}</div>
+  {% endfor %}
+
+  {% if not projects %}
+  {% call empty.state("project", "No projects yet") %}
+    <p>Curb checks the projects on your Projects page. Add one there first.</p>
+    <a class="btn btn-primary" href="/projects/new">New project</a>
+  {% endcall %}
+  {% elif view.rows %}
+  <div class="card">
+    <div class="card-head">Model calls {{ k.tally() }}
+      {% call k.tools("Search model calls", {"project": project}) %}
+        <select class="btn btn-sm" name="flag" aria-label="Show" data-auto-submit>
+          {{ k.option("", "Every call", flag) }}{{ k.option("1", "Worth a look", flag) }}
+        </select>
+      {% endcall %}</div>
+    <div class="tablewrap">
+      <div class="grid-head cols-k-apps{{ ' is-one' if one }}"><span>Where</span>{% if not one %}<span>Project</span>{% endif %}<span>Library</span><span>Kind</span><span>Worth a look</span></div>
+      {% for row in table.rows %}
+      <div class="grid-row cols-k-apps{{ ' is-one' if one }}">
+        <span class="path">{{ row.where }}</span>
+        {% if not one %}<span data-cell="meta">{{ row.project }}</span>{% endif %}
+        <span data-cell="meta">{{ row.library }}</span>
+        <span data-cell="meta">{{ row.shape }}</span>
+        <span data-cell="meta">{% if row.flag %}<span class="pill pill-{{ row.tone }}">{{ row.flag }}</span>{% endif %}</span>
+      </div>
+      {% endfor %}
+      {{ k.foot("No model call matches that search.") }}
+    </div>
+  </div>
+  {% else %}
+  {% call empty.state("clear", "No model calls found") %}
+    <p>No Python file in {{ one.name if one else "your projects" }} calls an AI library Curb knows.</p>
+  {% endcall %}
+  {% endif %}
+
+  {% call k.explain("What this is for", "A map of where to look, for a deeper tool to check.") %}
+    <p>Curb finds these by matching the names of AI libraries. It cannot follow your code, so it
+      cannot prove a problem. The export hands the list to Semgrep or CodeQL, which can.</p>
+    <dl class="words">
+      <dt>One call</dt><dd>The code asks the model once, and uses the answer.</dd>
+      <dt>Uses tools</dt><dd>The model can call functions the code gives it.</dd>
+      <dt>Loop</dt><dd>The model runs in a loop, deciding its own next step.</dd>
+    </dl>
+    {{ k.cmd("flanner curb app") }}
+  {% endcall %}
+</div>
+{% endblock %}

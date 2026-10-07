@@ -1,0 +1,26 @@
+# Modelled on PromptPwnd (Curb PRD E1): issue text goes into the prompt of
+# an agent that holds a token and may run shell commands.
+name: Issue triage
+on:
+  issues:
+    types: [opened]
+permissions:
+  contents: read
+  issues: write
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Triage with Gemini
+        uses: google-github-actions/run-gemini-cli@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+        with:
+          gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
+          settings: |
+            {"coreTools": ["run_shell_command(gh)", "run_shell_command(echo)"]}
+          prompt: |
+            Label this issue: ${{ github.event.issue.title }}
+            ${{ github.event.issue.body }}

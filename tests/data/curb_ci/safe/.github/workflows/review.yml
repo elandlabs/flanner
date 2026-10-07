@@ -1,0 +1,24 @@
+# Started by people with write access only, no secrets beyond the agent's
+# own key, a sandbox that drops sudo, and outbound traffic blocked.
+name: Codex review
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: step-security/harden-runner@v2
+        with:
+          egress-policy: block
+          allowed-endpoints: api.openai.com:443
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          safety-strategy: drop-sudo
+          sandbox: read-only
+          prompt: Review the latest commit.

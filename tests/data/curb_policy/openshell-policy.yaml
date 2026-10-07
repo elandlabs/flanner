@@ -1,0 +1,28 @@
+version: 1
+filesystem_policy:
+  include_workdir: true
+  read_only:
+  - /usr
+  - /lib
+  - /etc
+  read_write:
+  - /tmp
+landlock:
+  compatibility: hard_requirement
+network_policies:
+  curb_allowed_1:
+    endpoints:
+    - host: github.com
+      port: 443
+      enforcement: enforce
+  curb_allowed_2:
+    endpoints:
+    - host: '*.pypi.org'
+      port: 443
+      enforcement: enforce
+  curb_mcp_search:
+    endpoints:
+    - host: mcp.example.com
+      port: 443
+      protocol: mcp
+      enforcement: enforce

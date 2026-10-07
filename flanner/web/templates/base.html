@@ -76,6 +76,8 @@
       <a href="/skills" {% if here.startswith('/skills') %}class="active" aria-current="page"{% endif %}>
         {{ ico.icon('skills') }} Skills
         {% if nav_skills %}<span class="n tnum">{{ nav_skills }}</span>{% endif %}</a>
+      <a href="/curb" {% if here.startswith('/curb') %}class="active" aria-current="page"{% endif %}>
+        {{ ico.icon('shield') }} Curb</a>
       {# Behind the flag. Linear and Jira are built but not supported
          yet, so the sidebar does not offer them. `flanner/features.py`
          has the switch and the reasoning. #}
