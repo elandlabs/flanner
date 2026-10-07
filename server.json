@@ -1,7 +1,7 @@
 {
-  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-07-09/server.schema.json",
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.jaysonmulwa/flanner",
-  "description": "Keeps AI coding agents' plan and design markdown organized: places it in a managed directory, adds a YAML header, versions every revision, and enforces it with a guard hook. Works with Claude Code and Codex.",
+  "description": "Keeps AI coding agents' plan and design markdown managed and versioned, for Claude Code and Codex.",
   "status": "active",
   "repository": {
     "url": "https://github.com/elandlabs/flanner",
