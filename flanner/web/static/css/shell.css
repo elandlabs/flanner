@@ -632,6 +632,10 @@ p.hint { max-width: 66ch; }
 .footnote {
   font-size: var(--t-sm); line-height: 1.55; color: var(--text-4);
 }
+/* A link in running text has to be told apart without its colour: the
+   accent on the footnote's grey is a 1.05:1 contrast, and nothing else
+   marked it. The same rule the explainers use for their links. */
+.footnote a { color: var(--accent-ink); text-decoration: underline; text-underline-offset: 2px; }
 .footnote .i {
   float: left; margin: 1px 10px 0 0;
   font: 600 var(--t-xs) var(--font-mono); color: var(--text-3);
