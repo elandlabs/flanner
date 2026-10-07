@@ -6,6 +6,8 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-10-07
+
 ### Added
 - **Flanner Curb: what each agent launch can reach.** `flanner curb map`
   checks every Claude Code and Codex launch on the machine for readable
