@@ -49,7 +49,7 @@ own out of the install folder on first start.
 | `FLANNER_DESKTOP_DATA` | Move the app's own folder (settings, logs, runtime copies). Tests always set it. |
 | `FLANNER_HOME` | flanner's own home, as everywhere else. Tests always set it. |
 | `FLANNER_DESKTOP_UPDATE_NOW` | Test builds only: install an update as soon as it is found. |
-| `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=N` | Windows: open DevTools on the window, which the tests attach to. |
+| `FLANNER_DESKTOP_DEVTOOLS_PORT=N` | Test builds, Windows: open WebView2's DevTools port on the window, which the tests attach to. |
 
 Logs are in the app's folder under `logs/`: `web.log`, `link.log`,
 `init.log`, `connect.log`, `sync.log`, `updates.log`.

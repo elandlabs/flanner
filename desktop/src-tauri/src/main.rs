@@ -89,12 +89,13 @@ fn main() {
         .invoke_handler(tauri::generate_handler![pending_setup, finish_setup])
         .setup(|app| {
             let at_login = std::env::args().any(|arg| arg == AT_LOGIN);
-            WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
-                .title("Flanner")
-                .inner_size(1280.0, 860.0)
-                .min_inner_size(720.0, 520.0)
-                .visible(!at_login)
-                .build()?;
+            let window =
+                WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
+                    .title("Flanner")
+                    .inner_size(1280.0, 860.0)
+                    .min_inner_size(720.0, 520.0)
+                    .visible(!at_login);
+            with_devtools_port(window).build()?;
             tray(app)?;
             let handle = app.handle().clone();
             thread::spawn(move || {
@@ -493,6 +494,27 @@ fn set_up_again(app: &AppHandle) {
 }
 
 // --- the window ----------------------------------------------------------------
+
+/// Test builds only: open WebView2's DevTools port when
+/// FLANNER_DESKTOP_DEVTOOLS_PORT is set, so the Windows tests can attach over
+/// CDP. Asked of Tauri rather than through WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:
+/// on the hosted runner that variable never reached the browser process, and
+/// the port never opened. wry's own switches are repeated, because setting any
+/// replaces them all.
+fn with_devtools_port<'a, M: Manager<Wry>>(
+    window: WebviewWindowBuilder<'a, Wry, M>,
+) -> WebviewWindowBuilder<'a, Wry, M> {
+    #[cfg(all(windows, debug_assertions))]
+    if let Ok(port) = std::env::var("FLANNER_DESKTOP_DEVTOOLS_PORT") {
+        if !port.is_empty() {
+            return window.additional_browser_args(&format!(
+                "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection \
+                 --remote-debugging-port={port}"
+            ));
+        }
+    }
+    window
+}
 
 fn main_window(app: &AppHandle) -> Result<tauri::WebviewWindow, String> {
     app.get_webview_window("main")

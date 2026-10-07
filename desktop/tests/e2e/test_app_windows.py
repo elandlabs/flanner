@@ -4,9 +4,9 @@
     FLANNER_DESKTOP_APP=desktop/src-tauri/target/debug/flanner-desktop.exe \\
     FLANNER_RUNTIME=build/runtime pytest desktop/tests/e2e
 
-WebView2 opens a DevTools port when asked through an environment variable,
-so Playwright attaches to the app's real window over CDP and checks what
-runs inside it. macOS and Linux webviews have no such port; they get
+A test build opens WebView2's DevTools port when FLANNER_DESKTOP_DEVTOOLS_PORT
+is set, so Playwright attaches to the app's real window over CDP and checks
+what runs inside it. macOS and Linux webviews have no such port; they get
 tauri-driver instead.
 
 The app runs against a temp FLANNER_HOME and a temp app folder, so it never
@@ -166,7 +166,7 @@ def app(tmp_path_factory: pytest.TempPathFactory) -> Iterator[App]:
         "FLANNER_NO_KEYCHAIN": "1",
         "FLANNER_DESKTOP_RUNTIME": str(Path(str(RUNTIME)).resolve()),
         "FLANNER_DESKTOP_DATA": str(data),
-        "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS": f"--remote-debugging-port={devtools}",
+        "FLANNER_DESKTOP_DEVTOOLS_PORT": str(devtools),
         "RUST_BACKTRACE": "1",
     }
     # To a file: left on the inherited console, a panic at start never
