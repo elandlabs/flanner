@@ -9953,6 +9953,9 @@ def _curb_grant(summary: str, change: Any) -> tuple[Any, Any]:
     except curb_approval.Paused as stop:
         tui.bad(f"Not asked: {stop}.")
         raise SystemExit(1) from None
+    except curb_approval.Unverifiable as why:
+        tui.bad(f"Not checked: {why}.")
+        raise SystemExit(1) from None
     if grant is None:
         tui.bad("Not approved, so nothing changed.")
         raise SystemExit(1)

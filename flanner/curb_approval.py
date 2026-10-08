@@ -52,6 +52,10 @@ class Paused(PermissionError):
     """Too many refused approvals: requests wait for the pause to end."""
 
 
+class Unverifiable(RuntimeError):
+    """The person answered, but the OS would not check the answer. Not a refusal."""
+
+
 def change_hash(change: Any) -> str:
     """The hash a grant binds to: canonical JSON of the exact change."""
     text = json.dumps(change, sort_keys=True, separators=(",", ":"), default=str)
@@ -439,6 +443,10 @@ class Broker:
         reason = f"flanner curb: {summary}" + (f" (asked by {chain})" if chain else "")
         try:
             yes = self.presence.confirm(reason)
+        except Unverifiable:
+            # The person did answer, so this is not one of the refusals that pause Curb.
+            curb_log.record_approval(summary, "refused")
+            raise
         except (OSError, subprocess.SubprocessError):
             yes = False
         if not yes:
@@ -561,6 +569,12 @@ def _windows_password(reason: str) -> bool:  # pragma: no cover - draws a real p
         ok = advapi.LogonUserW(name, realm, password, 3, 0, ctypes.byref(token))  # network logon
         if ok:
             kernel32.CloseHandle(token)
+        elif ctypes.get_last_error() == 1327:  # ERROR_ACCOUNT_RESTRICTION: not checkable
+            raise Unverifiable(
+                "Windows would not check the password (error 1327, an account restriction): "
+                "usually the account has no password, or sign-in is limited to Windows Hello. "
+                "Set a Windows Hello PIN, then try again"
+            )
         return bool(ok)
     finally:
         ctypes.memset(password, 0, ctypes.sizeof(password))

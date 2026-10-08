@@ -97,6 +97,17 @@ def test_a_failed_prompt_counts_as_a_refusal():
     assert broker(OSError("no prompt")).request("a change", "h") is None
 
 
+def test_an_answer_the_os_cannot_check_is_reported_and_not_counted_as_a_refusal():
+    wall = Clock(5000.0)
+    b = Broker(Person(curb_approval.Unverifiable("no password"), False, False, True), wall=wall)
+    with pytest.raises(curb_approval.Unverifiable, match="no password"):
+        b.request("a change", "h")
+    for _ in range(2):
+        assert b.request("a change", "h") is None
+        wall.now += 60
+    assert b.request("a change", "h") is not None  # two refusals, not three
+
+
 def test_three_refusals_in_ten_minutes_pause_requests_for_an_hour(quiet):
     wall = Clock(5000.0)
     b = Broker(Person(False, False, False, True), wall=wall)
